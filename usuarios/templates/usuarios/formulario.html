@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% comment %} Alta y edición de usuario (la misma pantalla; `creando` indica cuál) {% endcomment %}
+
+{% block titulo %}{% if creando %}Nuevo usuario{% else %}Editar {{ usuario.username }}{% endif %}{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{% if creando %}{% url 'usuarios:lista' %}{% else %}{% url 'usuarios:detalle' usuario.pk %}{% endif %}" class="volver">
+        <i class="bi bi-arrow-left" aria-hidden="true"></i> {% if creando %}Usuarios{% else %}{{ usuario.get_full_name }}{% endif %}
+    </a>
+    <h1 class="pagina-titulo">{% if creando %}Nuevo usuario{% else %}Editar usuario{% endif %}</h1>
+    <p class="pagina-bajada">Los campos con <span class="obligatorio">*</span> son obligatorios. El resto se puede completar después.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="post" enctype="multipart/form-data" novalidate class="formulario">
+    {% csrf_token %}
+
+    {% if form.errors %}
+    <div class="alert alert-danger" role="alert">
+        Revisá los campos marcados en rojo.
+        {% for error in form.non_field_errors %}<br>{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    {% for titulo, campos in form.secciones %}
+    <section class="tarjeta formulario-seccion">
+        <h2 class="tarjeta-titulo">{{ titulo }}</h2>
+        <div class="row g-3">
+            {% for campo, ancho in campos %}
+                {% include "parciales/_campo.html" with campo=campo ancho=ancho %}
+            {% endfor %}
+
+            {% if forloop.first %}
+                {% if creando %}
+                    {% include "parciales/_campo.html" with campo=form.password1 %}
+                    {% include "parciales/_campo.html" with campo=form.password2 %}
+                    {% include "parciales/_campo.html" with campo=form.debe_cambiar_password ancho="col-12" %}
+                {% endif %}
+            {% endif %}
+        </div>
+    </section>
+
+    {% if forloop.counter == 2 %}
+    {% include "usuarios/_seccion_foto.html" %}
+    {% endif %}
+    {% endfor %}
+
+    <div class="formulario-acciones">
+        <a href="{% if creando %}{% url 'usuarios:lista' %}{% else %}{% url 'usuarios:detalle' usuario.pk %}{% endif %}" class="btn btn-outline-secondary">Cancelar</a>
+        <button type="submit" class="btn btn-primary">{% if creando %}Crear usuario{% else %}Guardar cambios{% endif %}</button>
+    </div>
+</form>
+{% endblock %}

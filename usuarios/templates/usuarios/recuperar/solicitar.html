@@ -1,0 +1,26 @@
+{% extends "base_acceso.html" %}
+
+{% block titulo %}Recuperar contraseña{% endblock %}
+
+{% block formulario %}
+<a href="{% url 'usuarios:login' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Iniciar sesión</a>
+<h1>Recuperar contraseña</h1>
+<p class="bajada">Escribí tu usuario o tu email y te mandamos un código para elegir una contraseña nueva.</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger" role="alert">{% for e in form.non_field_errors %}{{ e }}{% endfor %}</div>
+    {% endif %}
+    <div class="row g-3 mb-4">
+        {% include "parciales/_campo.html" with campo=form.identificador ancho="col-12" %}
+    </div>
+    <button type="submit" class="btn btn-primary w-100 py-2">Enviarme el código</button>
+</form>
+
+<p class="form-text mt-4">
+    El código llega al email cargado en tu cuenta. Si no tenés email cargado o
+    ya no tenés acceso a esa casilla, pedile a un administrador que te asigne
+    una contraseña nueva.
+</p>
+{% endblock %}

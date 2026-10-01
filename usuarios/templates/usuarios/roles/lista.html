@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block titulo %}Roles{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <h1 class="pagina-titulo">Roles</h1>
+        <p class="pagina-bajada">Paquetes de permisos. Cada usuario tiene un rol, y se le pueden sumar o quitar permisos puntuales.</p>
+    </div>
+    {% if permisos.crear_roles %}
+    <a href="{% url 'usuarios:roles_crear' %}" class="btn btn-acento">
+        <i class="bi bi-plus-lg" aria-hidden="true"></i> Nuevo rol
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block contenido %}
+{% if roles %}
+<div class="row g-3">
+    {% for rol in roles %}
+    <div class="col-md-6 col-xl-4">
+        <a href="{% url 'usuarios:roles_editar' rol.pk %}" class="tarjeta-rol">
+            <span class="tarjeta-rol-nombre">{{ rol.nombre }}</span>
+            <span class="tarjeta-rol-descripcion">{{ rol.descripcion|default:"Sin descripción" }}</span>
+            <span class="tarjeta-rol-datos">
+                <span><i class="bi bi-shield-check" aria-hidden="true"></i> {{ rol.get_permisos|length }} permiso{{ rol.get_permisos|length|pluralize }}</span>
+                <span><i class="bi bi-people" aria-hidden="true"></i> {{ rol.cantidad_usuarios }} usuario{{ rol.cantidad_usuarios|pluralize }}</span>
+            </span>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="tarjeta vacio">
+    <i class="bi bi-shield" aria-hidden="true"></i>
+    <p>Todavía no hay roles. Creá uno para agrupar permisos y asignarlo a los usuarios.</p>
+    {% if permisos.crear_roles %}
+    <a href="{% url 'usuarios:roles_crear' %}" class="btn btn-acento btn-sm">Crear el primer rol</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

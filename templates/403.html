@@ -1,0 +1,12 @@
+{% extends "base_html.html" %}
+{% block titulo %}Sin permiso{% endblock %}
+{% block cuerpo %}
+<main class="error-pagina">
+    <div>
+        <div class="error-codigo">403</div>
+        <h1 class="h3 mt-3">No tenés permiso para ver esta página</h1>
+        <p class="texto-suave">Si necesitás acceso, pedíselo a un administrador del sistema.</p>
+        <a href="{% url 'core:inicio' %}" class="btn btn-primary mt-2">Volver al inicio</a>
+    </div>
+</main>
+{% endblock %}

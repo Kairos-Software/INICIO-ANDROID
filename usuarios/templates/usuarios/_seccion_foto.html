@@ -1,0 +1,26 @@
+{% comment %} Sección "Foto de perfil" de los formularios de usuario y de Mi perfil. Usa `form` (con los campos foto y quitar_foto). {% endcomment %}
+<section class="tarjeta formulario-seccion">
+    <h2 class="tarjeta-titulo">Foto de perfil</h2>
+    <div class="d-flex flex-wrap align-items-center gap-3">
+        {% if form.instance.foto %}
+            {% include "parciales/_avatar.html" with u=form.instance clase="avatar-grande" %}
+        {% endif %}
+        <div class="flex-grow-1">
+            <label class="form-label" for="{{ form.foto.id_for_label }}">
+                {% if form.instance.foto %}Reemplazar foto{% else %}Subir foto{% endif %}
+            </label>
+            {{ form.foto }}
+            {% if form.foto.errors %}
+                <div class="invalid-feedback d-block">{{ form.foto.errors|join:" " }}</div>
+            {% else %}
+                <div class="form-text">JPG o PNG, hasta 3 MB.</div>
+            {% endif %}
+            {% if form.instance.foto %}
+            <div class="form-check mt-2">
+                {{ form.quitar_foto }}
+                <label class="form-check-label" for="{{ form.quitar_foto.id_for_label }}">{{ form.quitar_foto.label }}</label>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</section>

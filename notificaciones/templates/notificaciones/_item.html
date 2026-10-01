@@ -1,0 +1,15 @@
+{% load humanize %}{% comment %} Una notificación (la usan la campanita y la lista). Al tocarla se marca como leída. {% endcomment %}
+<a href="{% url 'notificaciones:abrir' n.pk %}" class="notificacion notificacion-{{ n.nivel }} {% if not n.leida %}no-leida{% endif %}">
+    <span class="notificacion-icono" aria-hidden="true">
+        {% if n.nivel == 'exito' %}<i class="bi bi-check-circle"></i>
+        {% elif n.nivel == 'aviso' %}<i class="bi bi-exclamation-circle"></i>
+        {% elif n.nivel == 'error' %}<i class="bi bi-x-circle"></i>
+        {% else %}<i class="bi bi-info-circle"></i>{% endif %}
+    </span>
+    <span class="notificacion-texto">
+        <strong>{{ n.titulo }}</strong>
+        {% if n.mensaje %}<span>{{ n.mensaje }}</span>{% endif %}
+        <time datetime="{{ n.creada|date:'c' }}">{{ n.creada|naturaltime }}</time>
+    </span>
+    {% if not n.leida %}<span class="visually-hidden">(sin leer)</span>{% endif %}
+</a>

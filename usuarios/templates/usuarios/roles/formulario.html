@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% comment %} Alta, edición y consulta de un rol. Si no puede guardar, se muestra solo lectura. {% endcomment %}
+
+{% block titulo %}{% if creando %}Nuevo rol{% else %}Rol {{ rol }}{% endif %}{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{% url 'usuarios:roles_lista' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Roles</a>
+    <h1 class="pagina-titulo">{% if creando %}Nuevo rol{% else %}{{ rol }}{% endif %}</h1>
+    {% if not creando %}
+    <p class="pagina-bajada">
+        {% if cantidad_usuarios %}
+            Lo tienen {{ cantidad_usuarios }} usuario{{ cantidad_usuarios|pluralize }}. Los cambios se aplican a todos de inmediato.
+        {% else %}
+            Ningún usuario tiene este rol todavía.
+        {% endif %}
+    </p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="post" novalidate class="formulario">
+    {% csrf_token %}
+    <fieldset {% if not puede_guardar %}disabled{% endif %}>
+
+    <section class="tarjeta formulario-seccion">
+        <h2 class="tarjeta-titulo">Datos del rol</h2>
+        <div class="row g-3">
+            {% include "parciales/_campo.html" with campo=form.nombre ancho="col-12" %}
+            {% include "parciales/_campo.html" with campo=form.descripcion ancho="col-12" %}
+        </div>
+    </section>
+
+    <section class="tarjeta formulario-seccion">
+        <h2 class="tarjeta-titulo">Permisos</h2>
+        {% include "usuarios/_grilla_permisos.html" with grilla=grilla modo="rol" %}
+    </section>
+
+    </fieldset>
+
+    <div class="formulario-acciones">
+        {% if puede_eliminar %}
+        <a href="{% url 'usuarios:roles_eliminar' rol.pk %}" class="btn btn-outline-danger me-auto">
+            <i class="bi bi-trash" aria-hidden="true"></i> Eliminar rol
+        </a>
+        {% endif %}
+        <a href="{% url 'usuarios:roles_lista' %}" class="btn btn-outline-secondary">{% if puede_guardar %}Cancelar{% else %}Volver{% endif %}</a>
+        {% if puede_guardar %}
+        <button type="submit" class="btn btn-primary">{% if creando %}Crear rol{% else %}Guardar cambios{% endif %}</button>
+        {% endif %}
+    </div>
+</form>
+{% endblock %}

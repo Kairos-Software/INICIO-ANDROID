@@ -1,0 +1,51 @@
+{% comment %}
+    Grilla de permisos agrupada por módulo. La usan dos pantallas:
+
+      modo="rol"      -> permisos de un rol (usuarios/roles/formulario.html)
+      modo="usuario"  -> permisos individuales (usuarios/permisos.html):
+                         además muestra si el rol lo da y de dónde viene.
+
+    Cada fila (armada en usuarios/permisos.py) trae: codigo, descripcion,
+    concedido, editable, motivo_bloqueo y, en modo usuario, en_rol y origen.
+    Un permiso no editable se muestra bloqueado con el motivo.
+{% endcomment %}
+{% for modulo, filas in grilla %}
+<div class="grupo-permisos">
+    <div class="grupo-permisos-encabezado">
+        <h3>{{ modulo }}</h3>
+        <button type="button" class="btn btn-link btn-sm p-0" data-accion="marcar-grupo" data-grupo="grupo-{{ forloop.counter }}">
+            Marcar todos
+        </button>
+    </div>
+
+    <ul class="lista-permisos" id="grupo-{{ forloop.counter }}">
+        {% for p in filas %}
+        <li class="permiso {% if not p.editable %}bloqueado{% endif %}">
+            <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" role="switch" name="permisos" value="{{ p.codigo }}"
+                       id="permiso-{{ p.codigo }}" {% if p.concedido %}checked{% endif %} {% if not p.editable %}disabled{% endif %}>
+            </div>
+            <label for="permiso-{{ p.codigo }}" class="permiso-texto">
+                <span>{{ p.descripcion }}</span>
+                {% if not p.editable and p.motivo_bloqueo %}
+                <span class="permiso-nota">
+                    <i class="bi bi-lock" aria-hidden="true"></i>
+                    {% if p.motivo_bloqueo == 'restringido' %}Solo lo puede cambiar un superusuario{% else %}No lo podés cambiar porque vos no lo tenés{% endif %}
+                </span>
+                {% endif %}
+            </label>
+
+            {% comment %} Con permisos personalizados (sin rol) todo es "a mano": no se muestra el origen {% endcomment %}
+            {% if modo == "usuario" and not personalizado %}
+            <span class="permiso-origen">
+                {% if p.origen == 'rol' %}<span class="chip">Por su rol</span>
+                {% elif p.origen == 'individual_si' %}<span class="chip chip-si">Agregado a este usuario</span>
+                {% elif p.origen == 'individual_no' %}<span class="chip chip-no">Quitado a este usuario</span>
+                {% endif %}
+            </span>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endfor %}

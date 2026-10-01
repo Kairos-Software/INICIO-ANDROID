@@ -1,0 +1,49 @@
+{% extends "base_acceso.html" %}
+
+{% block titulo %}Iniciar sesión{% endblock %}
+
+{% block formulario %}
+<h1>Iniciar sesión</h1>
+<p class="bajada">Ingresá con tu usuario o tu email.</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger" role="alert">
+        {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="mb-3">
+        <label for="{{ form.username.id_for_label }}" class="form-label">{{ form.username.label }}</label>
+        <input type="text" name="{{ form.username.html_name }}" id="{{ form.username.id_for_label }}"
+               class="form-control" value="{{ form.username.value|default:'' }}"
+               autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
+    </div>
+
+    <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-baseline">
+            <label for="{{ form.password.id_for_label }}" class="form-label">{{ form.password.label }}</label>
+            <a href="{% url 'usuarios:recuperar' %}" class="enlace-chico">¿Olvidaste tu contraseña?</a>
+        </div>
+        <div class="campo-password">
+            <input type="password" name="{{ form.password.html_name }}" id="{{ form.password.id_for_label }}"
+                   class="form-control" autocomplete="current-password" required>
+            <button type="button" class="btn-ver-password" data-accion="ver-password"
+                    data-objetivo="{{ form.password.id_for_label }}" aria-label="Mostrar contraseña">
+                <i class="bi bi-eye"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="form-check mb-4">
+        <input type="checkbox" name="{{ form.recordarme.html_name }}" id="{{ form.recordarme.id_for_label }}"
+               class="form-check-input" {% if form.recordarme.value %}checked{% endif %}>
+        <label class="form-check-label" for="{{ form.recordarme.id_for_label }}">{{ form.recordarme.label }}</label>
+    </div>
+
+    <button type="submit" class="btn btn-primary w-100 py-2">Ingresar</button>
+</form>
+{% endblock %}

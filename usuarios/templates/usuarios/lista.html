@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block titulo %}Usuarios{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <h1 class="pagina-titulo">Usuarios</h1>
+        <p class="pagina-bajada">Las personas que pueden ingresar al sistema.</p>
+    </div>
+    {% if permisos.crear_usuarios %}
+    <a href="{% url 'usuarios:crear' %}" class="btn btn-acento">
+        <i class="bi bi-person-plus" aria-hidden="true"></i> Nuevo usuario
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="get" class="filtros" role="search">
+    <div class="filtros-buscar">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <label for="q" class="visually-hidden">Buscar</label>
+        <input type="search" id="q" name="q" value="{{ filtros.texto }}" class="form-control"
+               placeholder="Buscar por nombre, usuario, email o documento">
+    </div>
+    <div>
+        <label for="rol" class="visually-hidden">Rol</label>
+        <select id="rol" name="rol" class="form-select">
+            <option value="">Todos los roles</option>
+            {% for rol in roles %}
+            <option value="{{ rol.pk }}" {% if filtros.rol == rol.pk|stringformat:"s" %}selected{% endif %}>{{ rol.nombre }}</option>
+            {% endfor %}
+            <option value="sin_rol" {% if filtros.rol == 'sin_rol' %}selected{% endif %}>Personalizados (sin rol)</option>
+        </select>
+    </div>
+    <div>
+        <label for="estado" class="visually-hidden">Estado</label>
+        <select id="estado" name="estado" class="form-select">
+            <option value="">Activos e inactivos</option>
+            <option value="activos" {% if filtros.estado == 'activos' %}selected{% endif %}>Solo activos</option>
+            <option value="inactivos" {% if filtros.estado == 'inactivos' %}selected{% endif %}>Solo inactivos</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    {% if hay_filtros %}
+    <a href="{% url 'usuarios:lista' %}" class="btn btn-link">Limpiar</a>
+    {% endif %}
+</form>
+
+<div class="tarjeta p-0">
+    {% if pagina.object_list %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead>
+                <tr>
+                    <th scope="col">Usuario</th>
+                    <th scope="col" class="d-none d-lg-table-cell">Email</th>
+                    <th scope="col" class="d-none d-md-table-cell">Rol</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col" class="d-none d-xl-table-cell">Último ingreso</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in pagina %}
+                <tr>
+                    <td>
+                        <a href="{% url 'usuarios:detalle' u.pk %}" class="celda-usuario">
+                            {% include "parciales/_avatar.html" with u=u %}
+                            <span>
+                                <strong>{{ u.get_full_name }}</strong>
+                                <span class="dato texto-suave">{{ u.username }}</span>
+                            </span>
+                        </a>
+                    </td>
+                    <td class="d-none d-lg-table-cell">{{ u.email|default:"—" }}</td>
+                    <td class="d-none d-md-table-cell">{% if u.rol %}{{ u.rol }}{% else %}<span class="texto-suave">Personalizado</span>{% endif %}</td>
+                    <td>
+                        {% if u.is_active %}
+                            <span class="estado estado-activo">Activo</span>
+                        {% else %}
+                            <span class="estado estado-inactivo">Inactivo</span>
+                        {% endif %}
+                    </td>
+                    <td class="d-none d-xl-table-cell texto-suave">{{ u.last_login|date:"j/m/Y H:i"|default:"Nunca" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif hay_filtros %}
+    <div class="vacio">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <p>Ningún usuario coincide con la búsqueda.</p>
+        <a href="{% url 'usuarios:lista' %}" class="btn btn-outline-secondary btn-sm">Ver todos</a>
+    </div>
+    {% else %}
+    <div class="vacio">
+        <i class="bi bi-people" aria-hidden="true"></i>
+        <p>Todavía no hay usuarios cargados.</p>
+        {% if permisos.crear_usuarios %}
+        <a href="{% url 'usuarios:crear' %}" class="btn btn-acento btn-sm">Crear el primer usuario</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% include "parciales/_paginacion.html" with pagina=pagina parametros=parametros %}
+{% endblock %}

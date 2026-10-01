@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block titulo %}Editar mis datos{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{% url 'usuarios:perfil' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Mi perfil</a>
+    <h1 class="pagina-titulo">Editar mis datos</h1>
+    <p class="pagina-bajada">Tu usuario, rol, documento y datos laborales los carga la administración.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="post" enctype="multipart/form-data" novalidate class="formulario">
+    {% csrf_token %}
+
+    {% if form.errors %}
+    <div class="alert alert-danger" role="alert">
+        Revisá los campos marcados en rojo.
+        {% for error in form.non_field_errors %}<br>{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    {% for titulo, campos in form.secciones %}
+    <section class="tarjeta formulario-seccion">
+        <h2 class="tarjeta-titulo">{{ titulo }}</h2>
+        <div class="row g-3">
+            {% for campo, ancho in campos %}
+                {% include "parciales/_campo.html" with campo=campo ancho=ancho %}
+            {% endfor %}
+        </div>
+    </section>
+    {% if forloop.first %}{% include "usuarios/_seccion_foto.html" %}{% endif %}
+    {% endfor %}
+
+    <div class="formulario-acciones">
+        <a href="{% url 'usuarios:perfil' %}" class="btn btn-outline-secondary">Cancelar</a>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+    </div>
+</form>
+{% endblock %}

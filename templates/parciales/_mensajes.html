@@ -1,0 +1,11 @@
+{% comment %} Mensajes de Django (messages.success, messages.error, ...) {% endcomment %}
+{% if messages %}
+<div class="mensajes" role="status">
+    {% for mensaje in messages %}
+    <div class="alert alert-{% if mensaje.tags == 'error' %}danger{% else %}{{ mensaje.tags }}{% endif %} alert-dismissible fade show">
+        {{ mensaje }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

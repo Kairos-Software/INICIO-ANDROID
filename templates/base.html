@@ -1,0 +1,41 @@
+{% extends "base_html.html" %}
+{% comment %}
+    Layout de las pantallas internas (con sesión iniciada): menú lateral + contenido.
+    Las páginas lo extienden y completan:
+      {% block titulo %}     -> título de la pestaña
+      {% block encabezado %} -> título y bajada de la página (opcional)
+      {% block contenido %}  -> la página
+{% endcomment %}
+
+{% block cuerpo %}
+<div class="app">
+    {% include "parciales/_menu.html" %}
+    <div class="fondo-menu" data-accion="cerrar-menu" aria-hidden="true"></div>
+
+    <div class="contenido">
+        <header class="barra-superior">
+            <button type="button" class="btn-menu" data-accion="abrir-menu"
+                    aria-label="Abrir menú" aria-expanded="false" aria-controls="menu-principal">
+                <i class="bi bi-list"></i>
+            </button>
+            {% block barra_superior %}{% endblock %}
+            <div class="barra-superior-derecha">
+                {% include "parciales/_campanita.html" %}
+            </div>
+        </header>
+
+        {% if mantenimiento_activo %}
+        <div class="aviso-mantenimiento" role="status">
+            <i class="bi bi-tools" aria-hidden="true"></i>
+            <span><strong>Modo mantenimiento activo.</strong> Solo los superusuarios pueden usar el sistema.</span>
+            <a href="{% url 'core:mantenimiento' %}">Cambiar</a>
+        </div>
+        {% endif %}
+        <main class="pagina" id="contenido-principal">
+            {% include "parciales/_mensajes.html" %}
+            {% block encabezado %}{% endblock %}
+            {% block contenido %}{% endblock %}
+        </main>
+    </div>
+</div>
+{% endblock %}

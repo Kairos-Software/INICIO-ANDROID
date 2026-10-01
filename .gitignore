@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+entorno/
+
+# Entornos: solo .env.example va al repo
+.env
+.env.*
+!.env.example
+
+*.log
+*.sqlite3
+
+# Django
+staticfiles/
+media/*
+!media/README.md
+*.mo
+*.pot
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Otros
+*.pid
+.playwright-mcp/
+
+# Certificados / claves (nunca al repo)
+secrets/
+*.key
+*.crt
+*.csr
+*.pem

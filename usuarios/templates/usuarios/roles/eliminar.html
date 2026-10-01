@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block titulo %}Eliminar rol {{ rol }}{% endblock %}
+
+{% block contenido %}
+<div class="confirmacion tarjeta">
+    <div class="confirmacion-icono peligro"><i class="bi bi-trash" aria-hidden="true"></i></div>
+    <h1 class="h3">¿Eliminar el rol "{{ rol }}"?</h1>
+
+    {% if cantidad_usuarios %}
+    <p>Lo tienen <strong>{{ cantidad_usuarios }} usuario{{ cantidad_usuarios|pluralize }}</strong>. Van a pasar a tener <strong>permisos personalizados</strong>: pierden los permisos que les daba el rol y conservan solo los individuales que tengan.</p>
+    <ul class="lista-simple">
+        {% for u in usuarios %}<li>{{ u.get_full_name }} <span class="dato texto-suave">{{ u.username }}</span></li>{% endfor %}
+        {% if cantidad_usuarios > usuarios|length %}<li class="texto-suave">y {{ cantidad_usuarios|add:"-10" }} más</li>{% endif %}
+    </ul>
+    {% else %}
+    <p>Ningún usuario tiene este rol.</p>
+    {% endif %}
+    <p class="texto-suave">No se puede deshacer.</p>
+
+    <form method="post" class="d-flex flex-wrap justify-content-center gap-2 mt-4">
+        {% csrf_token %}
+        <a href="{% url 'usuarios:roles_editar' rol.pk %}" class="btn btn-outline-secondary">Cancelar</a>
+        <button type="submit" class="btn btn-danger">Eliminar rol</button>
+    </form>
+</div>
+{% endblock %}

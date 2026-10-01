@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block titulo %}Mi perfil{% endblock %}
+
+{% block encabezado %}
+<div class="ficha-encabezado">
+    {% include "parciales/_avatar.html" with u=user clase="avatar-grande" %}
+    <div class="flex-grow-1">
+        <h1 class="pagina-titulo">{{ user.get_full_name }}</h1>
+        <p class="pagina-bajada">
+            <span class="dato">{{ user.username }}</span>
+            · {{ user.descripcion_rol }}
+        </p>
+    </div>
+    <a href="{% url 'usuarios:perfil_editar' %}" class="btn btn-primary">
+        <i class="bi bi-pencil" aria-hidden="true"></i> Editar mis datos
+    </a>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<div class="row g-4">
+    <div class="col-xl-8">
+        {% for titulo, filas in secciones %}
+        <section class="tarjeta mb-4">
+            <h2 class="tarjeta-titulo">{{ titulo }}</h2>
+            <dl class="ficha-datos">
+                {% for etiqueta, valor in filas %}
+                <div>
+                    <dt>{{ etiqueta|capfirst }}</dt>
+                    <dd>{% if valor %}{{ valor }}{% else %}<span class="texto-suave">—</span>{% endif %}</dd>
+                </div>
+                {% endfor %}
+            </dl>
+        </section>
+        {% endfor %}
+
+        {% for titulo, filas in secciones_cuenta %}
+        <section class="tarjeta mb-4">
+            <h2 class="tarjeta-titulo">{{ titulo }}</h2>
+            <dl class="ficha-datos">
+                {% for etiqueta, valor in filas %}
+                <div>
+                    <dt>{{ etiqueta|capfirst }}</dt>
+                    <dd>{% if valor %}{{ valor }}{% else %}<span class="texto-suave">—</span>{% endif %}</dd>
+                </div>
+                {% endfor %}
+            </dl>
+            <p class="form-text mt-3 mb-0">
+                <i class="bi bi-info-circle" aria-hidden="true"></i>
+                Estos datos los carga la administración. Si hay algo mal, avisale a un administrador.
+            </p>
+        </section>
+        {% endfor %}
+    </div>
+
+    <div class="col-xl-4">
+        <section class="tarjeta mb-4">
+            <h2 class="tarjeta-titulo">Seguridad</h2>
+            <dl class="datos-lista mb-3">
+                <div><dt>Último ingreso</dt><dd>{{ user.last_login|date:"j/m/Y H:i" }}</dd></div>
+            </dl>
+            <a href="{% url 'usuarios:cambiar_password' %}" class="btn btn-outline-secondary w-100">
+                <i class="bi bi-key" aria-hidden="true"></i> Cambiar mi contraseña
+            </a>
+        </section>
+
+        <section class="tarjeta">
+            <h2 class="tarjeta-titulo">Lo que podés hacer en el sistema</h2>
+            {% if user.is_superuser %}
+                <p class="mb-0">Sos superusuario: tenés acceso a todo.</p>
+            {% elif mis_permisos %}
+                {% for modulo, descripciones in mis_permisos %}
+                <h3 class="subtitulo-permisos">{{ modulo }}</h3>
+                <ul class="lista-mis-permisos">
+                    {% for d in descripciones %}<li><i class="bi bi-check2" aria-hidden="true"></i> {{ d }}</li>{% endfor %}
+                </ul>
+                {% endfor %}
+            {% else %}
+                <p class="texto-suave mb-0">Por ahora solo podés gestionar tu propio perfil. Si necesitás más acceso, pedíselo a un administrador.</p>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock %}

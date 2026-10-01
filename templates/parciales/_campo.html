@@ -1,0 +1,24 @@
+{% comment %}
+    Dibuja un campo de formulario completo: etiqueta, control, ayuda y errores.
+    Uso:  {% include "parciales/_campo.html" with campo=form.email %}
+    Opcional: ancho="col-md-4" (por defecto col-md-6)
+    Las clases de Bootstrap del control las pone EstiloBootstrapMixin.
+{% endcomment %}
+<div class="{{ ancho|default:'col-md-6' }}">
+    {% if campo.widget_type == 'checkbox' %}
+        <div class="form-check {% if ancho != 'col-12' %}mt-md-4{% endif %}">
+            {{ campo }}
+            <label class="form-check-label" for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+        </div>
+    {% else %}
+        <label class="form-label" for="{{ campo.id_for_label }}">
+            {{ campo.label|capfirst }}{% if campo.field.required %} <span class="obligatorio" aria-hidden="true">*</span>{% endif %}
+        </label>
+        {{ campo }}
+    {% endif %}
+    {% if campo.errors %}
+        <div class="invalid-feedback d-block">{% for error in campo.errors %}{{ error }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</div>
+    {% elif campo.help_text %}
+        <div class="form-text">{{ campo.help_text|safe }}</div>
+    {% endif %}
+</div>

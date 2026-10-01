@@ -1,0 +1,17 @@
+{% extends "base_acceso.html" %}
+
+{% block titulo %}Contraseña nueva{% endblock %}
+
+{% block formulario %}
+<h1>Elegí tu contraseña nueva</h1>
+<p class="bajada">Para la cuenta <strong class="dato">{{ usuario.username }}</strong>. Al guardarla se cierra la sesión en todos tus dispositivos.</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <div class="row g-3 mb-4">
+        {% include "parciales/_campo.html" with campo=form.new_password1 ancho="col-12" %}
+        {% include "parciales/_campo.html" with campo=form.new_password2 ancho="col-12" %}
+    </div>
+    <button type="submit" class="btn btn-primary w-100 py-2">Guardar contraseña</button>
+</form>
+{% endblock %}

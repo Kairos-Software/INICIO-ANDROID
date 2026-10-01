@@ -1,0 +1,38 @@
+"""
+Borra lo viejo del registro de actividad y las notificaciones ya leídas.
+
+    python manage.py limpiar_registros
+
+Los días se configuran en el .env (ACTIVIDAD_DIAS_CONSERVAR,
+NOTIFICACIONES_DIAS_CONSERVAR). Conviene programarlo una vez por día en el
+servidor (cron o systemd timer).
+"""
+
+from datetime import timedelta
+
+from django.conf import settings
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+
+from actividad.models import RegistroActividad
+from notificaciones.models import Notificacion
+
+
+class Command(BaseCommand):
+    help = 'Borra la actividad vieja y las notificaciones leídas antiguas.'
+
+    def handle(self, *args, **options):
+        ahora = timezone.now()
+        limite_actividad = ahora - timedelta(days=settings.ACTIVIDAD_DIAS_CONSERVAR)
+        limite_notificaciones = ahora - timedelta(days=settings.NOTIFICACIONES_DIAS_CONSERVAR)
+
+        actividad, _ = RegistroActividad.objects.filter(fecha__lt=limite_actividad).delete()
+        notificaciones, _ = Notificacion.objects.filter(
+            leida_en__isnull=False, creada__lt=limite_notificaciones,
+        ).delete()
+
+        self.stdout.write(self.style.SUCCESS(
+            f'Actividad borrada: {actividad} registro(s) de más de '
+            f'{settings.ACTIVIDAD_DIAS_CONSERVAR} días. Notificaciones leídas borradas: '
+            f'{notificaciones} de más de {settings.NOTIFICACIONES_DIAS_CONSERVAR} días.'
+        ))

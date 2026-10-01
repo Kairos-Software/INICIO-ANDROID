@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block titulo %}Permisos de {{ usuario.username }}{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{% url 'usuarios:detalle' usuario.pk %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> {{ usuario.get_full_name }}</a>
+    <h1 class="pagina-titulo">Permisos de {{ usuario.get_full_name }}</h1>
+    <p class="pagina-bajada">
+        {% if usuario.rol %}
+            Tiene el rol <strong>{{ usuario.rol }}</strong>. Acá le podés sumar o quitar permisos solo a esta persona, sin cambiar el rol.
+        {% else %}
+            Tiene <strong>permisos personalizados</strong> (no tiene rol): todo lo que pueda hacer en el sistema se lo das acá.
+        {% endif %}
+    </p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="post" class="formulario">
+    {% csrf_token %}
+    <section class="tarjeta formulario-seccion">
+        <h2 class="tarjeta-titulo">Permisos</h2>
+        {% include "usuarios/_grilla_permisos.html" with grilla=grilla modo="usuario" personalizado=usuario.tiene_permisos_personalizados %}
+    </section>
+
+    <div class="formulario-acciones">
+        {% if hay_excepciones and usuario.rol %}
+        <button type="submit" name="accion" value="volver_al_rol" class="btn btn-outline-secondary me-auto">
+            <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Volver a los permisos del rol
+        </button>
+        {% endif %}
+        <a href="{% url 'usuarios:detalle' usuario.pk %}" class="btn btn-outline-secondary">Cancelar</a>
+        {% if hay_editables %}
+        <button type="submit" name="accion" value="guardar" class="btn btn-primary">Guardar permisos</button>
+        {% endif %}
+    </div>
+</form>
+{% endblock %}

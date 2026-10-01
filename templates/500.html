@@ -1,0 +1,20 @@
+{% load static %}<!DOCTYPE html>
+{% comment %} Página independiente: no usa base_html ni variables del sistema, porque se muestra cuando algo falló (incluso la base de datos). {% endcomment %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Error del sistema</title>
+    <link href="{% static 'css/sistema.css' %}" rel="stylesheet">
+</head>
+<body>
+<main class="error-pagina">
+    <div>
+        <div class="error-codigo">500</div>
+        <h1 style="font-size:1.5rem;margin-top:1rem">Ocurrió un error en el sistema</h1>
+        <p class="texto-suave">El error quedó registrado. Probá de nuevo en unos minutos; si sigue pasando, avisá al soporte técnico.</p>
+        <p><a href="/">Volver al inicio</a></p>
+    </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{% extends "base_acceso.html" %}
+
+{% block titulo %}Código de verificación{% endblock %}
+
+{% block formulario %}
+<a href="{% url 'usuarios:recuperar' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Volver</a>
+<h1>Revisá tu email</h1>
+<p class="bajada">
+    Si los datos son correctos, te mandamos un código de 6 dígitos al email de
+    la cuenta. Vence en 15 minutos. Si no lo ves, fijate en correo no deseado.
+</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <div class="row g-3 mb-4">
+        {% include "parciales/_campo.html" with campo=form.codigo ancho="col-12" %}
+    </div>
+    <button type="submit" name="accion" value="verificar" class="btn btn-primary w-100 py-2">Continuar</button>
+</form>
+
+<form method="post" class="mt-3 text-center">
+    {% csrf_token %}
+    <button type="submit" name="accion" value="reenviar" class="btn btn-link btn-sm">No me llegó, enviar otro código</button>
+</form>
+{% endblock %}

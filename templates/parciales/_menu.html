@@ -1,0 +1,87 @@
+{% comment %}
+    Menú lateral. Cada opción se muestra solo si el usuario tiene el permiso
+    (`permisos` viene de usuarios/context_processors.py). Ocultar una opción
+    es solo visual: la vista igual chequea el permiso en el servidor.
+
+    La opción activa se marca comparando con la URL actual: por nombre
+    (Inicio) o por el comienzo de la ruta (ej: todo lo que empieza con /usuarios/).
+{% endcomment %}
+{% with url_actual=request.resolver_match.view_name %}
+<aside class="menu" id="menu-principal" aria-label="Menú principal">
+    <a href="{% url 'core:inicio' %}" class="menu-marca">
+        <span class="marca-isotipo" aria-hidden="true">{{ NOMBRE_SISTEMA|first|upper }}</span>
+        <span>
+            <span class="marca-nombre d-block">{{ NOMBRE_SISTEMA }}</span>
+            <span class="marca-empresa">{{ NOMBRE_EMPRESA }}</span>
+        </span>
+    </a>
+
+    <nav class="menu-nav">
+        <a href="{% url 'core:inicio' %}" class="menu-link {% if url_actual == 'core:inicio' %}activo{% endif %}"
+           {% if url_actual == 'core:inicio' %}aria-current="page"{% endif %}>
+            <i class="bi bi-house" aria-hidden="true"></i> Inicio
+        </a>
+
+        {% if permisos.ver_usuarios or permisos.ver_roles %}
+        <div class="menu-grupo">Administración</div>
+        {% endif %}
+        {% if permisos.ver_usuarios %}
+        <a href="{% url 'usuarios:lista' %}"
+           class="menu-link {% if request.path|slice:':10' == '/usuarios/' %}activo{% endif %}">
+            <i class="bi bi-people" aria-hidden="true"></i> Usuarios
+        </a>
+        {% endif %}
+        {% if permisos.ver_roles %}
+        <a href="{% url 'usuarios:roles_lista' %}"
+           class="menu-link {% if request.path|slice:':7' == '/roles/' %}activo{% endif %}">
+            <i class="bi bi-shield-check" aria-hidden="true"></i> Roles
+        </a>
+        {% endif %}
+
+        {% if permisos.ver_actividad or user.is_superuser %}
+        <div class="menu-grupo">Sistema</div>
+        {% endif %}
+        {% if permisos.ver_actividad %}
+        <a href="{% url 'actividad:lista' %}"
+           class="menu-link {% if request.path|slice:':11' == '/actividad/' %}activo{% endif %}">
+            <i class="bi bi-clock-history" aria-hidden="true"></i> Actividad
+        </a>
+        {% endif %}
+        {% if user.is_superuser %}
+        <a href="{% url 'core:mantenimiento' %}"
+           class="menu-link {% if url_actual == 'core:mantenimiento' %}activo{% endif %}">
+            <i class="bi bi-cone-striped" aria-hidden="true"></i> Mantenimiento
+        </a>
+        <a href="{% url 'core:herramientas' %}"
+           class="menu-link {% if url_actual == 'core:herramientas' %}activo{% endif %}">
+            <i class="bi bi-wrench-adjustable" aria-hidden="true"></i> Herramientas
+        </a>
+        {% endif %}
+
+        {% if user.is_staff %}
+        <div class="menu-grupo">Técnico</div>
+        <a href="{% url 'admin:index' %}" class="menu-link">
+            <i class="bi bi-tools" aria-hidden="true"></i> Admin de Django
+        </a>
+        {% endif %}
+    </nav>
+
+    <div class="menu-usuario">
+        <a href="{% url 'usuarios:perfil' %}" class="menu-usuario-perfil {% if request.path|slice:':11' == '/mi-perfil/' %}activo{% endif %}" title="Mi perfil">
+            {% include "parciales/_avatar.html" with u=user %}
+            <span class="menu-usuario-datos">
+                <span class="menu-usuario-nombre">{{ user.get_full_name }}</span>
+                <span class="menu-usuario-rol">
+                    {{ user.descripcion_rol }}
+                </span>
+            </span>
+        </a>
+        <form method="post" action="{% url 'usuarios:logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-salir" title="Cerrar sesión" aria-label="Cerrar sesión">
+                <i class="bi bi-box-arrow-right"></i>
+            </button>
+        </form>
+    </div>
+</aside>
+{% endwith %}

@@ -1,0 +1,25 @@
+{% comment %}
+    Paginación. Uso:
+      {% include "parciales/_paginacion.html" with pagina=pagina parametros=parametros %}
+    `pagina`     -> objeto Page de Django (Paginator.get_page)
+    `parametros` -> filtros actuales ya codificados (para no perderlos al cambiar de página)
+{% endcomment %}
+{% if pagina.has_other_pages %}
+<nav class="paginacion" aria-label="Paginación">
+    <span class="texto-suave">
+        {{ pagina.start_index }}–{{ pagina.end_index }} de {{ pagina.paginator.count }}
+    </span>
+    <div class="d-flex gap-2">
+        {% if pagina.has_previous %}
+            <a class="btn btn-outline-secondary btn-sm" href="?{% if parametros %}{{ parametros }}&amp;{% endif %}pagina={{ pagina.previous_page_number }}">
+                <i class="bi bi-chevron-left" aria-hidden="true"></i> Anterior
+            </a>
+        {% endif %}
+        {% if pagina.has_next %}
+            <a class="btn btn-outline-secondary btn-sm" href="?{% if parametros %}{{ parametros }}&amp;{% endif %}pagina={{ pagina.next_page_number }}">
+                Siguiente <i class="bi bi-chevron-right" aria-hidden="true"></i>
+            </a>
+        {% endif %}
+    </div>
+</nav>
+{% endif %}

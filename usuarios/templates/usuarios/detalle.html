@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ usuario.get_full_name }}{% endblock %}
+
+{% block encabezado %}
+<a href="{% url 'usuarios:lista' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Usuarios</a>
+
+<div class="ficha-encabezado">
+    {% include "parciales/_avatar.html" with u=usuario clase="avatar-grande" %}
+    <div class="flex-grow-1">
+        <h1 class="pagina-titulo">{{ usuario.get_full_name }}</h1>
+        <p class="pagina-bajada">
+            <span class="dato">{{ usuario.username }}</span>
+            · {{ usuario.descripcion_rol }}
+            · {% if usuario.is_active %}<span class="estado estado-activo">Activo</span>{% else %}<span class="estado estado-inactivo">Inactivo</span>{% endif %}
+        </p>
+    </div>
+    {% if puede_editar %}
+    <a href="{% url 'usuarios:editar' usuario.pk %}" class="btn btn-primary">
+        <i class="bi bi-pencil" aria-hidden="true"></i> Editar
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block contenido %}
+<div class="row g-4">
+    <div class="col-xl-8">
+        {% for titulo, filas in secciones %}
+        <section class="tarjeta mb-4">
+            <h2 class="tarjeta-titulo">{{ titulo }}</h2>
+            <dl class="ficha-datos">
+                {% for etiqueta, valor in filas %}
+                <div>
+                    <dt>{{ etiqueta|capfirst }}</dt>
+                    <dd>{% if valor or valor == 0 %}{{ valor|linebreaksbr }}{% else %}<span class="texto-suave">—</span>{% endif %}</dd>
+                </div>
+                {% endfor %}
+            </dl>
+        </section>
+        {% endfor %}
+    </div>
+
+    <div class="col-xl-4">
+        <section class="tarjeta mb-4">
+            <h2 class="tarjeta-titulo">Actividad</h2>
+            <dl class="datos-lista">
+                <div><dt>Último ingreso</dt><dd>{{ usuario.last_login|date:"j/m/Y H:i"|default:"Nunca ingresó" }}</dd></div>
+                <div><dt>Fecha de alta</dt><dd>{{ usuario.date_joined|date:"j/m/Y H:i" }}{% if usuario.creado_por %} · por {{ usuario.creado_por.get_full_name }}{% endif %}</dd></div>
+                <div><dt>Última modificación</dt><dd>{{ usuario.modificado|date:"j/m/Y H:i" }}</dd></div>
+                {% if usuario.debe_cambiar_password %}
+                <div><dt>Contraseña</dt><dd>Debe cambiarla en su próximo ingreso</dd></div>
+                {% endif %}
+            </dl>
+            {% if permisos.ver_actividad %}
+            <a href="{% url 'actividad:lista' %}?usuario={{ usuario.pk }}" class="btn btn-outline-secondary btn-sm mt-3">
+                <i class="bi bi-clock-history" aria-hidden="true"></i> Ver su actividad
+            </a>
+            {% endif %}
+        </section>
+
+        {% if puede_editar or puede_restablecer or puede_eliminar or puede_gestionar_permisos %}
+        <section class="tarjeta">
+            <h2 class="tarjeta-titulo">Acciones</h2>
+            <div class="d-grid gap-2">
+                {% if puede_gestionar_permisos %}
+                <a href="{% url 'usuarios:permisos' usuario.pk %}" class="btn btn-outline-secondary text-start">
+                    <i class="bi bi-shield-lock" aria-hidden="true"></i> Permisos
+                    {% if cantidad_excepciones %}<span class="chip ms-auto">{{ cantidad_excepciones }} {% if cantidad_excepciones == 1 %}excepción{% else %}excepciones{% endif %}</span>{% endif %}
+                </a>
+                {% endif %}
+
+                {% if puede_restablecer %}
+                <a href="{% url 'usuarios:restablecer_password' usuario.pk %}" class="btn btn-outline-secondary text-start">
+                    <i class="bi bi-key" aria-hidden="true"></i> Asignar contraseña nueva
+                </a>
+                {% endif %}
+
+                {% if puede_editar %}
+                <form method="post" action="{% url 'usuarios:cambiar_estado' usuario.pk %}">
+                    {% csrf_token %}
+                    {% if usuario.is_active %}
+                    <button type="submit" class="btn btn-outline-secondary w-100 text-start">
+                        <i class="bi bi-slash-circle" aria-hidden="true"></i> Desactivar (no podrá ingresar)
+                    </button>
+                    {% else %}
+                    <button type="submit" class="btn btn-outline-secondary w-100 text-start">
+                        <i class="bi bi-check-circle" aria-hidden="true"></i> Activar
+                    </button>
+                    {% endif %}
+                </form>
+                {% endif %}
+
+                {% if puede_eliminar %}
+                <a href="{% url 'usuarios:eliminar' usuario.pk %}" class="btn btn-outline-danger text-start">
+                    <i class="bi bi-trash" aria-hidden="true"></i> Eliminar usuario
+                </a>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block titulo %}Modo mantenimiento{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">Modo mantenimiento</h1>
+    <p class="pagina-bajada">Mientras está activo, los usuarios ven un aviso y no pueden usar el sistema. Los superusuarios siguen entrando para probar.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+{% if forzado %}
+<div class="alert alert-warning">
+    El modo mantenimiento está <strong>forzado desde el archivo .env</strong> (<span class="dato">MODO_MANTENIMIENTO=True</span>).
+    Mientras siga así, lo que elijas acá no tiene efecto.
+</div>
+{% endif %}
+
+<form method="post" novalidate class="tarjeta formulario-angosto">
+    {% csrf_token %}
+    <div class="row g-3">
+        {% include "parciales/_campo.html" with campo=form.activo ancho="col-12" %}
+        {% include "parciales/_campo.html" with campo=form.mensaje ancho="col-12" %}
+        {% include "parciales/_campo.html" with campo=form.vuelve_aprox ancho="col-12" %}
+    </div>
+    {% if estado.modificado_por %}
+    <p class="form-text mt-3 mb-0">Último cambio: {{ estado.modificado|date:"j/m/Y H:i" }} por {{ estado.modificado_por.get_full_name }}.</p>
+    {% endif %}
+    <div class="formulario-acciones">
+        <a href="{% url 'core:mantenimiento_vista_previa' %}" class="btn btn-outline-secondary" target="_blank" rel="noopener">Ver cómo se ve</a>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+    </div>
+</form>
+{% endblock %}

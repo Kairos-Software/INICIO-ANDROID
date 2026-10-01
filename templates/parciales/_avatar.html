@@ -1,0 +1,10 @@
+{% comment %}
+    Foto del usuario o, si no tiene, sus iniciales.
+    Uso:  {% include "parciales/_avatar.html" with u=usuario %}
+    Opcional: clase="avatar-grande"
+{% endcomment %}
+{% if u.foto %}
+    <img src="{{ u.foto.url }}" alt="" class="avatar {{ clase }}">
+{% else %}
+    <span class="avatar {{ clase }}" aria-hidden="true">{{ u.iniciales }}</span>
+{% endif %}

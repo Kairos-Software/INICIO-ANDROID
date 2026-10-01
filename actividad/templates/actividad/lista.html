@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block titulo %}Actividad{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">Actividad</h1>
+    <p class="pagina-bajada">Quién hizo qué y cuándo en el sistema.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="get" class="filtros" role="search">
+    {% if filtros.usuario_id %}<input type="hidden" name="usuario" value="{{ filtros.usuario_id }}">{% endif %}
+    <div class="filtros-buscar">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <label for="q" class="visually-hidden">Buscar</label>
+        <input type="search" id="q" name="q" value="{{ filtros.texto }}" class="form-control" placeholder="Buscar por usuario o descripción">
+    </div>
+    <div>
+        <label for="accion" class="visually-hidden">Acción</label>
+        <select id="accion" name="accion" class="form-select">
+            <option value="">Todas las acciones</option>
+            {% for valor, texto in acciones %}
+            <option value="{{ valor }}" {% if filtros.accion == valor %}selected{% endif %}>{{ texto }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="modulo" class="visually-hidden">Módulo</label>
+        <select id="modulo" name="modulo" class="form-select">
+            <option value="">Todos los módulos</option>
+            {% for m in modulos %}
+            <option value="{{ m }}" {% if filtros.modulo == m %}selected{% endif %}>{{ m|capfirst }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="filtros-fecha">
+        <label for="desde" class="visually-hidden">Desde</label>
+        <input type="date" id="desde" name="desde" value="{{ filtros.desde }}" class="form-control" title="Desde">
+    </div>
+    <div class="filtros-fecha">
+        <label for="hasta" class="visually-hidden">Hasta</label>
+        <input type="date" id="hasta" name="hasta" value="{{ filtros.hasta }}" class="form-control" title="Hasta">
+    </div>
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    {% if hay_filtros %}<a href="{% url 'actividad:lista' %}" class="btn btn-link">Limpiar</a>{% endif %}
+</form>
+
+{% if filtros.usuario_id %}
+<p class="texto-suave small">Mostrando lo que hizo o lo que le hicieron a un usuario. <a href="{% url 'actividad:lista' %}">Ver toda la actividad</a></p>
+{% endif %}
+
+<div class="tarjeta p-0">
+    {% if pagina.object_list %}
+    <ol class="linea-actividad">
+        {% for r in pagina %}
+        <li class="registro registro-{{ r.accion }}">
+            <span class="registro-icono" aria-hidden="true">
+                {% if r.accion == 'ingreso' %}<i class="bi bi-box-arrow-in-right"></i>
+                {% elif r.accion == 'salida' %}<i class="bi bi-box-arrow-right"></i>
+                {% elif r.accion == 'ingreso_fallido' %}<i class="bi bi-exclamation-triangle"></i>
+                {% elif r.accion == 'crear' %}<i class="bi bi-plus-lg"></i>
+                {% elif r.accion == 'editar' %}<i class="bi bi-pencil"></i>
+                {% elif r.accion == 'eliminar' %}<i class="bi bi-trash"></i>
+                {% elif r.accion == 'seguridad' %}<i class="bi bi-shield-lock"></i>
+                {% else %}<i class="bi bi-gear"></i>{% endif %}
+            </span>
+            <div class="registro-cuerpo">
+                <div class="registro-linea">
+                    <strong>{{ r.usuario_texto|default:"Sistema / anónimo" }}</strong>
+                    <span>{{ r.descripcion }}</span>
+                </div>
+                <div class="registro-meta">
+                    <time datetime="{{ r.fecha|date:'c' }}">{{ r.fecha|date:"j/m/Y H:i:s" }}</time>
+                    {% if r.modulo %} · {{ r.modulo|capfirst }}{% endif %}
+                    {% if r.ip %} · <span class="dato">{{ r.ip }}</span>{% endif %}
+                </div>
+                {% if r.cambios %}
+                <details class="registro-cambios">
+                    <summary>Ver {{ r.cambios|length }} cambio{{ r.cambios|length|pluralize }}</summary>
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th scope="col">Dato</th><th scope="col">Antes</th><th scope="col">Después</th></tr></thead>
+                        <tbody>
+                            {% for campo, valores in r.cambios.items %}
+                            <tr>
+                                <td>{{ campo }}</td>
+                                <td class="texto-suave">{{ valores.0|default:"—" }}</td>
+                                <td>{{ valores.1|default:"—" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </details>
+                {% endif %}
+            </div>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <div class="vacio">
+        <i class="bi bi-clock-history" aria-hidden="true"></i>
+        <p>{% if hay_filtros %}No hay actividad que coincida con los filtros.{% else %}Todavía no hay actividad registrada.{% endif %}</p>
+    </div>
+    {% endif %}
+</div>
+
+{% include "parciales/_paginacion.html" with pagina=pagina parametros=parametros %}
+{% endblock %}

@@ -1,0 +1,31 @@
+{% comment %}
+    Campanita de notificaciones (barra superior). Los datos vienen de
+    notificaciones/context_processors.py. El desplegable es de Bootstrap.
+{% endcomment %}
+<div class="dropdown campanita">
+    <button type="button" class="btn-campanita" data-bs-toggle="dropdown" aria-expanded="false"
+            aria-label="Notificaciones{% if notificaciones_no_leidas %}: {{ notificaciones_no_leidas }} sin leer{% endif %}">
+        <i class="bi bi-bell" aria-hidden="true"></i>
+        {% if notificaciones_no_leidas %}
+        <span class="campanita-contador" aria-hidden="true">{% if notificaciones_no_leidas > 9 %}9+{% else %}{{ notificaciones_no_leidas }}{% endif %}</span>
+        {% endif %}
+    </button>
+    <div class="dropdown-menu dropdown-menu-end campanita-menu">
+        <div class="campanita-encabezado">
+            <strong>Notificaciones</strong>
+            {% if notificaciones_no_leidas %}
+            <form method="post" action="{% url 'notificaciones:marcar_todas' %}">
+                {% csrf_token %}
+                <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+                <button type="submit" class="btn btn-link btn-sm p-0">Marcar todas como leídas</button>
+            </form>
+            {% endif %}
+        </div>
+        {% for n in notificaciones_recientes %}
+            {% include "notificaciones/_item.html" with n=n %}
+        {% empty %}
+            <p class="campanita-vacia">No tenés notificaciones.</p>
+        {% endfor %}
+        <a href="{% url 'notificaciones:lista' %}" class="campanita-ver-todas">Ver todas</a>
+    </div>
+</div>

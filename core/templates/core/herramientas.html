@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% comment %}
+    Herramientas de desarrollador (solo superusuarios). Cada herramienta es
+    un formulario que manda su "slug" (campo herramienta) a la misma vista;
+    la lógica está en core/herramientas_dev.py.
+{% endcomment %}
+
+{% block titulo %}Herramientas{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">Herramientas de desarrollador</h1>
+    <p class="pagina-bajada">Solo para superusuarios. Todo lo que se haga acá queda en el registro de actividad.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+{# ── Estado del sistema ─────────────────────────────────────── #}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Estado del sistema</h2>
+    <dl class="ficha-datos">
+        <div><dt>Entorno</dt><dd>{{ estado.entorno }}{% if estado.debug %} <span class="chip chip-no">DEBUG activo</span>{% endif %}</dd></div>
+        <div><dt>Versiones</dt><dd>Python {{ estado.python }} · Django {{ estado.django }}</dd></div>
+        <div><dt>Base de datos</dt><dd>{{ estado.base_de_datos }} ({{ estado.tamanio_db }})</dd></div>
+        <div><dt>Archivos subidos (media)</dt><dd>{{ estado.tamanio_media }}</dd></div>
+        <div><dt>Mails</dt><dd>{{ estado.mail }}</dd></div>
+        <div><dt>Modo mantenimiento</dt><dd>{% if estado.mantenimiento %}<span class="chip chip-no">Activo</span>{% else %}Desactivado{% endif %} · <a href="{% url 'core:mantenimiento' %}">cambiar</a></dd></div>
+    </dl>
+    <hr>
+    <dl class="ficha-datos">
+        {% for nombre, cantidad in estado.conteos %}
+        <div><dt>{{ nombre }}</dt><dd class="dato">{{ cantidad }}</dd></div>
+        {% endfor %}
+    </dl>
+</section>
+
+<div class="herramientas">
+    {# ── Diagnóstico ─────────────────────────────────────────── #}
+    <h2 class="herramientas-grupo">Diagnóstico</h2>
+
+    <form method="post" class="herramienta tarjeta" id="mail_prueba">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="mail_prueba">
+        <div class="herramienta-texto">
+            <h3>Enviar mail de prueba</h3>
+            <p>Comprueba que el envío de mails funcione (recuperación de contraseña, avisos).</p>
+        </div>
+        <div class="herramienta-accion">
+            <label for="destinatario" class="visually-hidden">Email</label>
+            <input type="email" id="destinatario" name="destinatario" class="form-control" placeholder="{{ user.email|default:'email@ejemplo.com' }}">
+            <button type="submit" class="btn btn-outline-secondary">Enviar</button>
+        </div>
+    </form>
+
+    <form method="post" class="herramienta tarjeta" id="limpiar_cache">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="limpiar_cache">
+        <div class="herramienta-texto">
+            <h3>Limpiar la caché</h3>
+            <p>Desbloquea a quienes quedaron bloqueados por intentos de ingreso fallidos y reinicia los límites de pedidos de código de recuperación.</p>
+        </div>
+        <div class="herramienta-accion"><button type="submit" class="btn btn-outline-secondary">Limpiar</button></div>
+    </form>
+
+    {# ── Usuarios y sesiones ─────────────────────────────────── #}
+    <h2 class="herramientas-grupo">Usuarios y sesiones</h2>
+
+    <form method="post" class="herramienta tarjeta" id="cerrar_sesiones">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="cerrar_sesiones">
+        <div class="herramienta-texto">
+            <h3>Cerrar todas las sesiones</h3>
+            <p>Todos tienen que volver a iniciar sesión (menos vos, en este navegador). Útil si se sospecha que alguien entró con una cuenta ajena.</p>
+        </div>
+        <div class="herramienta-accion"><button type="submit" class="btn btn-outline-secondary">Cerrar sesiones</button></div>
+    </form>
+
+    <form method="post" class="herramienta tarjeta" id="sincronizar_roles">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="sincronizar_roles">
+        <div class="herramienta-texto">
+            <h3>Sincronizar roles iniciales</h3>
+            <p>Crea los roles iniciales que falten y le suma al Administrador los permisos nuevos del sistema. No modifica los demás roles.</p>
+        </div>
+        <div class="herramienta-accion"><button type="submit" class="btn btn-outline-secondary">Sincronizar</button></div>
+    </form>
+
+    {# ── Datos de demostración ───────────────────────────────── #}
+    <h2 class="herramientas-grupo">Datos de demostración</h2>
+
+    <form method="post" class="herramienta tarjeta" id="cargar_demo">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="cargar_demo">
+        <div class="herramienta-texto">
+            <h3>Cargar usuarios de demostración</h3>
+            <p>Crea 5 usuarios de ejemplo (<span class="dato">demo_*</span>), uno por rol y uno personalizado, para probar o mostrar el sistema. Te muestra la contraseña al terminar.</p>
+        </div>
+        <div class="herramienta-accion"><button type="submit" class="btn btn-outline-secondary">Cargar</button></div>
+    </form>
+
+    <form method="post" class="herramienta tarjeta" id="borrar_demo">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="borrar_demo">
+        <div class="herramienta-texto">
+            <h3>Borrar usuarios de demostración</h3>
+            <p>Borra solo los usuarios que empiezan con <span class="dato">demo_</span>.</p>
+        </div>
+        <div class="herramienta-accion"><button type="submit" class="btn btn-outline-secondary">Borrar</button></div>
+    </form>
+
+    {# ── Zona de peligro ─────────────────────────────────────── #}
+    <h2 class="herramientas-grupo peligro">Zona de peligro · no se puede deshacer</h2>
+
+    <form method="post" class="herramienta tarjeta herramienta-peligro" id="borrar_actividad">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="borrar_actividad">
+        <div class="herramienta-texto">
+            <h3>Borrar todo el registro de actividad</h3>
+            <p>Queda solo un registro que dice que lo borraste vos.</p>
+        </div>
+        <div class="herramienta-accion">
+            <label for="conf-actividad" class="visually-hidden">Escribí {{ FRASE_BORRAR }}</label>
+            <input type="text" id="conf-actividad" name="confirmacion" class="form-control" placeholder="Escribí {{ FRASE_BORRAR }}" autocomplete="off">
+            <button type="submit" class="btn btn-outline-danger">Borrar</button>
+        </div>
+    </form>
+
+    <form method="post" class="herramienta tarjeta herramienta-peligro" id="borrar_notificaciones">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="borrar_notificaciones">
+        <div class="herramienta-texto">
+            <h3>Borrar todas las notificaciones</h3>
+            <p>De todos los usuarios, leídas y sin leer.</p>
+        </div>
+        <div class="herramienta-accion">
+            <label for="conf-notif" class="visually-hidden">Escribí {{ FRASE_BORRAR }}</label>
+            <input type="text" id="conf-notif" name="confirmacion" class="form-control" placeholder="Escribí {{ FRASE_BORRAR }}" autocomplete="off">
+            <button type="submit" class="btn btn-outline-danger">Borrar</button>
+        </div>
+    </form>
+
+    <form method="post" class="herramienta tarjeta herramienta-peligro herramienta-reinicio" id="reiniciar">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="reiniciar">
+        <div class="herramienta-texto">
+            <h3>Reiniciar el sistema</h3>
+            <p>Borra <strong>todos los datos</strong> y deja solo a los superusuarios (con sus contraseñas) y los roles iniciales. Pensado para arrancar de cero después de probar.</p>
+            {% if resumen_reinicio %}
+            <p class="mb-1"><strong>Se borraría:</strong></p>
+            <ul class="lista-reinicio">
+                {% for nombre, cantidad in resumen_reinicio %}<li>{{ nombre }}: <span class="dato">{{ cantidad }}</span></li>{% endfor %}
+            </ul>
+            {% else %}
+            <p class="texto-suave">No hay datos para borrar.</p>
+            {% endif %}
+        </div>
+        <div class="herramienta-accion herramienta-accion-columna">
+            <label for="conf-reinicio" class="form-label">Escribí {{ FRASE_REINICIO }}</label>
+            <input type="text" id="conf-reinicio" name="confirmacion" class="form-control" autocomplete="off">
+            <label for="password-reinicio" class="form-label">Tu contraseña</label>
+            <input type="password" id="password-reinicio" name="password" class="form-control" autocomplete="current-password">
+            <button type="submit" class="btn btn-danger">Reiniciar el sistema</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

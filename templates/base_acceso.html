@@ -1,0 +1,40 @@
+{% extends "base_html.html" %}
+{% load momento %}
+{% comment %}
+    Layout de las pantallas sin sesión (login, recuperar contraseña).
+    Izquierda: el momento (saludo + hora). Derecha: el formulario.
+    Las páginas completan {% block formulario %}.
+{% endcomment %}
+
+{% block cuerpo %}
+<div class="acceso">
+    <section class="acceso-momento" aria-label="Bienvenida">
+        <div class="menu-marca">
+            <span class="marca-isotipo" aria-hidden="true">{{ NOMBRE_SISTEMA|first|upper }}</span>
+            <span>
+                <span class="marca-nombre d-block">{{ NOMBRE_SISTEMA }}</span>
+                <span class="marca-empresa">{{ NOMBRE_EMPRESA }}</span>
+            </span>
+        </div>
+
+        <div>
+            <time class="momento-hora d-block" data-momento="hora">{% now "H:i" %}</time>
+            <p class="acceso-saludo"><span data-momento="saludo">{% saludo %}</span>.</p>
+            <p class="acceso-fecha">{% now "l j \d\e F" %}</p>
+            <div class="linea-dia" data-momento="linea" style="--avance-dia: {% avance_dia %}" aria-hidden="true"></div>
+            <div class="linea-dia-marcas" aria-hidden="true">
+                <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
+            </div>
+        </div>
+
+        <p class="acceso-pie">{{ NOMBRE_EMPRESA }} · {% now "Y" %}</p>
+    </section>
+
+    <main class="acceso-formulario">
+        <div class="acceso-caja">
+            {% include "parciales/_mensajes.html" %}
+            {% block formulario %}{% endblock %}
+        </div>
+    </main>
+</div>
+{% endblock %}

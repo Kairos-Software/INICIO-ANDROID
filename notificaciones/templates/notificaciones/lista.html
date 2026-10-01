@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block titulo %}Notificaciones{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <h1 class="pagina-titulo">Notificaciones</h1>
+        <p class="pagina-bajada">Avisos del sistema para vos.</p>
+    </div>
+    {% if notificaciones_no_leidas %}
+    <form method="post" action="{% url 'notificaciones:marcar_todas' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-check2-all" aria-hidden="true"></i> Marcar todas como leídas</button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block contenido %}
+<nav class="pestanias mb-3" aria-label="Filtrar notificaciones">
+    <a href="{% url 'notificaciones:lista' %}" class="{% if not solo_no_leidas %}activa{% endif %}">Todas</a>
+    <a href="{% url 'notificaciones:lista' %}?ver=no_leidas" class="{% if solo_no_leidas %}activa{% endif %}">
+        Sin leer{% if notificaciones_no_leidas %} ({{ notificaciones_no_leidas }}){% endif %}
+    </a>
+</nav>
+
+<div class="tarjeta p-0 lista-notificaciones">
+    {% for n in pagina %}
+        {% include "notificaciones/_item.html" with n=n %}
+    {% empty %}
+    <div class="vacio">
+        <i class="bi bi-bell" aria-hidden="true"></i>
+        <p>{% if solo_no_leidas %}No tenés notificaciones sin leer.{% else %}Todavía no tenés notificaciones.{% endif %}</p>
+    </div>
+    {% endfor %}
+</div>
+
+{% include "parciales/_paginacion.html" with pagina=pagina parametros=parametros %}
+{% endblock %}
