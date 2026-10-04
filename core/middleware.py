@@ -39,6 +39,7 @@ class ModoMantenimientoMiddleware:
             reverse('usuarios:login'),
             reverse('usuarios:logout'),
             '/admin/',
+            '/api/',   # la API lo resuelve sola y responde JSON (api/permisos.py)
             settings.STATIC_URL,
             settings.MEDIA_URL,
         )

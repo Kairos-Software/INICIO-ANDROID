@@ -1,5 +1,6 @@
 """
-Borra lo viejo del registro de actividad y las notificaciones ya leídas.
+Borra lo viejo del registro de actividad, las notificaciones ya leídas y
+las sesiones de la app vencidas.
 
     python manage.py limpiar_registros
 
@@ -15,6 +16,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from actividad.models import RegistroActividad
+from api.tokens import borrar_vencidos
 from notificaciones.models import Notificacion
 
 
@@ -30,9 +32,11 @@ class Command(BaseCommand):
         notificaciones, _ = Notificacion.objects.filter(
             leida_en__isnull=False, creada__lt=limite_notificaciones,
         ).delete()
+        tokens = borrar_vencidos()
 
         self.stdout.write(self.style.SUCCESS(
             f'Actividad borrada: {actividad} registro(s) de más de '
             f'{settings.ACTIVIDAD_DIAS_CONSERVAR} días. Notificaciones leídas borradas: '
-            f'{notificaciones} de más de {settings.NOTIFICACIONES_DIAS_CONSERVAR} días.'
+            f'{notificaciones} de más de {settings.NOTIFICACIONES_DIAS_CONSERVAR} días. '
+            f'Sesiones de la app vencidas borradas: {tokens}.'
         ))

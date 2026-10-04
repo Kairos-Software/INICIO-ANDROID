@@ -1,0 +1,150 @@
+import 'package:app_movil/api/cliente.dart';
+import 'package:app_movil/api/modelos.dart';
+import 'package:app_movil/campos.dart';
+import 'package:app_movil/utiles.dart';
+import 'package:app_movil/widgets/formulario.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  group('ApiError', () {
+    test('lee el formato de error de la API', () {
+      final error = ApiError.desdeRespuesta(400, {
+        'codigo': 'datos_invalidos',
+        'detalle': 'Revisá los datos enviados.',
+        'campos': {
+          'email': ['Ya existe un usuario con ese email.'],
+          'general': ['Algo general.'],
+        },
+      });
+      expect(error.codigo, 'datos_invalidos');
+      expect(error.campo('email'), 'Ya existe un usuario con ese email.');
+      expect(error.campo('username'), isNull);
+      expect(error.general, 'Algo general.');
+    });
+
+    test('una respuesta que no es JSON se informa entendible', () {
+      final error = ApiError.desdeRespuesta(500, null);
+      expect(error.codigo, 'respuesta_invalida');
+      expect(error.detalle, contains('500'));
+    });
+
+    test('401 es sesión vencida', () {
+      expect(ApiError.desdeRespuesta(401, {'codigo': 'token_invalido', 'detalle': 'x'}).sesionVencida, isTrue);
+    });
+  });
+
+  group('ApiCliente.direccion', () {
+    final api = ApiCliente(urlBase: 'http://192.168.1.10:8000/api/v1');
+
+    test('arma rutas relativas sobre la base', () {
+      expect(api.direccion('usuarios/5/').toString(), 'http://192.168.1.10:8000/api/v1/usuarios/5/');
+    });
+
+    test('agrega los filtros que no están vacíos', () {
+      final uri = api.direccion('usuarios/', {'q': 'ana', 'estado': ''});
+      expect(uri.queryParameters, {'q': 'ana'});
+    });
+
+    test('respeta las direcciones completas de la paginación', () {
+      const siguiente = 'http://192.168.1.10:8000/api/v1/usuarios/?pagina=2';
+      expect(api.direccion(siguiente).toString(), siguiente);
+    });
+  });
+
+  group('Modelos', () {
+    test('Perfil y sus permisos', () {
+      final perfil = Perfil({
+        'id': 1,
+        'username': 'ana',
+        'first_name': 'Ana María',
+        'es_superusuario': false,
+        'permisos': ['ver_usuarios'],
+        'permisos_por_modulo': [
+          {'modulo': 'Usuarios', 'permisos': ['Ver la lista']},
+        ],
+      });
+      expect(perfil.primerNombre, 'Ana');
+      expect(perfil.puede('ver_usuarios'), isTrue);
+      expect(perfil.puede('crear_usuarios'), isFalse);
+      expect(perfil.permisosPorModulo.first.$1, 'Usuarios');
+    });
+
+    test('el superusuario puede todo', () {
+      expect(Perfil({'id': 1, 'es_superusuario': true}).puede('lo_que_sea'), isTrue);
+    });
+
+    test('Pagina', () {
+      final pagina = Pagina.desdeJson({
+        'cantidad': 30,
+        'siguiente': 'http://x/?pagina=2',
+        'resultados': [
+          {'id': 1, 'username': 'ana'},
+        ],
+      }, UsuarioResumen.new);
+      expect(pagina.cantidad, 30);
+      expect(pagina.resultados.single.username, 'ana');
+      expect(pagina.siguiente, isNotNull);
+    });
+  });
+
+  group('Formulario', () {
+    test('devuelve lo cargado listo para la API', () {
+      final datos = DatosFormulario(seccionesUsuario, {
+        'first_name': 'Ana',
+        'genero': 'femenino',
+        'fecha_nacimiento': '1990-05-20',
+        'rol': {'id': 3, 'nombre': 'Consulta'},
+        'email': null,
+      });
+      datos.textos['telefono']!.text = ' 111 ';
+      final valores = datos.valores();
+      expect(valores['first_name'], 'Ana');
+      expect(valores['telefono'], '111');
+      expect(valores['genero'], 'femenino');
+      expect(valores['fecha_nacimiento'], '1990-05-20');
+      expect(valores['email'], '');
+      expect(datos.rol, 3);
+      expect(datos.textos['fecha_nacimiento']!.text, '20/05/1990');
+      datos.liberar();
+    });
+
+    test('muestra los valores legibles', () {
+      final filas = filasDeSeccion(seccionesPerfil.first, {
+        'first_name': 'Ana',
+        'genero': 'femenino',
+        'genero_texto': 'Femenino',
+        'fecha_nacimiento': '1990-05-20',
+      });
+      expect(filas, contains(('Género', 'Femenino')));
+      expect(filas, contains(('Fecha de nacimiento', '20/05/1990')));
+    });
+  });
+
+  test('Canales: solo se reproducen las fuentes HLS, en orden', () {
+    final categoria = CategoriaCanales({
+      'nombre': 'Noticias',
+      'canales': [
+        {
+          'id': 1,
+          'nombre': 'Canal 26',
+          'numero': '26',
+          'logo': 'https://logo/26.png',
+          'fuentes': [
+            {'id': 1, 'url': 'https://www.youtube.com/x/live', 'tipo': 'youtube'},
+            {'id': 2, 'url': 'https://a/main.m3u8', 'tipo': 'hls'},
+            {'id': 3, 'url': 'https://b/main.m3u8', 'tipo': 'hls'},
+          ],
+        },
+      ],
+    });
+    final canal = categoria.canales.single;
+    expect(canal.numero, '26');
+    expect(canal.fuentesReproducibles.map((f) => f.url), ['https://a/main.m3u8', 'https://b/main.m3u8']);
+  });
+
+  test('fechaLegible', () {
+    expect(fechaLegible('2026-10-02'), '02/10/2026');
+    expect(fechaLegible(null), '');
+    expect(fechaLegible('2026-10-02T15:04:00'), '02/10/2026 15:04');
+  });
+}

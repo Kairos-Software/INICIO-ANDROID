@@ -30,6 +30,7 @@ class CambioPasswordObligatorioMiddleware:
         permitidas = (
             reverse('usuarios:cambiar_password'),
             reverse('usuarios:logout'),
+            '/api/',   # la API lo resuelve sola y responde JSON (api/permisos.py)
             settings.STATIC_URL,
             settings.MEDIA_URL,
         )

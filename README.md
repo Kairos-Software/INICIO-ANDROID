@@ -22,8 +22,10 @@ Cada carpeta tiene su propio `README.md` que explica qué contiene y para qué s
 | `usuarios/` | Usuarios, roles, permisos, login, perfil y recuperación de contraseña |
 | `actividad/` | Registro de actividad: quién hizo qué y cuándo |
 | `notificaciones/` | Avisos internos (la campanita) |
+| `canales/` | Canales de TV en vivo: categorías, canales, fuentes e importación de listas M3U |
 | `herramientas/` | Código reutilizable en todo el sistema (modelo base, formularios...) |
-| `api/` | Vacía por ahora: lugar reservado para la API (apps de celular/TV, otros sistemas) |
+| `api/` | La API (JSON) para las apps de celular/TV y otros sistemas: login por token, perfil, usuarios, notificaciones |
+| `app_movil/` | La app Android (Flutter) que usa la API. Tiene su propio README |
 | `templates/` | HTML generales, compartidos por todas las apps |
 | `static/` | CSS, JavaScript e imágenes generales |
 | `media/` | Archivos que suben los usuarios (no va al repo) |
@@ -83,15 +85,15 @@ DEFAULT_FROM_EMAIL=Nombre del sistema <cuenta@gmail.com>
 
 `python manage.py limpiar_registros` borra la actividad más vieja que
 `ACTIVIDAD_DIAS_CONSERVAR` y las notificaciones leídas más viejas que
-`NOTIFICACIONES_DIAS_CONSERVAR`. Conviene correrlo una vez por día (cron o
+`NOTIFICACIONES_DIAS_CONSERVAR`, y las sesiones de la app vencidas
+(`API_TOKEN_DIAS`). Conviene correrlo una vez por día (cron o
 systemd timer).
 
 ## Cómo se organiza una app
 
-La lógica del sistema se separa de la forma de mostrarla. Así, el día de
-mañana se puede agregar una API (Django REST Framework) para un frontend en
-React, Vue o una app móvil **sin tirar nada**: la API usa los mismos modelos,
-permisos y servicios que las pantallas HTML.
+La lógica del sistema se separa de la forma de mostrarla. Por eso la API
+(`api/`, con Django REST Framework) usa los mismos modelos, permisos,
+formularios y servicios que las pantallas HTML, sin repetir reglas.
 
 | Archivo | Capa | Qué contiene |
 |---|---|---|
@@ -103,7 +105,6 @@ permisos y servicios que las pantallas HTML.
 | `views.py` o `views/` | Presentación | Recibe el pedido, llama a servicios/consultas y muestra un template. Sin lógica de negocio. Si crece, se vuelve una carpeta con un archivo por tema. |
 | `urls.py` | Presentación | Las rutas de la app |
 | `templates/<app>/` | Presentación | Los HTML de la app |
-| `api/` *(futuro)* | Presentación | Vistas que devuelven datos (JSON) en vez de HTML, usando los mismos servicios |
 
 Regla de oro: si algo tendría que funcionar igual desde una pantalla HTML y
 desde una API, va en la capa **Base**, nunca en `views.py` ni en un template.

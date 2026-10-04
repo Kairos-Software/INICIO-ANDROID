@@ -57,6 +57,7 @@ def _tamanio_legible(bytes_):
 
 def estado_del_sistema():
     """Datos para mostrar arriba de la pantalla de herramientas."""
+    from api.models import TokenAcceso
     from core.mantenimiento import estado_actual
     from usuarios.models import Rol
 
@@ -85,7 +86,8 @@ def estado_del_sistema():
             ('Roles', Rol.objects.count()),
             ('Registros de actividad', RegistroActividad.objects.count()),
             ('Notificaciones', Notificacion.objects.count()),
-            ('Sesiones abiertas', Session.objects.count()),
+            ('Sesiones abiertas (web)', Session.objects.count()),
+            ('Sesiones abiertas (app)', TokenAcceso.objects.count()),
         ],
     }
 
@@ -112,10 +114,17 @@ def enviar_mail_prueba(usuario, destinatario):
 
 
 def cerrar_todas_las_sesiones(usuario, sesion_actual):
-    """Todos (menos quien lo ejecuta, en este navegador) tienen que volver a iniciar sesión."""
+    """
+    Todos tienen que volver a iniciar sesión, en la web y en la app. Quedan
+    abiertas solo las de quien lo ejecuta (este navegador y sus apps).
+    """
+    from api.models import TokenAcceso
+
     cantidad, _ = Session.objects.exclude(session_key=sesion_actual).delete()
-    _registrar(usuario, f'Cerró todas las sesiones abiertas ({cantidad})')
-    return f'Se cerraron {cantidad} sesión(es). Todos van a tener que volver a iniciar sesión.'
+    cantidad_app, _ = TokenAcceso.objects.exclude(usuario=usuario).delete()
+    _registrar(usuario, f'Cerró todas las sesiones abiertas ({cantidad} en la web, {cantidad_app} en la app)')
+    return (f'Se cerraron {cantidad} sesión(es) en la web y {cantidad_app} en la app. '
+            'Todos van a tener que volver a iniciar sesión.')
 
 
 def limpiar_cache(usuario):

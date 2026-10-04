@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mientras arranca la app: la pantalla de arranque (drawable/launch_background.xml) -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+    <!-- Detrás de Flutter mientras corre: el mismo azul noche, así no hay destellos blancos -->
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/fondo_arranque</item>
+    </style>
+</resources>

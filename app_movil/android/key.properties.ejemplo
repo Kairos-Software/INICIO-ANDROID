@@ -1,0 +1,11 @@
+# Copiar este archivo como "key.properties" (en esta misma carpeta android/)
+# y completar con los datos de TU clave. key.properties NO va al repo.
+#
+# storeFile: dónde está el archivo .jks (ruta completa, con / en vez de \).
+#            Guardalo FUERA del proyecto y hacé copias de seguridad: si lo
+#            perdés, no vas a poder publicar actualizaciones de la app.
+
+storeFile=C:/Users/Marcos/claves/kairos-movil.jks
+storePassword=LA_CONTRASEÑA_DEL_ALMACEN
+keyAlias=kairos
+keyPassword=LA_CONTRASEÑA_DE_LA_CLAVE

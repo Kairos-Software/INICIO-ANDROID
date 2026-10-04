@@ -10,7 +10,7 @@ Páginas generales del sistema que no pertenecen a ningún módulo en particular
   todos los templates.
 - El **modo mantenimiento**.
 - Las **herramientas de desarrollador**.
-- El comando **`limpiar_registros`** (borra actividad y notificaciones viejas).
+- El comando **`limpiar_registros`** (borra actividad y notificaciones viejas, y las sesiones de la app vencidas).
 
 ## Archivos
 
@@ -18,13 +18,13 @@ Páginas generales del sistema que no pertenecen a ningún módulo en particular
 |---|---|---|
 | `models.py` | Base | `EstadoMantenimiento`: una sola fila con el estado del modo mantenimiento. |
 | `mantenimiento.py` | Base | Lee el estado (con 5 segundos de caché) y lo guarda (registrándolo en la actividad). |
-| `middleware.py` | Presentación | `ModoMantenimientoMiddleware`: si está activo, muestra "Estamos actualizando" a todos menos a los superusuarios, y les cierra la sesión a los que la tenían abierta (así el login queda libre para un superusuario). |
+| `middleware.py` | Presentación | `ModoMantenimientoMiddleware`: si está activo, muestra "Estamos actualizando" a todos menos a los superusuarios, y les cierra la sesión a los que la tenían abierta (así el login queda libre para un superusuario). No toca `/api/`: la API responde su propio error 503 en JSON. |
 | `herramientas_dev.py` | Base | Las herramientas de desarrollador: estado del sistema, mail de prueba, cerrar sesiones, limpiar caché, roles, datos de demostración, borrar actividad/notificaciones, reiniciar el sistema. |
 | `forms.py` | Presentación | Formulario del modo mantenimiento. |
 | `views.py` | Presentación | Inicio, mantenimiento (configuración y vista previa), herramientas, páginas de error. |
 | `urls.py` | Presentación | `/` (inicio), `/sistema/mantenimiento/` y `/sistema/herramientas/`. |
 | `context_processors.py` | Presentación | Deja `NOMBRE_SISTEMA` y `NOMBRE_EMPRESA` en todos los templates (se configuran en el `.env`) y, a los superusuarios, si el mantenimiento está activo. |
-| `management/commands/` | Técnica | `limpiar_registros` (borra actividad y notificaciones leídas viejas) y `mantenimiento` (activar/desactivar desde la terminal). |
+| `management/commands/` | Técnica | `limpiar_registros` (borra actividad, notificaciones leídas viejas y sesiones de la app vencidas) y `mantenimiento` (activar/desactivar desde la terminal). |
 | `tests/` | Técnica | Pruebas automáticas. |
 | `templatetags/momento.py` | Presentación | `{% saludo %}` y `{% avance_dia %}`: saludo según la hora y avance del día, para el "momento" del login y del inicio. |
 | `templates/core/` | Presentación | `inicio.html` (saludo, cuenta, accesos rápidos), `mantenimiento_config.html` y `herramientas.html`. |
@@ -80,7 +80,7 @@ ni permisos). Todo lo que se hace queda en el registro de actividad.
 |---|---|
 | Estado | Entorno, versiones, base de datos y su tamaño, mails, mantenimiento, cantidades. |
 | Diagnóstico | Enviar mail de prueba · Limpiar la caché (desbloquea logins bloqueados). |
-| Usuarios y sesiones | Cerrar todas las sesiones (menos la propia) · Sincronizar roles iniciales. |
+| Usuarios y sesiones | Cerrar todas las sesiones, en la web y en la app (menos las propias) · Sincronizar roles iniciales. |
 | Demostración | Cargar / borrar usuarios `demo_*`. |
 | Zona de peligro | Borrar toda la actividad · Borrar todas las notificaciones (escribiendo BORRAR) · **Reiniciar el sistema**: borra todos los datos menos los superusuarios (escribiendo REINICIAR + tu contraseña; antes muestra qué se borraría). |
 

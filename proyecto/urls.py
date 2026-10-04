@@ -9,6 +9,7 @@ urlpatterns = [
     path('', include('usuarios.urls')),
     path('actividad/', include('actividad.urls')),
     path('notificaciones/', include('notificaciones.urls')),
+    path('api/', include('api.urls')),
 ]
 
 if settings.DEBUG:

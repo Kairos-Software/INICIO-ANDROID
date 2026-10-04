@@ -62,12 +62,15 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.humanize',
+    'rest_framework',  # Django REST Framework: la herramienta para armar la API
     # Apps propias (se agregan a medida que se crean)
     'herramientas',  # código reutilizable (formularios, modelo base...)
     'core',  # páginas generales del sistema (inicio), mantenimiento y datos de la marca
     'usuarios',  # usuarios, roles, permisos, login, perfil, recuperación de contraseña
     'actividad',  # registro de actividad: quién hizo qué y cuándo
     'notificaciones',  # avisos internos (la campanita)
+    'canales',  # canales de TV en vivo: categorías, canales y sus fuentes (listas M3U)
+    'api',  # la API (JSON) para las apps de celular/TV: login por token, perfil, usuarios...
 ]
 
 # Usuario personalizado. IMPORTANTE: no cambiarlo después del primer migrate
@@ -95,6 +98,9 @@ MODO_MANTENIMIENTO = env_bool('MODO_MANTENIMIENTO')
 # Cuántos días se guardan (después los borra `limpiar_registros`)
 ACTIVIDAD_DIAS_CONSERVAR = int(os.environ.get('ACTIVIDAD_DIAS_CONSERVAR', '365'))
 NOTIFICACIONES_DIAS_CONSERVAR = int(os.environ.get('NOTIFICACIONES_DIAS_CONSERVAR', '90'))
+
+# Días que dura la sesión de la app sin usarla (cada uso la renueva)
+API_TOKEN_DIAS = int(os.environ.get('API_TOKEN_DIAS', '30'))
 
 # Marca del sistema (se muestra en el login, el menú y los mails)
 NOMBRE_SISTEMA = os.environ.get('NOMBRE_SISTEMA', 'Proyecto Base')
@@ -196,6 +202,28 @@ STATICFILES_DIRS = [
 # Media files (uploads: fotos de perfil, adjuntos, etc.)
 MEDIA_URL = os.environ.get('MEDIA_URL', '/media/')
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# API (Django REST Framework) — ver api/README.md
+REST_FRAMEWORK = {
+    # Cómo se identifica quien pide: la app con su token; el navegador con
+    # la sesión de siempre (para probar la API logueado en el sistema).
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'api.autenticacion.TokenBearer',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    # Por defecto todo pide sesión iniciada y respeta mantenimiento y "debe cambiar la contraseña"
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+        'api.permisos.SistemaDisponible',
+    ],
+    # Solo JSON. Con DEBUG, además, la página para probar la API desde el navegador.
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        *(['rest_framework.renderers.BrowsableAPIRenderer'] if DEBUG else []),
+    ],
+    'EXCEPTION_HANDLER': 'api.errores.manejar_error',
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
+}
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
