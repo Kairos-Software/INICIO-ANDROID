@@ -32,7 +32,7 @@ class BarraFlotante extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: Colores.superficie.withValues(alpha: 0.96),
+          color: Colores.fondoAlto.withValues(alpha: 0.97),
           borderRadius: BorderRadius.circular(Radios.grande),
           border: Border.all(color: Colores.borde),
           boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, 10))],
@@ -64,9 +64,11 @@ class _Item extends StatelessWidget {
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(vertical: 10),
+        // Activo = como el item activo del menú del panel: velo celeste/azul con borde celeste
         decoration: BoxDecoration(
-          gradient: activo ? Degradados.principal : null,
+          gradient: activo ? Degradados.activo : null,
           borderRadius: BorderRadius.circular(Radios.grande - 6),
+          border: Border.all(color: activo ? Colores.celeste.withValues(alpha: 0.25) : Colors.transparent),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -75,14 +77,14 @@ class _Item extends StatelessWidget {
               isLabelVisible: item.contador > 0,
               backgroundColor: Colores.peligro,
               label: Text('${item.contador}'),
-              child: Icon(activo ? item.iconoActivo : item.icono, color: activo ? Colors.white : Colores.textoSuave),
+              child: Icon(activo ? item.iconoActivo : item.icono, color: activo ? Colores.celeste : Colores.textoSuave),
             ),
             const SizedBox(height: 2),
             Text(
               item.etiqueta,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: activo ? FontWeight.w600 : FontWeight.w500,
+                fontWeight: activo ? FontWeight.w700 : FontWeight.w600,
                 color: activo ? Colors.white : Colores.textoSuave,
               ),
             ),

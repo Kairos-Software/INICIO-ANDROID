@@ -148,7 +148,7 @@ class _Inicio extends StatelessWidget {
                         Text(saludo(), style: const TextStyle(color: Colores.textoSuave)),
                         Text(
                           nombre,
-                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colores.texto, height: 1.2),
+                          style: estiloTitulo(28).copyWith(height: 1.2),
                         ),
                         const SizedBox(height: 10),
                         Etiqueta(perfil.descripcionRol),

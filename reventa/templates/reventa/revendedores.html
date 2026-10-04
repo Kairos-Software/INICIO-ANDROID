@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block titulo %}Revendedores{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <h1 class="pagina-titulo">Revendedores</h1>
+        <p class="pagina-bajada">Quienes venden el servicio a sus propios clientes.</p>
+    </div>
+    <a href="{% url 'reventa:revendedor_nuevo' %}" class="btn btn-acento">
+        <i class="bi bi-person-plus" aria-hidden="true"></i> Nuevo revendedor
+    </a>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="get" class="filtros" role="search">
+    <div class="filtros-buscar">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <label for="q" class="visually-hidden">Buscar</label>
+        <input type="search" id="q" name="q" value="{{ texto }}" class="form-control" placeholder="Buscar por nombre o usuario">
+    </div>
+    <button type="submit" class="btn btn-primary">Buscar</button>
+    {% if texto %}<a href="{% url 'reventa:revendedores' %}" class="btn btn-link">Limpiar</a>{% endif %}
+</form>
+
+<div class="tarjeta p-0">
+    {% if revendedores %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr>
+                <th scope="col">Revendedor</th><th scope="col">Usuario</th><th scope="col">Créditos</th>
+                <th scope="col">Clientes vigentes</th><th scope="col">Precio por dispositivo</th>
+            </tr></thead>
+            <tbody>
+                {% for r in revendedores %}
+                <tr>
+                    <td><a href="{% url 'reventa:revendedor' r.pk %}">{{ r }}</a></td>
+                    <td class="texto-suave">{{ r.usuario.username }}{% if not r.usuario.is_active %} <span class="chip chip-no">Inactivo</span>{% endif %}</td>
+                    <td class="dato">{{ r.saldo_actual }}</td>
+                    <td class="dato">{{ r.clientes_vigentes }}</td>
+                    <td class="dato">$ {{ r.precio_pantalla|floatformat:2|intcomma }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="vacio">
+        <i class="bi bi-shop" aria-hidden="true"></i>
+        <p>{% if texto %}Ningún revendedor coincide con la búsqueda.{% else %}Todavía no hay revendedores.{% endif %}</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

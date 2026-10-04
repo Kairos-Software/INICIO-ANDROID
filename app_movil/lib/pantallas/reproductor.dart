@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../api/modelos.dart';
+import '../sesion.dart';
 import '../tema.dart';
 import 'canales.dart';
 
@@ -14,10 +15,17 @@ import 'canales.dart';
 /// Prueba las fuentes del canal en orden: si una no arranca, da error o se
 /// queda trabada cargando, pasa sola a la siguiente (failover). Si ninguna
 /// anda, muestra el error con "Reintentar".
+///
+/// Con el control remoto (TV): arriba / abajo o CH+ / CH− cambian de canal
+/// (zapping), OK o cualquier flecha muestra los datos del canal, y "Atrás"
+/// vuelve a la lista.
 class PantallaReproductor extends StatefulWidget {
-  const PantallaReproductor({super.key, required this.canal});
+  const PantallaReproductor({super.key, required this.canal, this.todos = const []});
 
   final Canal canal;
+
+  /// Todos los canales en orden, para el zapping. Vacío = sin zapping.
+  final List<Canal> todos;
 
   @override
   State<PantallaReproductor> createState() => _PantallaReproductorState();
@@ -34,7 +42,14 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
   Timer? _ocultarControles;
   Timer? _vigiaTrabado;
 
-  List<FuenteCanal> get _fuentes => widget.canal.fuentesReproducibles;
+  /// El canal que se está mirando (cambia con el zapping, sin salir de esta pantalla).
+  late Canal _canal = widget.canal;
+
+  /// Sube cada vez que se empieza a probar una fuente: si mientras una carga
+  /// se cambia de canal, su resultado (que llega tarde) se descarta.
+  int _intento = 0;
+
+  List<FuenteCanal> get _fuentes => _canal.fuentesReproducibles;
 
   @override
   void initState() {
@@ -58,6 +73,7 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
   }
 
   Future<void> _probarFuente(int indice) async {
+    final intento = ++_intento;
     _vigiaTrabado?.cancel();
     final anterior = _video;
     setState(() {
@@ -66,26 +82,34 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
       _error = null;
     });
     await anterior?.dispose();
+    if (intento != _intento) return;
 
     if (indice >= _fuentes.length) {
-      setState(() => _error = _fuentes.isEmpty
-          ? 'Este canal no tiene una señal que la app pueda reproducir.'
-          : 'No se pudo conectar con la señal. Puede estar caída o no disponible en tu zona.');
+      setState(
+        () => _error = _fuentes.isEmpty
+            ? 'Este canal no tiene una señal que la app pueda reproducir.'
+            : 'No se pudo conectar con la señal. Puede estar caída o no disponible en tu zona.',
+      );
       return;
     }
 
+    final fuente = _fuentes[indice];
     final video = VideoPlayerController.networkUrl(
-      Uri.parse(_fuentes[indice].url),
+      Uri.parse(fuente.url),
       formatHint: VideoFormat.hls,
+      httpHeaders: fuente.cabeceras, // como un navegador: algunos canales rechazan a ExoPlayer
     );
     try {
       await video.initialize().timeout(_esperaInicio);
     } catch (_) {
       await video.dispose();
-      if (mounted) _probarFuente(indice + 1);   // esta no arrancó: la siguiente
+      if (mounted && intento == _intento) {
+        _avisarFalla(_fuentes[indice]);
+        _probarFuente(indice + 1); // esta no arrancó: la siguiente
+      }
       return;
     }
-    if (!mounted) {
+    if (!mounted || intento != _intento) {
       await video.dispose();
       return;
     }
@@ -101,6 +125,7 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
     if (video == null || !mounted) return;
     if (video.value.hasError) {
       video.removeListener(_vigilar);
+      _avisarFalla(_fuentes[_fuente]);
       _probarFuente(_fuente + 1);
       return;
     }
@@ -109,6 +134,7 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
         _vigiaTrabado = null;
         if (mounted && _video == video && video.value.isBuffering) {
           video.removeListener(_vigilar);
+          _avisarFalla(_fuentes[_fuente]);
           _probarFuente(_fuente + 1);
         }
       });
@@ -116,7 +142,51 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
       _vigiaTrabado?.cancel();
       _vigiaTrabado = null;
     }
-    setState(() {});   // para mostrar u ocultar el "cargando"
+    setState(() {}); // para mostrar u ocultar el "cargando"
+  }
+
+  /// Le avisa al servidor que esta fuente no anduvo. El servidor la vuelve a
+  /// probar por su cuenta y, si también le falla, deja de mandarla: así los
+  /// canales caídos desaparecen solos de la lista. No se espera la respuesta.
+  void _avisarFalla(FuenteCanal fuente) {
+    SesionScope.leer(context).api.post('canales/fuentes/${fuente.id}/falla/').catchError((Object _) {
+      // Si el aviso no llega, no pasa nada: la verificación del servidor la va a encontrar igual
+      return null;
+    });
+  }
+
+  /// Pasa al canal siguiente (+1) o anterior (−1), dando la vuelta en los extremos.
+  /// Se queda en esta misma pantalla: así no se pierde la pantalla completa
+  /// ni el "no apagar la pantalla" entre canal y canal.
+  void _zapping(int paso) {
+    final todos = widget.todos;
+    final actual = todos.indexWhere((c) => c.id == _canal.id);
+    if (todos.length < 2 || actual < 0) return;
+    setState(() => _canal = todos[(actual + paso) % todos.length]);
+    _probarFuente(0);
+  }
+
+  KeyEventResult _tecla(FocusNode nodo, KeyEvent evento) {
+    if (evento is! KeyDownEvent) return KeyEventResult.ignored;
+    final tecla = evento.logicalKey;
+    if (tecla == LogicalKeyboardKey.arrowUp || tecla == LogicalKeyboardKey.channelUp) {
+      _zapping(1);
+      return KeyEventResult.handled;
+    }
+    if (tecla == LogicalKeyboardKey.arrowDown || tecla == LogicalKeyboardKey.channelDown) {
+      _zapping(-1);
+      return KeyEventResult.handled;
+    }
+    if (tecla == LogicalKeyboardKey.select ||
+        tecla == LogicalKeyboardKey.enter ||
+        tecla == LogicalKeyboardKey.arrowLeft ||
+        tecla == LogicalKeyboardKey.arrowRight) {
+      // Con el error en pantalla, OK tiene que llegar al botón "Reintentar"
+      if (_error != null) return KeyEventResult.ignored;
+      _mostrarControles();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void _mostrarControles() {
@@ -134,22 +204,28 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _controlesVisibles ? setState(() => _controlesVisibles = false) : _mostrarControles(),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (video != null)
-              Center(child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video))),
-            if (cargando) const Center(child: CircularProgressIndicator()),
-            if (_error != null) _Error(mensaje: _error!, alReintentar: () => _probarFuente(0)),
-            AnimatedOpacity(
-              opacity: _controlesVisibles || _error != null ? 1 : 0,
-              duration: const Duration(milliseconds: 250),
-              child: _BarraSuperior(canal: widget.canal, fuente: _fuente, totalFuentes: _fuentes.length),
-            ),
-          ],
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: _tecla,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _controlesVisibles ? setState(() => _controlesVisibles = false) : _mostrarControles(),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (video != null)
+                Center(
+                  child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video)),
+                ),
+              if (cargando) const Center(child: CircularProgressIndicator()),
+              if (_error != null) _Error(mensaje: _error!, alReintentar: () => _probarFuente(0)),
+              AnimatedOpacity(
+                opacity: _controlesVisibles || _error != null ? 1 : 0,
+                duration: const Duration(milliseconds: 250),
+                child: _BarraSuperior(canal: _canal, fuente: _fuente, totalFuentes: _fuentes.length),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -235,9 +311,14 @@ class _Error extends StatelessWidget {
           children: [
             const Icon(Icons.signal_wifi_connected_no_internet_4_rounded, color: Colores.textoSuave, size: 52),
             const SizedBox(height: 16),
-            Text(mensaje, textAlign: TextAlign.center, style: const TextStyle(color: Colores.texto)),
+            Text(
+              mensaje,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colores.texto),
+            ),
             const SizedBox(height: 20),
             OutlinedButton.icon(
+              autofocus: true, // con el control remoto, OK reintenta
               onPressed: alReintentar,
               icon: const Icon(Icons.refresh_rounded),
               label: const Text('Reintentar'),

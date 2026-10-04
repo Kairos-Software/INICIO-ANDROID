@@ -7,14 +7,22 @@ Los canales de TV para la app.
                           "canales": [{"id", "nombre", "numero", "logo",
                                        "fuentes": [{"id", "url", "tipo"}, ...]}]}]}
 
-Por ahora cualquier usuario con sesión los ve. Más adelante esto va a
-depender del plan / los créditos del dispositivo.
+Los ven los usuarios del panel y los clientes con el servicio vigente. Solo
+van los canales que la app puede reproducir (fuentes HLS que no estén caídas).
+
+    POST /api/v1/canales/fuentes/<id>/falla/
+      -> {"estado": "funciona" | "caida" | "sin_verificar"}
+      La app avisa que no pudo reproducir esa fuente. El servidor la vuelve a
+      probar por su cuenta y, si también le falla, deja de mandarla.
 """
 
 from rest_framework.decorators import api_view
+from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
 
-from canales.consultas import agrupar_por_categoria, canales_disponibles
+from canales.consultas import agrupar_por_categoria, canales_disponibles, fuentes_usables
+from canales.servicios import reverificar_por_aviso
+from canales.verificacion import verificar_url
 
 from .serializers import CanalSerializer
 
@@ -34,3 +42,9 @@ def lista(request):
             for categoria, del_grupo in agrupar_por_categoria(canales)
         ],
     })
+
+
+@api_view(['POST'])
+def avisar_falla(request, pk):
+    fuente = get_object_or_404(fuentes_usables().select_related('canal'), pk=pk)
+    return Response({'estado': reverificar_por_aviso(fuente, verificar_url)})

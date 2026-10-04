@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% comment %} Créditos del revendedor: saldo, comprar un paquete, sus compras y su libreta. {% endcomment %}
+{% load humanize %}
+
+{% block titulo %}Mis créditos{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">Mis créditos</h1>
+    <p class="pagina-bajada">Tenés <strong>{{ numeros.saldo }}</strong> crédito{{ numeros.saldo|pluralize }} disponible{{ numeros.saldo|pluralize }}. No vencen: se gastan recién al activar o renovar un cliente.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Comprar créditos</h2>
+    {% if paquetes %}
+    <div class="row g-3">
+        {% for p in paquetes %}
+        <div class="col-sm-6 col-lg-4">
+            <form method="post" action="{% url 'reventa:pedir_compra' %}" class="tarjeta h-100 d-flex flex-column gap-2"
+                  onsubmit="return confirm('¿Pedir el paquete {{ p.nombre|escapejs }}? Los créditos se suman cuando se confirme el pago.');">
+                {% csrf_token %}<input type="hidden" name="paquete" value="{{ p.pk }}">
+                <strong>{{ p.nombre }}</strong>
+                <span class="dato fs-4">{{ p.creditos }} créditos</span>
+                <span class="texto-suave">$ {{ p.precio|floatformat:2|intcomma }}</span>
+                <button type="submit" class="btn btn-primary mt-auto">Pedir</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="texto-suave mb-0">Todavía no hay paquetes a la venta.</p>
+    {% endif %}
+</section>
+
+<section class="tarjeta mb-4 p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Mis compras</h2>
+    {% if compras %}
+    {% include "reventa/_tabla_compras.html" with compras=compras volver="compras" %}
+    {% else %}
+    <p class="texto-suave px-4 pb-4 mb-0">No compraste paquetes todavía.</p>
+    {% endif %}
+</section>
+
+<section class="tarjeta p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Libreta de créditos</h2>
+    {% include "reventa/_libreta.html" with pagina=movimientos %}
+</section>
+{% include "parciales/_paginacion.html" with pagina=movimientos %}
+{% endblock %}

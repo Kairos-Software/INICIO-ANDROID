@@ -1,0 +1,20 @@
+{% comment %} Movimientos de créditos. Uso: include with pagina=movimientos {% endcomment %}
+{% if pagina.object_list %}
+<div class="table-responsive">
+    <table class="table tabla mb-0">
+        <thead><tr><th scope="col">Fecha</th><th scope="col">Movimiento</th><th scope="col">Detalle</th><th scope="col" class="text-end">Créditos</th></tr></thead>
+        <tbody>
+        {% for m in pagina %}
+            <tr>
+                <td class="small">{{ m.fecha|date:"j/m/Y H:i" }}</td>
+                <td>{{ m.get_tipo_display }}</td>
+                <td class="texto-suave small">{{ m.detalle|default:"—" }}</td>
+                <td class="dato text-end">{% if m.cantidad > 0 %}+{% endif %}{{ m.cantidad }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="texto-suave px-4 pb-4 mb-0">Sin movimientos todavía.</p>
+{% endif %}

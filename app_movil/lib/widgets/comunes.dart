@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 
 import '../tema.dart';
 
-/// El símbolo de Kairos con el nombre al lado ("Kairos / Software Móvil").
-/// El texto se dibuja con Poppins (el del PNG es azul oscuro y no se vería sobre el fondo).
+/// La marca Kairos TV: vertical = el logo completo; horizontal = el televisor
+/// con "KairosTV" al lado, igual que el menú del panel ("Kairos" blanco y
+/// "TV" naranja, en Sora). El texto se dibuja (el del PNG es azul oscuro y
+/// no se vería sobre el fondo).
 class MarcaKairos extends StatelessWidget {
   const MarcaKairos({super.key, this.tamanio = 56, this.vertical = false});
 
@@ -15,37 +17,44 @@ class MarcaKairos extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final simbolo = Image.asset('assets/logo/simbolo.png', height: tamanio);
-    final texto = Column(
-      crossAxisAlignment: vertical ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+    // Vertical (login y pantallas de bienvenida): el logo completo, con su texto "KairosTV"
+    if (vertical) {
+      return Image.asset('assets/logo/logo.png', height: tamanio * 2.4);
+    }
+    // El símbolo con el brillo celeste del panel (drop-shadow del .marca-isotipo)
+    final simbolo = DecoratedBox(
+      decoration: BoxDecoration(
+        boxShadow: [BoxShadow(color: Colores.celeste.withValues(alpha: 0.22), blurRadius: tamanio * 0.45)],
+      ),
+      child: Image.asset('assets/logo/simbolo.png', height: tamanio),
+    );
+    final texto = Text.rich(
+      TextSpan(
+        children: [
+          const TextSpan(
+            text: 'Kairos',
+            style: TextStyle(color: Colores.texto),
+          ),
+          const TextSpan(
+            text: 'TV',
+            style: TextStyle(color: Colores.naranja),
+          ),
+        ],
+      ),
+      style: estiloTitulo(tamanio * 0.56).copyWith(height: 1.0, letterSpacing: -tamanio * 0.025),
+    );
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ShaderMask(
-          shaderCallback: (rect) => Degradados.principal.createShader(rect),
-          child: Text(
-            'Kairos',
-            style: TextStyle(
-              fontSize: tamanio * 0.62,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-              height: 1.0,
-              letterSpacing: -0.5,
-            ),
-          ),
-        ),
-        Text(
-          'Software Móvil',
-          style: TextStyle(fontSize: tamanio * 0.24, color: Colores.textoSuave, letterSpacing: 2.2, height: 1.4),
-        ),
+        simbolo,
+        SizedBox(width: tamanio * 0.24),
+        texto,
       ],
     );
-    return vertical
-        ? Column(mainAxisSize: MainAxisSize.min, children: [simbolo, SizedBox(height: tamanio * 0.25), texto])
-        : Row(mainAxisSize: MainAxisSize.min, children: [simbolo, SizedBox(width: tamanio * 0.2), texto]);
   }
 }
 
-/// El botón principal: con el degradé del logo.
+/// El botón principal: el .btn-primary del panel (azul, con su sombra).
 class BotonDegradado extends StatelessWidget {
   const BotonDegradado({super.key, required this.texto, required this.alTocar, this.icono, this.cargando = false});
 
@@ -61,10 +70,10 @@ class BotonDegradado extends StatelessWidget {
       opacity: activo ? 1 : 0.6,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: Degradados.principal,
+          color: Colores.azul,
           borderRadius: BorderRadius.circular(Radios.chico),
           boxShadow: [
-            BoxShadow(color: Colores.azul.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8)),
+            BoxShadow(color: Colores.azul.withValues(alpha: 0.30), blurRadius: 20, offset: const Offset(0, 8)),
           ],
         ),
         child: Material(
@@ -72,6 +81,8 @@ class BotonDegradado extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(Radios.chico),
             onTap: activo ? alTocar : null,
+            // Con el control remoto: el foco se ve con un borde naranja (como el panel)
+            focusColor: Colores.naranja.withValues(alpha: 0.25),
             child: SizedBox(
               height: 54,
               child: Center(
@@ -85,7 +96,10 @@ class BotonDegradado extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (icono != null) ...[Icon(icono, color: Colors.white, size: 20), const SizedBox(width: 8)],
-                          Text(texto, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+                          Text(
+                            texto,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                          ),
                         ],
                       ),
               ),
@@ -159,7 +173,11 @@ class VistaError extends StatelessWidget {
           children: [
             const Icon(Icons.wifi_off_rounded, size: 52, color: Colores.textoSuave),
             const SizedBox(height: 16),
-            Text(mensaje, textAlign: TextAlign.center, style: const TextStyle(color: Colores.textoSuave)),
+            Text(
+              mensaje,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colores.textoSuave),
+            ),
             if (alReintentar != null) ...[
               const SizedBox(height: 24),
               OutlinedButton.icon(
@@ -192,7 +210,11 @@ class VistaVacia extends StatelessWidget {
           children: [
             Icon(icono, size: 52, color: Colores.borde),
             const SizedBox(height: 12),
-            Text(mensaje, textAlign: TextAlign.center, style: const TextStyle(color: Colores.textoSuave)),
+            Text(
+              mensaje,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colores.textoSuave),
+            ),
           ],
         ),
       ),
@@ -222,14 +244,16 @@ class AvisoError extends StatelessWidget {
         children: [
           const Icon(Icons.error_outline_rounded, color: Colores.peligro, size: 20),
           const SizedBox(width: 10),
-          Expanded(child: Text(mensaje, style: const TextStyle(color: Colores.peligro))),
+          Expanded(
+            child: Text(mensaje, style: const TextStyle(color: Colores.peligro)),
+          ),
         ],
       ),
     );
   }
 }
 
-/// Título de una sección, con una rayita en degradé.
+/// Título de una sección, con la rayita celeste → azul de los títulos del panel.
 class TituloSeccion extends StatelessWidget {
   const TituloSeccion(this.texto, {super.key});
 
@@ -241,14 +265,36 @@ class TituloSeccion extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 24, 4, 10),
       child: Row(
         children: [
-          Container(
-            width: 4,
-            height: 16,
-            decoration: BoxDecoration(gradient: Degradados.principal, borderRadius: BorderRadius.circular(2)),
+          const RayitaTitulo(),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              texto,
+              overflow: TextOverflow.ellipsis,
+              style: estiloTitulo(16, peso: FontWeight.w600),
+            ),
           ),
-          const SizedBox(width: 8),
-          Text(texto, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colores.texto)),
         ],
+      ),
+    );
+  }
+}
+
+/// La rayita vertical celeste → azul, con brillo, de los títulos del panel (.tarjeta-titulo::before).
+class RayitaTitulo extends StatelessWidget {
+  const RayitaTitulo({super.key, this.alto = 16});
+
+  final double alto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 4,
+      height: alto,
+      decoration: BoxDecoration(
+        gradient: Degradados.principal,
+        borderRadius: BorderRadius.circular(99),
+        boxShadow: [BoxShadow(color: Colores.celeste.withValues(alpha: 0.35), blurRadius: 9)],
       ),
     );
   }
@@ -277,10 +323,7 @@ class TarjetaDatos extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     valor.isEmpty ? '—' : valor,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: valor.isEmpty ? Colores.borde : Colores.texto,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w500, color: valor.isEmpty ? Colores.borde : Colores.texto),
                   ),
                 ],
               ),
@@ -308,7 +351,10 @@ class Etiqueta extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
-      child: Text(texto, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+      child: Text(
+        texto,
+        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+      ),
     );
   }
 }

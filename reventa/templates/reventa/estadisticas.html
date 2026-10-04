@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% comment %}
+    Estadísticas mes a mes. El administrador ve el negocio entero y el
+    ranking de revendedores; el revendedor, solo lo suyo. Diseño provisorio
+    (tablas): los gráficos vienen con el diseño nuevo del panel.
+{% endcomment %}
+{% load humanize %}
+
+{% block titulo %}Estadísticas{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">Estadísticas</h1>
+    <p class="pagina-bajada">{% if es_negocio %}El negocio entero{% else %}Tus números{% endif %}, mes a mes (últimos {{ filas|length }} meses).</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<section class="tarjeta tarjeta-en-vivo mb-4">
+    <h2 class="tarjeta-titulo">Ahora mismo</h2>
+    <dl class="ficha-datos resumen-metricas resumen-en-vivo">
+        <div><dt>Dispositivos conectados</dt><dd class="dato fs-4">{{ en_vivo.dispositivos }}</dd></div>
+        <div><dt>Clientes mirando</dt><dd class="dato fs-4">{{ en_vivo.clientes_mirando }}</dd></div>
+    </dl>
+</section>
+
+<section class="tarjeta mb-4 p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Mes a mes</h2>
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr>
+                <th scope="col">Mes</th>
+                <th scope="col" class="text-end">Clientes nuevos</th>
+                <th scope="col" class="text-end">Renovaciones</th>
+                <th scope="col" class="text-end">Créditos usados</th>
+                <th scope="col" class="text-end">Créditos {% if es_negocio %}vendidos{% else %}comprados{% endif %}</th>
+                <th scope="col" class="text-end">Créditos regalados</th>
+                {% if es_negocio %}
+                <th scope="col" class="text-end">Ingresos paquetes</th>
+                <th scope="col" class="text-end">Cobrado directos</th>
+                <th scope="col" class="text-end">Ingresos</th>
+                {% else %}
+                <th scope="col" class="text-end">Cobrado</th>
+                <th scope="col" class="text-end">Invertido</th>
+                <th scope="col" class="text-end">Ganancia</th>
+                {% endif %}
+            </tr></thead>
+            <tbody>
+            {% for f in filas %}
+                <tr>
+                    <td>{{ f.nombre|capfirst }}</td>
+                    <td class="dato text-end">{{ f.clientes_nuevos }}</td>
+                    <td class="dato text-end">{{ f.renovaciones }}</td>
+                    <td class="dato text-end">{{ f.creditos_usados }}</td>
+                    <td class="dato text-end">{{ f.creditos_comprados }}</td>
+                    <td class="dato text-end">{{ f.creditos_regalados }}</td>
+                    {% if es_negocio %}
+                    <td class="dato text-end">$ {{ f.invertido|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end">$ {{ f.cobrado_directos|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end"><strong>$ {{ f.ingresos|floatformat:2|intcomma }}</strong></td>
+                    {% else %}
+                    <td class="dato text-end">$ {{ f.cobrado|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end">$ {{ f.invertido|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end"><strong>$ {{ f.ganancia|floatformat:2|intcomma }}</strong></td>
+                    {% endif %}
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th scope="row">Total</th>
+                    <td class="dato text-end">{{ total.clientes_nuevos }}</td>
+                    <td class="dato text-end">{{ total.renovaciones }}</td>
+                    <td class="dato text-end">{{ total.creditos_usados }}</td>
+                    <td class="dato text-end">{{ total.creditos_comprados }}</td>
+                    <td class="dato text-end">{{ total.creditos_regalados }}</td>
+                    {% if es_negocio %}
+                    <td class="dato text-end">$ {{ total.invertido|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end">$ {{ total.cobrado_directos|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end"><strong>$ {{ total.ingresos|floatformat:2|intcomma }}</strong></td>
+                    {% else %}
+                    <td class="dato text-end">$ {{ total.cobrado|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end">$ {{ total.invertido|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end"><strong>$ {{ total.ganancia|floatformat:2|intcomma }}</strong></td>
+                    {% endif %}
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</section>
+
+{% if ranking is not None %}
+<section class="tarjeta p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Ranking de revendedores</h2>
+    {% if ranking %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr>
+                <th scope="col">#</th><th scope="col">Revendedor</th>
+                <th scope="col" class="text-end">Créditos usados</th><th scope="col" class="text-end">Este mes</th>
+                <th scope="col" class="text-end">Disponibles</th><th scope="col" class="text-end">Clientes vigentes</th>
+                <th scope="col" class="text-end">Le compró a la empresa</th><th scope="col" class="text-end">Cobró a sus clientes</th>
+                <th scope="col" class="text-end">Su ganancia</th>
+            </tr></thead>
+            <tbody>
+            {% for n in ranking %}
+                <tr>
+                    <td class="texto-suave">{{ forloop.counter }}</td>
+                    <td><a href="{% url 'reventa:revendedor' n.revendedor.pk %}">{{ n.revendedor }}</a></td>
+                    <td class="dato text-end">{{ n.usados }}</td>
+                    <td class="dato text-end">{{ n.usados_este_mes }}</td>
+                    <td class="dato text-end">{{ n.saldo }}</td>
+                    <td class="dato text-end">{{ n.clientes.vigentes }}</td>
+                    <td class="dato text-end">$ {{ n.invertido|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end">$ {{ n.cobrado|floatformat:2|intcomma }}</td>
+                    <td class="dato text-end">$ {{ n.ganancia|floatformat:2|intcomma }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="texto-suave px-4 pb-4 mb-0">Todavía no hay revendedores.</p>
+    {% endif %}
+</section>
+{% endif %}
+{% endblock %}

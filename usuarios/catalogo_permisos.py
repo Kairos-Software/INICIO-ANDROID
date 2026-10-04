@@ -30,6 +30,18 @@ MODULOS_PERMISOS = [
         ('editar_roles', 'Editar roles existentes'),
         ('eliminar_roles', 'Eliminar roles'),
     ]),
+    ('Canales', [
+        ('ver_canales', 'Ver los canales y el estado de sus fuentes'),
+        ('importar_canales', 'Importar listas de canales (M3U) y verificar las fuentes'),
+    ]),
+    ('Reventa', [
+        ('administrar_reventa', 'Ver y gestionar a todos los revendedores y sus clientes; regalar y ajustar créditos'),
+        ('gestionar_paquetes', 'Crear y editar los paquetes de créditos'),
+        ('confirmar_compras', 'Confirmar o cancelar los pagos de compras de créditos'),
+    ]),
+    ('App Android', [
+        ('publicar_app', 'Subir versiones nuevas de la app (APK) para descargar'),
+    ]),
     ('Sistema', [
         ('ver_actividad', 'Ver el registro de actividad (quién hizo qué y cuándo)'),
     ]),
@@ -49,6 +61,12 @@ PERMISOS_RESTRINGIDOS = frozenset({
     'editar_roles',
     'eliminar_roles',
     'ver_actividad',
+    'ver_canales',
+    'importar_canales',
+    'administrar_reventa',
+    'gestionar_paquetes',
+    'confirmar_compras',
+    'publicar_app',
 })
 
 
@@ -77,6 +95,13 @@ ROLES_INICIALES = [
         'permisos': [
             'ver_usuarios',
         ],
+    },
+    {
+        # Un revendedor no necesita permisos: ve SU panel de reventa porque
+        # tiene un perfil de Revendedor (reventa.models.Revendedor).
+        'nombre': 'Revendedor',
+        'descripcion': 'Vende el servicio: gestiona sus clientes, sus créditos y sus compras.',
+        'permisos': [],
     },
     {
         'nombre': 'Operador',

@@ -27,7 +27,7 @@
 <div class="row g-4">
     <div class="col-xl-8">
         {% for titulo, filas in secciones %}
-        <section class="tarjeta mb-4">
+        <section class="tarjeta tarjeta-datos mb-4">
             <h2 class="tarjeta-titulo">{{ titulo }}</h2>
             <dl class="ficha-datos">
                 {% for etiqueta, valor in filas %}
@@ -42,7 +42,7 @@
     </div>
 
     <div class="col-xl-4">
-        <section class="tarjeta mb-4">
+        <section class="tarjeta tarjeta-datos mb-4">
             <h2 class="tarjeta-titulo">Actividad</h2>
             <dl class="datos-lista">
                 <div><dt>Último ingreso</dt><dd>{{ usuario.last_login|date:"j/m/Y H:i"|default:"Nunca ingresó" }}</dd></div>
@@ -60,7 +60,7 @@
         </section>
 
         {% if puede_editar or puede_restablecer or puede_eliminar or puede_gestionar_permisos %}
-        <section class="tarjeta">
+        <section class="tarjeta tarjeta-acciones">
             <h2 class="tarjeta-titulo">Acciones</h2>
             <div class="d-grid gap-2">
                 {% if puede_gestionar_permisos %}

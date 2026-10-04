@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="ic_launcher_background">#050D1D</color>
     <!-- Fondo de la app (el mismo Colores.fondo de lib/tema.dart) -->
-    <color name="fondo_arranque">#070D1F</color>
+    <color name="fondo_arranque">#050D1D</color>
 </resources>

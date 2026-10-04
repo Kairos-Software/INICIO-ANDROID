@@ -1,6 +1,6 @@
 """
-Por ahora los canales se administran desde /admin/ (Django admin). Más
-adelante tendrán sus pantallas en el panel web.
+Editar canales y fuentes puntuales se hace desde /admin/ (Django admin).
+Importar listas y verificar fuentes está en el panel: /canales/.
 """
 
 from django.contrib import admin
@@ -11,7 +11,8 @@ from .models import Canal, Categoria, Fuente
 class FuenteInline(admin.TabularInline):
     model = Fuente
     extra = 1
-    fields = ['prioridad', 'url', 'tipo', 'activa', 'origen']
+    fields = ['prioridad', 'url', 'tipo', 'activa', 'estado', 'error', 'verificada', 'origen']
+    readonly_fields = ['estado', 'error', 'verificada']
 
 
 @admin.register(Canal)

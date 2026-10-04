@@ -3,7 +3,7 @@ library;
 
 /// Nombre que se muestra dentro de la app. El que aparece debajo del ícono
 /// está en android/app/src/main/AndroidManifest.xml (android:label).
-const String nombreSistema = 'Kairos Software Móvil';
+const String nombreSistema = 'Kairos TV';
 const String nombreEmpresa = 'Kairos Software';
 
 /// Dirección de la API por defecto. Se puede cambiar de dos formas:
@@ -15,5 +15,4 @@ const String urlServidorPorDefecto = String.fromEnvironment(
   defaultValue: 'http://192.168.1.241:8000/api/v1/',
 );
 
-/// Lo que la app le informa al servidor al iniciar sesión (se ve en /admin/ → Tokens).
-const String nombreDispositivo = 'App Android';
+/// El nombre del aparato que se le informa al servidor está en aparato.dart.

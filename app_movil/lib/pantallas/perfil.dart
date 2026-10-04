@@ -55,7 +55,7 @@ class PantallaPerfil extends StatelessWidget {
                   Text(
                     perfil.nombreCompleto,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colores.texto),
+                    style: estiloTitulo(22),
                   ),
                   Text('@${perfil.username}', style: const TextStyle(color: Colores.textoSuave)),
                   const SizedBox(height: 10),

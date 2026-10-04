@@ -1,4 +1,5 @@
 {% extends "base_html.html" %}
+{% load static %}
 {% comment %}
     Layout de las pantallas internas (con sesión iniciada): menú lateral + contenido.
     Las páginas lo extienden y completan:
@@ -14,10 +15,14 @@
 
     <div class="contenido">
         <header class="barra-superior">
-            <button type="button" class="btn-menu" data-accion="abrir-menu"
-                    aria-label="Abrir menú" aria-expanded="false" aria-controls="menu-principal">
-                <i class="bi bi-list"></i>
+            <button type="button" class="btn-menu" data-accion="alternar-menu"
+                    aria-label="Alternar menú" aria-expanded="true" aria-controls="menu-principal">
+                <i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i>
             </button>
+            <a href="{% url 'core:inicio' %}" class="barra-marca" aria-label="Ir al inicio de Kairos TV">
+                <img src="{% static 'img/kairos-tv-symbol.png' %}" alt="" width="34" height="28">
+                <span>Kairos<span>TV</span></span>
+            </a>
             {% block barra_superior %}{% endblock %}
             <div class="barra-superior-derecha">
                 {% include "parciales/_campanita.html" %}

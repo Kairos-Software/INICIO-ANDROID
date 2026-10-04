@@ -60,11 +60,28 @@ class Fuente(models.Model):
         HLS = 'hls', 'HLS (.m3u8)'
         YOUTUBE = 'youtube', 'YouTube'
 
+    # `activa` la decide una persona; `estado` lo pone la verificación
+    # automática. La app usa una fuente solo si está activa Y no está caída.
+    class Estado(models.TextChoices):
+        SIN_VERIFICAR = 'sin_verificar', 'Sin verificar'
+        FUNCIONA = 'funciona', 'Funciona'
+        CAIDA = 'caida', 'Caída'
+
     canal = models.ForeignKey(Canal, on_delete=models.CASCADE, related_name='fuentes')
     url = models.URLField('dirección', max_length=1000)
     tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.HLS)
     prioridad = models.PositiveIntegerField(default=0, help_text='Menor = se prueba primero.')
-    activa = models.BooleanField(default=True)
+    activa = models.BooleanField(default=True, help_text='Apagarla a mano: la app no la usa aunque funcione.')
+    estado = models.CharField(max_length=15, choices=Estado.choices, default=Estado.SIN_VERIFICAR,
+                              help_text='Lo pone la verificación automática. La app no usa las caídas.')
+    verificada = models.DateTimeField('última verificación', null=True, blank=True)
+    error = models.CharField('motivo de la falla', max_length=200, blank=True)
+    # Cómo tiene que presentarse el reproductor para que el servidor del canal
+    # entregue la señal. Vacío = el de siempre (verificacion.USER_AGENT_REPRODUCTOR).
+    user_agent = models.CharField('User-Agent', max_length=300, blank=True,
+                                  help_text='Solo si el canal lo exige (lo traen algunas listas M3U).')
+    referer = models.CharField('Referer', max_length=500, blank=True,
+                               help_text='Página desde la que "viene" el pedido, si el canal lo exige.')
     origen = models.CharField(max_length=150, blank=True, help_text='De qué lista se importó.')
     creado = models.DateTimeField(auto_now_add=True)
 
@@ -78,3 +95,7 @@ class Fuente(models.Model):
 
     def __str__(self):
         return f'{self.canal} · {self.get_tipo_display()} · {self.url[:60]}'
+
+    def usable(self):
+        """¿La app la puede usar?"""
+        return self.activa and self.estado != self.Estado.CAIDA

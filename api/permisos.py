@@ -15,9 +15,14 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from core.mantenimiento import estado_actual
+from reventa import sesiones
 from usuarios.permisos import tiene_algun_permiso
 
 from .errores import ErrorApi
+
+# Lo único que puede usar un CLIENTE (login con código): ver canales (y
+# avisar si uno falla), su estado y cerrar sesión. Todo lo demás es de los usuarios del panel.
+VISTAS_DE_CLIENTES = {'api_v1:canales', 'api_v1:fuente_falla', 'api_v1:cliente', 'api_v1:cliente_logout'}
 
 # Lo único que puede hacer quien tiene que cambiar la contraseña
 VISTAS_CON_PASSWORD_PENDIENTE = {'api_v1:perfil', 'api_v1:cambiar_password', 'api_v1:logout'}
@@ -40,12 +45,28 @@ class SistemaDisponible(BasePermission):
             if estado['activo']:
                 raise error_mantenimiento(estado)
 
+        if getattr(usuario, 'es_cliente_app', False):
+            self._chequear_cliente(request, usuario.cliente)
+
         if usuario.is_authenticated and usuario.debe_cambiar_password:
             vista = request.resolver_match.view_name if request.resolver_match else ''
             if vista not in VISTAS_CON_PASSWORD_PENDIENTE:
                 raise ErrorApi('Tenés que cambiar tu contraseña antes de seguir.', 'debe_cambiar_password',
                                status.HTTP_403_FORBIDDEN)
         return True
+
+
+    @staticmethod
+    def _chequear_cliente(request, cliente):
+        vista = request.resolver_match.view_name if request.resolver_match else ''
+        if vista not in VISTAS_DE_CLIENTES:
+            raise PermissionDenied()
+        if vista == 'api_v1:cliente_logout':
+            return   # cerrar sesión se puede siempre
+        try:
+            sesiones.chequear_vigente(cliente)
+        except sesiones.AccesoDenegado as error:
+            raise ErrorApi(str(error), error.codigo, status.HTTP_403_FORBIDDEN, extra=error.extra)
 
 
 def exigir_permiso(usuario, *codigos):

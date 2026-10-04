@@ -1,0 +1,43 @@
+{% comment %}
+    Tabla de compras con los botones confirmar / cancelar.
+    Uso: include with compras=... volver="inicio|revendedor|compras" mostrar_revendedor=True
+    "Confirmar pago" solo aparece con el permiso confirmar_compras (y la vista lo vuelve a chequear).
+{% endcomment %}
+{% load humanize %}
+<div class="table-responsive">
+    <table class="table tabla mb-0">
+        <thead><tr>
+            <th scope="col">Fecha</th>
+            {% if mostrar_revendedor %}<th scope="col">Revendedor</th>{% endif %}
+            <th scope="col">Paquete</th><th scope="col">Créditos</th><th scope="col">Precio</th>
+            <th scope="col">Estado</th><th scope="col"><span class="visually-hidden">Acciones</span></th>
+        </tr></thead>
+        <tbody>
+        {% for compra in compras %}
+            <tr>
+                <td class="small">{{ compra.creada|date:"j/m/Y H:i" }}</td>
+                {% if mostrar_revendedor %}<td><a href="{% url 'reventa:revendedor' compra.revendedor_id %}">{{ compra.revendedor }}</a></td>{% endif %}
+                <td>{{ compra.paquete.nombre|default:"—" }}</td>
+                <td class="dato">{{ compra.creditos }}</td>
+                <td class="dato">$ {{ compra.precio|floatformat:2|intcomma }}</td>
+                <td>
+                    {% if compra.estado == 'pagada' %}<span class="chip chip-si">Pagada</span>
+                    {% elif compra.estado == 'cancelada' %}<span class="chip">Cancelada</span>
+                    {% else %}<span class="chip chip-no">Pendiente</span>{% endif %}
+                </td>
+                <td class="text-end">
+                    {% if compra.estado == 'pendiente' %}
+                    <form method="post" action="{% url 'reventa:compra_resolver' compra.pk %}" class="d-inline-flex gap-1">
+                        {% csrf_token %}<input type="hidden" name="volver" value="{{ volver }}">
+                        {% if permisos.confirmar_compras %}
+                        <button type="submit" name="accion" value="confirmar" class="btn btn-primary btn-sm">Confirmar pago</button>
+                        {% endif %}
+                        <button type="submit" name="accion" value="cancelar" class="btn btn-outline-secondary btn-sm">Cancelar</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block titulo %}Clientes{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <h1 class="pagina-titulo">Clientes</h1>
+        <p class="pagina-bajada">{% if request.es_admin %}Los clientes de todos los revendedores.{% else %}Tus clientes.{% endif %}</p>
+    </div>
+    <a href="{% url 'reventa:cliente_nuevo' %}" class="btn btn-acento">
+        <i class="bi bi-person-plus" aria-hidden="true"></i> Nuevo cliente
+    </a>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="get" class="filtros" role="search">
+    <div class="filtros-buscar">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <label for="q" class="visually-hidden">Buscar</label>
+        <input type="search" id="q" name="q" value="{{ filtros.texto }}" class="form-control" placeholder="Nombre, teléfono o código">
+    </div>
+    <div>
+        <label for="estado" class="visually-hidden">Estado</label>
+        <select id="estado" name="estado" class="form-select">
+            <option value="">Todos</option>
+            <option value="vigentes" {% if filtros.estado == 'vigentes' %}selected{% endif %}>Vigentes</option>
+            <option value="por_vencer" {% if filtros.estado == 'por_vencer' %}selected{% endif %}>Por vencer (7 días)</option>
+            <option value="vencidos" {% if filtros.estado == 'vencidos' %}selected{% endif %}>Vencidos</option>
+            <option value="sin_activar" {% if filtros.estado == 'sin_activar' %}selected{% endif %}>Sin activar</option>
+            <option value="suspendidos" {% if filtros.estado == 'suspendidos' %}selected{% endif %}>Suspendidos</option>
+        </select>
+    </div>
+    {% if revendedores is not None %}
+    <div>
+        <label for="revendedor" class="visually-hidden">Revendedor</label>
+        <select id="revendedor" name="revendedor" class="form-select">
+            <option value="">Todos los revendedores</option>
+            <option value="directos" {% if filtros.revendedor == 'directos' %}selected{% endif %}>Clientes directos</option>
+            {% for r in revendedores %}
+            <option value="{{ r.pk }}" {% if filtros.revendedor == r.pk|stringformat:"d" %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    {% if hay_filtros %}<a href="{% url 'reventa:clientes' %}" class="btn btn-link">Limpiar</a>{% endif %}
+</form>
+
+<div class="tarjeta p-0">
+    {% if pagina.object_list %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr>
+                <th scope="col">Cliente</th>
+                {% if revendedores is not None %}<th scope="col">Revendedor</th>{% endif %}
+                <th scope="col">Teléfono</th><th scope="col">Dispositivos</th><th scope="col">Vence</th><th scope="col">Estado</th>
+            </tr></thead>
+            <tbody>
+            {% for c in pagina %}
+                <tr>
+                    <td><a href="{% url 'reventa:cliente' c.pk %}">{{ c.nombre }}</a></td>
+                    {% if revendedores is not None %}<td class="texto-suave">{{ c.revendedor|default:"Directo" }}</td>{% endif %}
+                    <td class="texto-suave">{{ c.telefono|default:"—" }}</td>
+                    <td class="dato">{% if c.vigente and c.dispositivos_hoy %}{{ c.dispositivos_hoy }}{% else %}—{% endif %}</td>
+                    <td class="small">{{ c.vence|date:"j/m/Y"|default:"—" }}</td>
+                    <td>{% include "reventa/_estado_cliente.html" with c=c %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="vacio">
+        <i class="bi bi-people" aria-hidden="true"></i>
+        <p>{% if hay_filtros %}Ningún cliente coincide con los filtros.{% else %}Todavía no hay clientes.{% endif %}</p>
+    </div>
+    {% endif %}
+</div>
+
+{% include "parciales/_paginacion.html" with pagina=pagina parametros=parametros %}
+{% endblock %}

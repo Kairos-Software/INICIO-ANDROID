@@ -68,19 +68,28 @@ flutter:
   assets:
     - assets/logo/
 
-  # Tipografía Poppins incluida en la app (no se descarga al abrirla)
+  # Las tipografías del panel, incluidas en la app (no se descargan al abrirla):
+  # Sora para títulos y Manrope para textos (ver lib/tema.dart -> Letras)
   fonts:
-    - family: Poppins
+    - family: Manrope
       fonts:
-        - asset: assets/fuentes/Poppins-Regular.ttf
-        - asset: assets/fuentes/Poppins-Medium.ttf
+        - asset: assets/fuentes/Manrope-Regular.ttf
+        - asset: assets/fuentes/Manrope-Medium.ttf
           weight: 500
-        - asset: assets/fuentes/Poppins-SemiBold.ttf
+        - asset: assets/fuentes/Manrope-SemiBold.ttf
           weight: 600
-        - asset: assets/fuentes/Poppins-Bold.ttf
+        - asset: assets/fuentes/Manrope-Bold.ttf
           weight: 700
-        - asset: assets/fuentes/Poppins-ExtraBold.ttf
+        - asset: assets/fuentes/Manrope-ExtraBold.ttf
           weight: 800
+    - family: Sora
+      fonts:
+        - asset: assets/fuentes/Sora-Medium.ttf
+          weight: 500
+        - asset: assets/fuentes/Sora-SemiBold.ttf
+          weight: 600
+        - asset: assets/fuentes/Sora-Bold.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -114,10 +123,11 @@ flutter:
   # see https://flutter.dev/to/font-from-package
 
 # Genera los íconos de Android a partir del logo: dart run flutter_launcher_icons
+# (antes: python tools/generar_marca.py, que arma icono.png e icono_frente.png desde el logo)
 flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/logo/icono.png"
-  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_background: "#050D1D"   # azul noche (Colores.fondo)
   adaptive_icon_foreground: "assets/logo/icono_frente.png"
   min_sdk_android: 21

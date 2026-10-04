@@ -40,6 +40,18 @@ class LectorM3UTests(TestCase):
         # Las opciones después de "|" no son parte de la dirección
         self.assertEqual(entradas[2].url, 'http://servidor-b/sin/playlist.m3u8')
 
+    def test_lee_user_agent_y_referer(self):
+        lista = ('#EXTM3U\n#EXTINF:-1,Uno\n#EXTVLCOPT:http-user-agent=Navegador/1.0\n'
+                 '#EXTVLCOPT:http-referrer=https://canal.com/\nhttps://a/uno.m3u8\n'
+                 '#EXTINF:-1,Dos\nhttps://a/dos.m3u8|User-Agent=Otro/2.0&Referer=https://dos.com/\n'
+                 '#EXTINF:-1,Tres\nhttps://a/tres.m3u8\n')
+        uno, dos, tres = leer_m3u(lista)
+        self.assertEqual((uno.user_agent, uno.referer), ('Navegador/1.0', 'https://canal.com/'))
+        self.assertEqual((dos.url, dos.user_agent, dos.referer), ('https://a/dos.m3u8', 'Otro/2.0', 'https://dos.com/'))
+        self.assertEqual((tres.user_agent, tres.referer), ('', ''))
+        importar_m3u(lista)
+        self.assertEqual(Fuente.objects.get(url='https://a/uno.m3u8').user_agent, 'Navegador/1.0')
+
     def test_normalizar(self):
         self.assertEqual(normalizar('Canal 26 HD Ⓨ'), 'canal 26')
         self.assertEqual(normalizar('Telefé (720p)'), 'telefe')
@@ -73,7 +85,7 @@ class ImportarTests(TestCase):
 
     def test_comando(self):
         archivo = Path(__file__).resolve().parent.parent / 'datos' / 'canales_prueba.m3u8'
-        call_command('importar_m3u', str(archivo), stdout=open('nul' if __import__('os').name == 'nt' else '/dev/null', 'w'))
+        call_command('importar_m3u', str(archivo), '--sin-verificar', stdout=open('nul' if __import__('os').name == 'nt' else '/dev/null', 'w'))
         self.assertEqual(Canal.objects.count(), 3)
 
 
@@ -92,16 +104,18 @@ class ApiCanalesTests(TestCase):
 
     def test_agrupados_por_categoria(self):
         datos = self.client.get(self.URL).json()
-        self.assertEqual(datos['cantidad'], 3)
+        # Encuentro solo tiene YouTube: la app no lo sabe reproducir, no se manda
+        self.assertEqual(datos['cantidad'], 2)
         por_categoria = {c['nombre']: [canal['nombre'] for canal in c['canales']] for c in datos['categorias']}
-        self.assertEqual(por_categoria, {'Cultura': ['Encuentro'], 'Noticias': ['Canal 26'], 'Otros': ['Sin atributos']})
-        canal26 = datos['categorias'][1]['canales'][0]
+        self.assertEqual(por_categoria, {'Noticias': ['Canal 26'], 'Otros': ['Sin atributos']})
+        canal26 = datos['categorias'][0]['canales'][0]
         self.assertEqual(canal26['fuentes'][0]['url'], 'https://servidor-a/canal26/main.m3u8')
         self.assertEqual(canal26['logo'], 'https://logo/26.png')
 
     def test_no_muestra_inactivos_ni_sin_fuentes(self):
-        Canal.objects.filter(nombre='Encuentro').update(activo=False)
+        Canal.objects.filter(nombre='Canal 26').update(activo=False)
         Fuente.objects.filter(canal__nombre='Sin atributos').update(activa=False)
+        Fuente.objects.filter(canal__nombre='Encuentro').update(tipo='hls')   # para que solo cuente lo inactivo
         datos = self.client.get(self.URL).json()
         self.assertEqual(datos['cantidad'], 1)
 

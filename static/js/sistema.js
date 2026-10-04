@@ -5,23 +5,110 @@
 
     // ── Menú lateral en celulares ──────────────────────────────────
     const app = document.querySelector('.app');
-    document.querySelectorAll('[data-accion="abrir-menu"]').forEach(function (btn) {
+    const menu = document.getElementById('menu-principal');
+    const botonesAlternar = document.querySelectorAll('[data-accion="alternar-menu"]');
+    const claveMenu = 'kairos.menu.colapsado';
+    let focoAntesDelMenu = null;
+
+    function esEscritorio() {
+        return window.matchMedia('(min-width: 992px)').matches;
+    }
+
+    function actualizarBotones() {
+        if (!app) return;
+        const colapsado = app.classList.contains('menu-colapsado');
+        const abierto = app.classList.contains('menu-abierto');
+        botonesAlternar.forEach(function (btn) {
+            const expandido = esEscritorio() ? !colapsado : abierto;
+            btn.setAttribute('aria-expanded', String(expandido));
+            btn.setAttribute('aria-label', esEscritorio()
+                ? (colapsado ? 'Expandir menú' : 'Contraer menú')
+                : (abierto ? 'Cerrar menú' : 'Abrir menú'));
+            btn.title = btn.getAttribute('aria-label');
+            const icono = btn.querySelector('i');
+            if (icono && btn.classList.contains('menu-colapsar')) {
+                icono.className = colapsado ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+            }
+        });
+        if (menu) {
+            menu.querySelectorAll('.menu-link').forEach(function (enlace) {
+                const texto = enlace.querySelector('.menu-link-texto');
+                if (esEscritorio() && colapsado && texto) enlace.title = texto.textContent.trim();
+                else enlace.removeAttribute('title');
+            });
+        }
+    }
+
+    function establecerMenuColapsado(colapsado) {
+        if (!app) return;
+        app.classList.toggle('menu-colapsado', colapsado);
+        try { localStorage.setItem(claveMenu, colapsado ? '1' : '0'); } catch (_) { /* sin persistencia */ }
+        actualizarBotones();
+    }
+
+    function abrirMenu() {
+        if (!app) return;
+        focoAntesDelMenu = document.activeElement;
+        app.classList.add('menu-abierto');
+        document.body.classList.add('menu-bloqueado');
+        actualizarBotones();
+        const cerrar = menu && menu.querySelector('[data-accion="cerrar-menu"]');
+        if (cerrar) cerrar.focus();
+    }
+
+    function cerrarMenu(devolverFoco) {
+        if (!app) return;
+        app.classList.remove('menu-abierto');
+        document.body.classList.remove('menu-bloqueado');
+        actualizarBotones();
+        if (devolverFoco && focoAntesDelMenu && typeof focoAntesDelMenu.focus === 'function') {
+            focoAntesDelMenu.focus();
+        }
+    }
+
+    botonesAlternar.forEach(function (btn) {
         btn.addEventListener('click', function () {
-            app.classList.add('menu-abierto');
-            btn.setAttribute('aria-expanded', 'true');
+            if (esEscritorio()) {
+                establecerMenuColapsado(!app.classList.contains('menu-colapsado'));
+            } else if (app.classList.contains('menu-abierto')) {
+                cerrarMenu(true);
+            } else {
+                abrirMenu();
+            }
         });
     });
     document.querySelectorAll('[data-accion="cerrar-menu"]').forEach(function (el) {
-        el.addEventListener('click', function () { app.classList.remove('menu-abierto'); });
+        el.addEventListener('click', function () { cerrarMenu(true); });
     });
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && app) app.classList.remove('menu-abierto');
+        if (e.key === 'Escape' && app && app.classList.contains('menu-abierto')) cerrarMenu(true);
+    });
+    if (menu) {
+        menu.querySelectorAll('a').forEach(function (enlace) {
+            enlace.addEventListener('click', function () {
+                if (window.innerWidth < 992) cerrarMenu(false);
+            });
+        });
+    }
+    if (app) {
+        let colapsadoGuardado = false;
+        try { colapsadoGuardado = localStorage.getItem(claveMenu) === '1'; } catch (_) { /* sin persistencia */ }
+        app.classList.toggle('menu-colapsado', colapsadoGuardado && esEscritorio());
+        actualizarBotones();
+    }
+    window.addEventListener('resize', function () {
+        if (esEscritorio()) {
+            cerrarMenu(false);
+            try { app.classList.toggle('menu-colapsado', localStorage.getItem(claveMenu) === '1'); } catch (_) { /* sin persistencia */ }
+        }
+        actualizarBotones();
     });
 
     // ── Mostrar / ocultar contraseña ───────────────────────────────
     document.querySelectorAll('[data-accion="ver-password"]').forEach(function (btn) {
         btn.addEventListener('click', function () {
             const input = document.getElementById(btn.dataset.objetivo);
+            if (!input) return;
             const visible = input.type === 'text';
             input.type = visible ? 'password' : 'text';
             btn.setAttribute('aria-label', visible ? 'Mostrar contraseña' : 'Ocultar contraseña');
@@ -34,6 +121,7 @@
     // Solo toca los que no están bloqueados. Si ya están todos marcados, los desmarca.
     document.querySelectorAll('[data-accion="marcar-grupo"]').forEach(function (btn) {
         const grupo = document.getElementById(btn.dataset.grupo);
+        if (!grupo) return;
         const casillas = function () {
             return Array.from(grupo.querySelectorAll('input[type="checkbox"]:not(:disabled)'));
         };
@@ -84,4 +172,13 @@
             setInterval(actualizarMomento, 60000);
         }, (60 - new Date().getSeconds()) * 1000);
     }
+
+    // Las tablas conservan toda su información en pantallas chicas y avisan
+    // a lectores de pantalla que el contenido se puede desplazar.
+    document.querySelectorAll('.table-responsive').forEach(function (contenedor) {
+        contenedor.setAttribute('tabindex', '0');
+        if (!contenedor.getAttribute('aria-label')) {
+            contenedor.setAttribute('aria-label', 'Tabla desplazable horizontalmente');
+        }
+    });
 })();

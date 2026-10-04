@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% comment %} Ficha de un cliente: código de acceso, estado, renovar e historial. {% endcomment %}
+{% load humanize %}
+
+{% block titulo %}{{ cliente }}{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <a href="{% url 'reventa:clientes' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Clientes</a>
+        <h1 class="pagina-titulo">{{ cliente }} {% include "reventa/_estado_cliente.html" with c=cliente %}</h1>
+        <p class="pagina-bajada">{% if cliente.revendedor %}De {{ cliente.revendedor }}{% else %}Cliente directo (no gasta créditos){% endif %}{% if cliente.telefono %} · {{ cliente.telefono }}{% endif %}</p>
+    </div>
+    <a href="{% url 'reventa:cliente_editar' cliente.pk %}" class="btn btn-outline-secondary">
+        <i class="bi bi-pencil" aria-hidden="true"></i> Editar
+    </a>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <section class="tarjeta h-100">
+            <h2 class="tarjeta-titulo">Acceso a la app</h2>
+            <dl class="ficha-datos">
+                <div><dt>Código de acceso</dt><dd class="dato fs-3">{{ cliente.codigo_legible }}</dd></div>
+                <div><dt>Dispositivos pagos</dt><dd class="dato">{% if cliente.vigente %}{{ cliente.pantallas_vigentes }}{% else %}—{% endif %}</dd></div>
+                <div><dt>Vence</dt><dd>{{ cliente.vence|date:"j/m/Y H:i"|default:"Nunca se activó" }}</dd></div>
+            </dl>
+            <dl class="ficha-datos">
+                <div><dt>Cliente desde</dt><dd>{{ numeros.activo_desde|date:"j/m/Y"|default:"—" }}</dd></div>
+                <div><dt>Renovaciones</dt><dd class="dato">{{ numeros.renovaciones }}</dd></div>
+                <div><dt>Créditos usados</dt><dd class="dato">{{ numeros.creditos }}</dd></div>
+                <div><dt>Pagó en total</dt><dd class="dato">$ {{ numeros.cobrado|floatformat:2|intcomma }}</dd></div>
+            </dl>
+            <p class="form-text">El cliente pone este código en la app (TV o celular). Si cierra sesión o reinstala, usa el mismo. Generar uno nuevo desconecta todos sus dispositivos.</p>
+            <p class="form-text">Para instalar la app: <a href="{% url 'descargas:pagina' %}">App Android</a> (link directo <span class="dato">{{ request.scheme }}://{{ request.get_host }}/descargar/</span>).</p>
+            <form method="post" action="{% url 'reventa:cliente_codigo' cliente.pk %}"
+                  onsubmit="return confirm('¿Generar un código nuevo? El actual deja de servir.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Generar código nuevo</button>
+            </form>
+            {% if cliente.notas %}<hr><p class="mb-0 small">{{ cliente.notas|linebreaksbr }}</p>{% endif %}
+        </section>
+    </div>
+    <div class="col-lg-6">
+        <section class="tarjeta h-100">
+            <h2 class="tarjeta-titulo">{% if cliente.vence %}Renovar{% else %}Activar{% endif %}</h2>
+            {% if adelantada %}
+            <p class="mb-0">Ya tiene pagados los próximos 30 días ({{ adelantada.pantallas }} dispositivo{{ adelantada.pantallas|pluralize }}, desde el {{ adelantada.desde|date:"j/m/Y" }} hasta el {{ adelantada.hasta|date:"j/m/Y" }}). Se puede volver a renovar cuando empiecen.</p>
+            {% else %}
+            <p class="texto-suave small">
+                {% if cliente.revendedor %}
+                1 crédito = 1 dispositivo durante 30 días. Disponibles: <strong>{{ saldo }}</strong>.
+                {% else %}
+                Cliente directo: no gasta créditos.
+                {% endif %}
+                {% if cliente.vigente %}Como está vigente, los 30 días se suman desde que vence ({{ cliente.vence|date:"j/m/Y" }}).{% endif %}
+            </p>
+            <form method="post" action="{% url 'reventa:cliente_renovar' cliente.pk %}" class="row g-2 align-items-end" novalidate
+                  {% if cliente.revendedor %}onsubmit="var n = this.dispositivos.value; return confirm('¿Usar ' + n + ' crédito(s) para ' + n + ' dispositivo(s) por 30 días?');"{% endif %}>
+                {% csrf_token %}
+                {% include "parciales/_campo.html" with campo=form_renovar.dispositivos ancho="col-sm-5" %}
+                {% include "parciales/_campo.html" with campo=form_renovar.monto_cobrado ancho="col-sm-7" %}
+                <p class="form-text mb-0">Precio sugerido por dispositivo: $ {{ precio_dispositivo|floatformat:2|intcomma }}</p>
+                <div class="col-12"><button type="submit" class="btn btn-primary">{% if cliente.vence %}Renovar{% else %}Activar{% endif %}</button></div>
+            </form>
+            {% endif %}
+        </section>
+    </div>
+</div>
+
+<section class="tarjeta mb-4 p-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-4 pt-4">
+        <h2 class="tarjeta-titulo">Dispositivos conectados ({{ dispositivos|length }} de {{ cliente.pantallas_vigentes }})</h2>
+        {% if dispositivos %}
+        <form method="post" action="{% url 'reventa:cliente_liberar' cliente.pk %}"
+              onsubmit="return confirm('¿Desconectar todos los dispositivos? Van a tener que volver a poner el código.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Liberar todos</button>
+        </form>
+        {% endif %}
+    </div>
+    <p class="form-text px-4">Un dispositivo sin señales durante {{ horas_sin_senal }} horas se libera solo (ej: desinstalaron la app sin cerrar sesión).</p>
+    {% if dispositivos %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr><th scope="col">Dispositivo</th><th scope="col">Conectado desde</th><th scope="col">Última señal</th><th scope="col"><span class="visually-hidden">Acciones</span></th></tr></thead>
+            <tbody>
+            {% for d in dispositivos %}
+                <tr>
+                    <td>{{ d.nombre|default:"Sin nombre" }}</td>
+                    <td class="small">{{ d.conectado|date:"j/m/Y H:i" }}</td>
+                    <td class="small">hace {{ d.ultima_senal|timesince }}</td>
+                    <td class="text-end">
+                        <form method="post" action="{% url 'reventa:cliente_liberar' cliente.pk %}">
+                            {% csrf_token %}<input type="hidden" name="dispositivo" value="{{ d.pk }}">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">Liberar</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="texto-suave px-4 pb-4 mb-0">Ningún dispositivo conectado ahora.</p>
+    {% endif %}
+</section>
+
+<section class="tarjeta p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Historial</h2>
+    {% if renovaciones %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr><th scope="col">Fecha</th><th scope="col">Período</th><th scope="col">Dispositivos</th><th scope="col">Créditos</th><th scope="col">Cobrado</th><th scope="col">Por</th></tr></thead>
+            <tbody>
+            {% for r in renovaciones %}
+                <tr>
+                    <td class="small">{{ r.fecha|date:"j/m/Y H:i" }}</td>
+                    <td class="small">{{ r.desde|date:"j/m/Y" }} → {{ r.hasta|date:"j/m/Y" }}</td>
+                    <td class="dato">{{ r.pantallas }}</td>
+                    <td class="dato">{{ r.creditos }}</td>
+                    <td class="dato">$ {{ r.monto_cobrado|floatformat:2|intcomma }}</td>
+                    <td class="texto-suave small">{{ r.hecha_por.username|default:"—" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="texto-suave px-4 pb-4 mb-0">Todavía no se activó.</p>
+    {% endif %}
+</section>
+{% endblock %}

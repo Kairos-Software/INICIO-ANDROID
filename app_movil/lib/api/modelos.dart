@@ -47,9 +47,9 @@ class Perfil {
 
   /// [(módulo, [descripciones])] — para mostrar "Lo que podés hacer".
   List<(String, List<String>)> get permisosPorModulo => [
-        for (final m in datos['permisos_por_modulo'] as List? ?? [])
-          ('${m['modulo']}', [for (final p in m['permisos'] as List) '$p']),
-      ];
+    for (final m in datos['permisos_por_modulo'] as List? ?? [])
+      ('${m['modulo']}', [for (final p in m['permisos'] as List) '$p']),
+  ];
 
   bool puede(String codigo) => esSuperusuario || permisos.contains(codigo);
 }
@@ -106,10 +106,10 @@ class Opcion {
 /// Un rol para el formulario de usuarios.
 class RolOpcion {
   RolOpcion(Map<String, dynamic> json)
-      : id = json['id'] as int,
-        nombre = '${json['nombre']}',
-        descripcion = '${json['descripcion'] ?? ''}',
-        puedeAsignar = json['puede_asignar'] == true;
+    : id = json['id'] as int,
+      nombre = '${json['nombre']}',
+      descripcion = '${json['descripcion'] ?? ''}',
+      puedeAsignar = json['puede_asignar'] == true;
 
   final int id;
   final String nombre;
@@ -122,12 +122,25 @@ class RolOpcion {
 /// Una dirección de la señal de un canal. La app prueba las fuentes en orden.
 class FuenteCanal {
   FuenteCanal(Map<String, dynamic> json)
-      : id = json['id'] as int,
-        url = '${json['url']}',
-        tipo = '${json['tipo'] ?? 'hls'}';
+    : id = json['id'] as int,
+      url = '${json['url']}',
+      tipo = '${json['tipo'] ?? 'hls'}',
+      userAgent = '${json['user_agent'] ?? ''}',
+      referer = '${json['referer'] ?? ''}';
 
   final int id;
   final String url;
+
+  /// Cómo tiene que presentarse el reproductor para que el canal entregue la
+  /// señal (lo decide el servidor). Hay canales que rechazan a "ExoPlayer".
+  final String userAgent;
+  final String referer;
+
+  /// Las cabeceras con que se pide el video.
+  Map<String, String> get cabeceras => {
+    if (userAgent.isNotEmpty) 'User-Agent': userAgent,
+    if (referer.isNotEmpty) 'Referer': referer,
+  };
 
   /// "hls" o "youtube" (por ahora la app reproduce solo HLS).
   final String tipo;
@@ -138,11 +151,11 @@ class FuenteCanal {
 /// Un canal de TV en vivo (GET /canales/).
 class Canal {
   Canal(Map<String, dynamic> json)
-      : id = json['id'] as int,
-        nombre = '${json['nombre'] ?? ''}',
-        numero = '${json['numero'] ?? ''}',
-        logo = '${json['logo'] ?? ''}',
-        fuentes = [for (final f in json['fuentes'] as List? ?? []) FuenteCanal(f as Map<String, dynamic>)];
+    : id = json['id'] as int,
+      nombre = '${json['nombre'] ?? ''}',
+      numero = '${json['numero'] ?? ''}',
+      logo = '${json['logo'] ?? ''}',
+      fuentes = [for (final f in json['fuentes'] as List? ?? []) FuenteCanal(f as Map<String, dynamic>)];
 
   final int id;
   final String nombre;
@@ -157,9 +170,30 @@ class Canal {
 /// Una categoría con sus canales.
 class CategoriaCanales {
   CategoriaCanales(Map<String, dynamic> json)
-      : nombre = '${json['nombre'] ?? ''}',
-        canales = [for (final c in json['canales'] as List? ?? []) Canal(c as Map<String, dynamic>)];
+    : nombre = '${json['nombre'] ?? ''}',
+      canales = [for (final c in json['canales'] as List? ?? []) Canal(c as Map<String, dynamic>)];
 
   final String nombre;
   final List<Canal> canales;
+}
+
+/// Un cliente que mira la TV (GET /cliente/): entró con su código, no con usuario.
+class DatosCliente {
+  DatosCliente(Map<String, dynamic> json)
+    : nombre = '${json['nombre'] ?? ''}',
+      codigo = '${json['codigo'] ?? ''}',
+      vence = DateTime.tryParse('${json['vence'] ?? ''}')?.toLocal(),
+      pantallas = json['pantallas'] as int? ?? 0,
+      conectados = json['conectados'] as int? ?? 0;
+
+  final String nombre;
+
+  /// Su código de acceso ("4821 9037"), por si lo olvida.
+  final String codigo;
+  final DateTime? vence;
+  final int pantallas;
+  final int conectados;
+
+  /// Días que le quedan (0 si vence hoy).
+  int? get diasRestantes => vence?.difference(DateTime.now()).inDays;
 }

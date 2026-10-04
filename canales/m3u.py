@@ -9,6 +9,14 @@ Una lista M3U es texto. Cada canal ocupa dos líneas:
 La primera tiene los datos (atributos clave="valor" y, después de la coma,
 el nombre); la segunda, la dirección de la señal.
 
+Algunas señales solo se entregan si el reproductor se presenta de cierta
+forma (User-Agent) o dice desde qué página viene (Referer). Las listas lo
+indican de dos maneras, y las dos se leen:
+
+    #EXTVLCOPT:http-user-agent=Mozilla/5.0 ...
+    #EXTVLCOPT:http-referrer=https://pagina-del-canal.com/
+    https://servidor/canal/playlist.m3u8|User-Agent=Mozilla/5.0&Referer=https://...
+
     from canales.m3u import leer_m3u
     for entrada in leer_m3u(texto):
         entrada.nombre, entrada.url, entrada.categoria, ...
@@ -32,6 +40,8 @@ class EntradaM3U:
     numero: str = ''
     tvg_id: str = ''
     pais: str = ''
+    user_agent: str = ''
+    referer: str = ''
 
     @property
     def tipo(self):
@@ -72,11 +82,26 @@ def leer_m3u(texto):
                 tvg_id=atributos.get('tvg-id', '').strip(),
                 pais=atributos.get('tvg-country', '').strip().upper()[:2],
             )
+        elif linea.upper().startswith('#EXTVLCOPT:') and pendiente is not None:
+            opcion, _, valor = linea[len('#EXTVLCOPT:'):].partition('=')
+            opcion = opcion.strip().lower()
+            if opcion == 'http-user-agent':
+                pendiente.user_agent = valor.strip()
+            elif opcion in ('http-referrer', 'http-referer'):
+                pendiente.referer = valor.strip()
         elif linea.startswith('#'):
-            continue   # otras directivas (#EXTM3U, #EXTVLCOPT...) no se usan por ahora
+            continue   # otras directivas (#EXTM3U...) no se usan por ahora
         elif pendiente is not None:
-            # Algunas listas agregan opciones después de "|" (cabeceras para VLC)
-            pendiente.url = linea.split('|')[0].strip()
+            # Algunas listas agregan cabeceras después de "|": dir|User-Agent=...&Referer=...
+            direccion, _, opciones = linea.partition('|')
+            pendiente.url = direccion.strip()
+            for opcion in opciones.split('&') if opciones else []:
+                clave, _, valor = opcion.partition('=')
+                clave = clave.strip().lower()
+                if clave == 'user-agent':
+                    pendiente.user_agent = valor.strip()
+                elif clave in ('referer', 'referrer'):
+                    pendiente.referer = valor.strip()
             if pendiente.url.lower().startswith(('http://', 'https://')):
                 entradas.append(pendiente)
             pendiente = None

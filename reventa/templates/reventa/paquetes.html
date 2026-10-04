@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block titulo %}Paquetes de créditos{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <h1 class="pagina-titulo">Paquetes de créditos</h1>
+        <p class="pagina-bajada">Lo que los revendedores pueden comprar.</p>
+    </div>
+    <a href="{% url 'reventa:paquete_nuevo' %}" class="btn btn-acento"><i class="bi bi-plus-lg" aria-hidden="true"></i> Nuevo paquete</a>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta p-0">
+    {% if paquetes %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr><th scope="col">Nombre</th><th scope="col">Créditos</th><th scope="col">Precio</th><th scope="col">Precio por crédito</th><th scope="col">Estado</th></tr></thead>
+            <tbody>
+            {% for p in paquetes %}
+                <tr>
+                    <td><a href="{% url 'reventa:paquete_editar' p.pk %}">{{ p.nombre }}</a></td>
+                    <td class="dato">{{ p.creditos }}</td>
+                    <td class="dato">$ {{ p.precio|floatformat:2|intcomma }}</td>
+                    <td class="dato texto-suave">$ {% widthratio p.precio p.creditos 1 %}</td>
+                    <td>{% if p.activo %}<span class="chip chip-si">A la venta</span>{% else %}<span class="chip">Inactivo</span>{% endif %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="vacio">
+        <i class="bi bi-box-seam" aria-hidden="true"></i>
+        <p>Todavía no hay paquetes. Creá el primero para que los revendedores puedan comprar.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -4,7 +4,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'aparato.dart';
 import 'config.dart';
+import 'pantallas/canales.dart';
+import 'pantallas/cliente.dart';
 import 'pantallas/login.dart';
 import 'pantallas/perfil.dart';
 import 'pantallas/principal.dart';
@@ -15,8 +18,9 @@ import 'widgets/comunes.dart';
 /// Permite volver a la primera pantalla desde cualquier lado (ej: al vencer la sesión).
 final claveNavegador = GlobalKey<NavigatorState>();
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Aparato.cargar();
   final sesion = Sesion();
   sesion.alSalir = () => claveNavegador.currentState?.popUntil((ruta) => ruta.isFirst);
   sesion.iniciar();
@@ -57,7 +61,9 @@ class Raiz extends StatelessWidget {
           body: SafeArea(
             child: Column(
               children: [
-                Expanded(child: VistaError(mensaje: sesion.errorConexion ?? '', alReintentar: sesion.reintentar)),
+                Expanded(
+                  child: VistaError(mensaje: sesion.errorConexion ?? '', alReintentar: sesion.reintentar),
+                ),
                 TextButton(onPressed: sesion.salir, child: const Text('Cerrar sesión e ingresar con otro servidor')),
                 const SizedBox(height: 16),
               ],
@@ -66,7 +72,13 @@ class Raiz extends StatelessWidget {
         );
       case EstadoSesion.sinSesion:
         return const PantallaLogin();
+      case EstadoSesion.sinServicio:
+        return const PantallaSinServicio();
       case EstadoSesion.conSesion:
+        // Un cliente (entró con código) solo ve la TV
+        if (sesion.esCliente) {
+          return const PantallaCanales(esCliente: true);
+        }
         // Un administrador le asignó una contraseña temporal: primero tiene que cambiarla
         if (sesion.perfil!.debeCambiarPassword) {
           return const PantallaCambiarPassword(obligatorio: true);

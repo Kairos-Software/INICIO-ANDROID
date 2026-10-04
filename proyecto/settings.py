@@ -70,6 +70,8 @@ INSTALLED_APPS = [
     'actividad',  # registro de actividad: quién hizo qué y cuándo
     'notificaciones',  # avisos internos (la campanita)
     'canales',  # canales de TV en vivo: categorías, canales y sus fuentes (listas M3U)
+    'reventa',  # revendedores, sus clientes, créditos, paquetes y compras
+    'descargas',  # la APK de la app Android para descargar desde el panel
     'api',  # la API (JSON) para las apps de celular/TV: login por token, perfil, usuarios...
 ]
 
@@ -209,6 +211,7 @@ REST_FRAMEWORK = {
     # la sesión de siempre (para probar la API logueado en el sistema).
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'api.autenticacion.TokenBearer',
+        'api.autenticacion.TokenCliente',   # clientes que miran la TV (login con código)
         'rest_framework.authentication.SessionAuthentication',
     ],
     # Por defecto todo pide sesión iniciada y respeta mantenimiento y "debe cambiar la contraseña"

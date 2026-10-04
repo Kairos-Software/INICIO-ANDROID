@@ -1,0 +1,29 @@
+{% comment %} Los números de un revendedor. Uso: include with n=numeros {% endcomment %}
+{% load humanize %}
+<div class="metricas-bloque">
+<h3 class="metricas-bloque-titulo"><i class="bi bi-coin" aria-hidden="true"></i> Créditos</h3>
+<dl class="ficha-datos resumen-metricas resumen-creditos">
+    <div><dt>Créditos disponibles</dt><dd class="dato fs-4">{{ n.saldo }}</dd></div>
+    <div><dt>Comprados</dt><dd class="dato">{{ n.comprados }}</dd></div>
+    <div><dt>Regalados</dt><dd class="dato">{{ n.regalados }}</dd></div>
+    <div><dt>Usados</dt><dd class="dato">{{ n.usados }}</dd></div>
+    {% if n.ajustes %}<div><dt>Ajustes</dt><dd class="dato">{{ n.ajustes }}</dd></div>{% endif %}
+</dl>
+</div>
+<div class="metricas-bloque">
+<h3 class="metricas-bloque-titulo"><i class="bi bi-people" aria-hidden="true"></i> Clientes</h3>
+<dl class="ficha-datos resumen-metricas resumen-clientes">
+    <div><dt>Clientes vigentes</dt><dd class="dato">{{ n.clientes.vigentes }}</dd></div>
+    <div><dt>Por vencer (7 días)</dt><dd class="dato">{{ n.clientes.por_vencer }}</dd></div>
+    <div><dt>Vencidos</dt><dd class="dato">{{ n.clientes.vencidos }}</dd></div>
+    <div><dt>Sin activar</dt><dd class="dato">{{ n.clientes.sin_activar }}</dd></div>
+</dl>
+</div>
+<div class="metricas-bloque">
+<h3 class="metricas-bloque-titulo"><i class="bi bi-cash-stack" aria-hidden="true"></i> Balance</h3>
+<dl class="ficha-datos resumen-metricas resumen-balance">
+    <div><dt>Cobrado a clientes</dt><dd class="dato">$ {{ n.cobrado|floatformat:2|intcomma }}</dd></div>
+    <div><dt>Invertido en créditos</dt><dd class="dato">$ {{ n.invertido|floatformat:2|intcomma }}</dd></div>
+    <div><dt>Ganancia</dt><dd class="dato">$ {{ n.ganancia|floatformat:2|intcomma }}</dd></div>
+</dl>
+</div>

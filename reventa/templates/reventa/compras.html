@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block titulo %}Compras de créditos{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">Compras de créditos</h1>
+    <p class="pagina-bajada">{% if request.es_admin %}Confirmá el pago cuando lo recibas: recién ahí se suman los créditos.{% else %}Tus pedidos de paquetes.{% endif %}</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="get" class="filtros">
+    <div>
+        <label for="estado" class="visually-hidden">Estado</label>
+        <select id="estado" name="estado" class="form-select">
+            <option value="">Todas</option>
+            {% for valor, texto in estados %}
+            <option value="{{ valor }}" {% if estado == valor %}selected{% endif %}>{{ texto }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+</form>
+
+<div class="tarjeta p-0">
+    {% if pagina.object_list %}
+    {% include "reventa/_tabla_compras.html" with compras=pagina volver="compras" mostrar_revendedor=request.es_admin %}
+    {% else %}
+    <div class="vacio">
+        <i class="bi bi-receipt" aria-hidden="true"></i>
+        <p>No hay compras{% if estado %} en ese estado{% endif %}.</p>
+    </div>
+    {% endif %}
+</div>
+{% include "parciales/_paginacion.html" with pagina=pagina parametros="estado="|add:estado %}
+{% endblock %}

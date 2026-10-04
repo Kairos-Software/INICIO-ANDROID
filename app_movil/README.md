@@ -1,6 +1,6 @@
 # app_movil/
 
-**Kairos Software Móvil**: la app Android del sistema, hecha con **Flutter** (lenguaje Dart). Muestra los
+**Kairos TV**: la app Android (celulares y televisores) del sistema, hecha con **Flutter** (lenguaje Dart). Muestra los
 **canales de TV en vivo** y además hace lo mismo que la web (login, inicio, mi perfil, usuarios, notificaciones)
 hablando con la API de Django (`../api/`). No tiene datos ni reglas
 propias: todo lo pide y lo valida el servidor.
@@ -15,12 +15,44 @@ Celular (esta app)  ──WiFi / internet──>  Django: /api/v1/...  ──>  
 |---|---|
 | `lib/` | **El código de la app** (lo único que se toca normalmente). Ver su README. |
 | `test/` | Tests (`flutter test`). |
-| `assets/` | Lo que va dentro de la app: `logo/` (logo e íconos) y `fuentes/` (Poppins). Cada una con su README. |
+| `assets/` | Lo que va dentro de la app: `logo/` (logo e íconos) y `fuentes/` (Sora y Manrope, las del panel). Cada una con su README. |
 | `android/` | El proyecto Android que Flutter genera para compilar. Solo se toca para cosas de Android: permisos y nombre en `android/app/src/main/AndroidManifest.xml`, el id de la app en `android/app/build.gradle.kts`, la pantalla de arranque en `android/app/src/main/res/` (`drawable*/launch_background.xml`, `values*/styles.xml`). |
+| `tools/generar_marca.py` | Genera logo, símbolo, íconos, pantalla de arranque y banner de Android TV desde `assets/logo/original.png`. |
 | `pubspec.yaml` | Nombre, versión y **paquetes** que usa la app (como `requirements.txt`). |
 | `pubspec.lock` | Versiones exactas instaladas (lo genera Flutter, va al repo). |
 | `analysis_options.yaml` | Reglas de estilo que revisa `flutter analyze` (como `.flake8`). |
 | `build/`, `.dart_tool/` | Generadas al compilar. No van al repo. |
+
+## Dos formas de entrar
+
+- **Código de 8 números** (lo que se ve primero): los clientes que miran la
+  TV. Ven solo los canales y "Mi cuenta". La app da una "señal" al servidor
+  cada 5 minutos; si el servicio vence, muestra "Tu servicio venció" (y al
+  renovar sigue sin volver a poner el código). Si ya hay tantos aparatos
+  conectados como pantallas pagadas, el nuevo ve "cuenta en uso".
+- **Usuario y contraseña** ("Entrar con usuario y contraseña"):
+  administradores y revendedores. Ven todo lo de antes (TV, inicio, perfil,
+  usuarios, avisos). El superusuario ve los canales sin créditos.
+
+## Android TV
+
+La misma APK se instala en celulares y en televisores Android / Google TV:
+
+- `AndroidManifest.xml`: `leanback` y `touchscreen` como *no obligatorios*,
+  la categoría `LEANBACK_LAUNCHER` (aparece en el menú de la TV) y el
+  `android:banner` (`res/drawable-xhdpi/banner.png`, 320×180, sale de `tools/generar_marca.py`).
+- Con el **control remoto**: el canal con foco se marca (borde celeste); OK
+  lo abre. En el reproductor, **arriba / abajo o CH+ / CH−** cambian de canal
+  (zapping), OK muestra los datos del canal y "Atrás" vuelve.
+- `MainActivity.kt` le pasa a Flutter el **nombre del aparato** (ej:
+  "Philips 55PUD7406") y si es una TV (`lib/aparato.dart`). El nombre se ve
+  en el panel, en "Dispositivos conectados" del cliente.
+
+Instalar en una TV: copiar la APK con un pendrive, o con la app *Downloader*
+desde una dirección web (cuando esté en producción), o por la red:
+`adb connect <ip-de-la-tv>` y `flutter install` / `adb install app-release.apk`
+(en la TV: Ajustes → Preferencias del dispositivo → Opciones de desarrollador →
+Depuración por red).
 
 ## Paquetes que usa
 

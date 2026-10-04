@@ -56,6 +56,9 @@ class ApiError implements Exception {
   bool get sinConexion => status == 0;
   bool get sesionVencida => status == 401;
 
+  /// El servicio del cliente (login con código) venció o lo suspendieron.
+  bool get sinServicio => status == 403 && (codigo == 'servicio_vencido' || codigo == 'suspendido');
+
   /// El error de un campo del formulario (o null si ese campo está bien).
   String? campo(String nombre) => campos[nombre]?.join(' ');
 
@@ -67,7 +70,7 @@ class ApiError implements Exception {
 }
 
 class ApiCliente {
-  ApiCliente({required this.urlBase, this.token, this.alPerderSesion});
+  ApiCliente({required this.urlBase, this.token, this.alPerderSesion, this.alPerderServicio});
 
   /// Ej: http://192.168.1.241:8000/api/v1/
   String urlBase;
@@ -78,11 +81,13 @@ class ApiCliente {
   /// Se llama cuando el servidor responde 401 teniendo token (venció o lo cerraron).
   void Function()? alPerderSesion;
 
+  /// Se llama cuando un cliente se queda sin servicio (venció o lo suspendieron).
+  void Function(ApiError error)? alPerderServicio;
+
   final http.Client _http = http.Client();
   static const _tiempoMaximo = Duration(seconds: 15);
 
-  Future<dynamic> get(String ruta, {Map<String, String>? parametros}) =>
-      _pedir('GET', ruta, parametros: parametros);
+  Future<dynamic> get(String ruta, {Map<String, String>? parametros}) => _pedir('GET', ruta, parametros: parametros);
 
   Future<dynamic> post(String ruta, [Map<String, dynamic>? cuerpo]) => _pedir('POST', ruta, cuerpo: cuerpo);
 
@@ -142,6 +147,8 @@ class ApiCliente {
       final error = ApiError.desdeRespuesta(respuesta.statusCode, datos);
       if (error.sesionVencida && token != null) {
         alPerderSesion?.call();
+      } else if (error.sinServicio) {
+        alPerderServicio?.call(error);
       }
       throw error;
     }
@@ -149,8 +156,8 @@ class ApiCliente {
   }
 
   ApiError _errorConexion(String detalle) => ApiError(
-        status: 0,
-        codigo: 'sin_conexion',
-        detalle: '$detalle Revisá que el celular y el servidor estén en la misma red y que el servidor esté encendido.',
-      );
+    status: 0,
+    codigo: 'sin_conexion',
+    detalle: '$detalle Revisá que el celular y el servidor estén en la misma red y que el servidor esté encendido.',
+  );
 }

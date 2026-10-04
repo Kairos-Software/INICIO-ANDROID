@@ -1,3 +1,4 @@
+{% load static %}
 {% comment %}
     Menú lateral. Cada opción se muestra solo si el usuario tiene el permiso
     (`permisos` viene de usuarios/context_processors.py). Ocultar una opción
@@ -9,18 +10,82 @@
 {% with url_actual=request.resolver_match.view_name %}
 <aside class="menu" id="menu-principal" aria-label="Menú principal">
     <a href="{% url 'core:inicio' %}" class="menu-marca">
-        <span class="marca-isotipo" aria-hidden="true">{{ NOMBRE_SISTEMA|first|upper }}</span>
+        <span class="marca-isotipo" aria-hidden="true">
+            <img src="{% static 'img/kairos-tv-symbol.png' %}" alt="" width="46" height="36">
+        </span>
         <span>
-            <span class="marca-nombre d-block">{{ NOMBRE_SISTEMA }}</span>
-            <span class="marca-empresa">{{ NOMBRE_EMPRESA }}</span>
+            <span class="marca-nombre d-block">Kairos<span>TV</span></span>
+            <span class="marca-empresa">Panel de gestión</span>
         </span>
     </a>
+    <button type="button" class="menu-cerrar" data-accion="cerrar-menu" aria-label="Cerrar menú">
+        <i class="bi bi-x-lg" aria-hidden="true"></i>
+    </button>
+    <button type="button" class="menu-colapsar" data-accion="alternar-menu"
+            aria-label="Contraer menú" aria-controls="menu-principal" title="Contraer menú">
+        <i class="bi bi-chevron-left" aria-hidden="true"></i>
+    </button>
 
     <nav class="menu-nav">
         <a href="{% url 'core:inicio' %}" class="menu-link {% if url_actual == 'core:inicio' %}activo{% endif %}"
            {% if url_actual == 'core:inicio' %}aria-current="page"{% endif %}>
-            <i class="bi bi-house" aria-hidden="true"></i> Inicio
+            <i class="bi bi-house" aria-hidden="true"></i><span class="menu-link-texto">Inicio</span>
         </a>
+
+        {# Reventa: el administrador (permiso) o un revendedor (tiene perfil: user.revendedor) #}
+        {% if permisos.ver_canales or permisos.administrar_reventa or user.revendedor %}
+        <div class="menu-grupo">Kairos TV</div>
+        {% endif %}
+        {% if permisos.administrar_reventa or user.revendedor %}
+        <a href="{% url 'reventa:inicio' %}"
+           class="menu-link {% if url_actual == 'reventa:inicio' %}activo{% endif %}">
+            <i class="bi bi-graph-up" aria-hidden="true"></i><span class="menu-link-texto">Reventa</span>
+        </a>
+        <a href="{% url 'reventa:clientes' %}"
+           class="menu-link {% if request.path|slice:':18' == '/reventa/clientes/' %}activo{% endif %}">
+            <i class="bi bi-person-video3" aria-hidden="true"></i><span class="menu-link-texto">Clientes</span>
+        </a>
+        <a href="{% url 'reventa:estadisticas' %}"
+           class="menu-link {% if url_actual == 'reventa:estadisticas' %}activo{% endif %}">
+            <i class="bi bi-bar-chart" aria-hidden="true"></i><span class="menu-link-texto">Estadísticas</span>
+        </a>
+        {% endif %}
+        {% if user.revendedor %}
+        <a href="{% url 'reventa:creditos' %}"
+           class="menu-link {% if request.path|slice:':18' == '/reventa/creditos/' %}activo{% endif %}">
+            <i class="bi bi-coin" aria-hidden="true"></i><span class="menu-link-texto">Mis créditos</span>
+        </a>
+        {% endif %}
+        {% if permisos.administrar_reventa %}
+        <a href="{% url 'reventa:revendedores' %}"
+           class="menu-link {% if request.path|slice:':22' == '/reventa/revendedores/' %}activo{% endif %}">
+            <i class="bi bi-shop" aria-hidden="true"></i><span class="menu-link-texto">Revendedores</span>
+        </a>
+        {% endif %}
+        {% if permisos.administrar_reventa %}
+        <a href="{% url 'reventa:compras' %}"
+           class="menu-link {% if request.path|slice:':17' == '/reventa/compras/' %}activo{% endif %}">
+            <i class="bi bi-receipt" aria-hidden="true"></i><span class="menu-link-texto">Compras</span>
+        </a>
+        {% endif %}
+        {% if permisos.gestionar_paquetes %}
+        <a href="{% url 'reventa:paquetes' %}"
+           class="menu-link {% if request.path|slice:':18' == '/reventa/paquetes/' %}activo{% endif %}">
+            <i class="bi bi-box-seam" aria-hidden="true"></i><span class="menu-link-texto">Paquetes</span>
+        </a>
+        {% endif %}
+        {% if permisos.ver_canales %}
+        <a href="{% url 'canales:inicio' %}"
+           class="menu-link {% if request.path|slice:':9' == '/canales/' %}activo{% endif %}">
+            <i class="bi bi-tv" aria-hidden="true"></i><span class="menu-link-texto">Canales</span>
+        </a>
+        {% endif %}
+        {% if permisos.ver_canales or permisos.administrar_reventa or user.revendedor %}
+        <a href="{% url 'descargas:pagina' %}"
+           class="menu-link {% if request.path|slice:':13' == '/app-android/' %}activo{% endif %}">
+            <i class="bi bi-android2" aria-hidden="true"></i><span class="menu-link-texto">App Android</span>
+        </a>
+        {% endif %}
 
         {% if permisos.ver_usuarios or permisos.ver_roles %}
         <div class="menu-grupo">Administración</div>
@@ -28,13 +93,13 @@
         {% if permisos.ver_usuarios %}
         <a href="{% url 'usuarios:lista' %}"
            class="menu-link {% if request.path|slice:':10' == '/usuarios/' %}activo{% endif %}">
-            <i class="bi bi-people" aria-hidden="true"></i> Usuarios
+            <i class="bi bi-people" aria-hidden="true"></i><span class="menu-link-texto">Usuarios</span>
         </a>
         {% endif %}
         {% if permisos.ver_roles %}
         <a href="{% url 'usuarios:roles_lista' %}"
            class="menu-link {% if request.path|slice:':7' == '/roles/' %}activo{% endif %}">
-            <i class="bi bi-shield-check" aria-hidden="true"></i> Roles
+            <i class="bi bi-shield-check" aria-hidden="true"></i><span class="menu-link-texto">Roles</span>
         </a>
         {% endif %}
 
@@ -44,24 +109,24 @@
         {% if permisos.ver_actividad %}
         <a href="{% url 'actividad:lista' %}"
            class="menu-link {% if request.path|slice:':11' == '/actividad/' %}activo{% endif %}">
-            <i class="bi bi-clock-history" aria-hidden="true"></i> Actividad
+            <i class="bi bi-clock-history" aria-hidden="true"></i><span class="menu-link-texto">Actividad</span>
         </a>
         {% endif %}
         {% if user.is_superuser %}
         <a href="{% url 'core:mantenimiento' %}"
            class="menu-link {% if url_actual == 'core:mantenimiento' %}activo{% endif %}">
-            <i class="bi bi-cone-striped" aria-hidden="true"></i> Mantenimiento
+            <i class="bi bi-cone-striped" aria-hidden="true"></i><span class="menu-link-texto">Mantenimiento</span>
         </a>
         <a href="{% url 'core:herramientas' %}"
            class="menu-link {% if url_actual == 'core:herramientas' %}activo{% endif %}">
-            <i class="bi bi-wrench-adjustable" aria-hidden="true"></i> Herramientas
+            <i class="bi bi-wrench-adjustable" aria-hidden="true"></i><span class="menu-link-texto">Herramientas</span>
         </a>
         {% endif %}
 
         {% if user.is_staff %}
         <div class="menu-grupo">Técnico</div>
         <a href="{% url 'admin:index' %}" class="menu-link">
-            <i class="bi bi-tools" aria-hidden="true"></i> Admin de Django
+            <i class="bi bi-tools" aria-hidden="true"></i><span class="menu-link-texto">Admin de Django</span>
         </a>
         {% endif %}
     </nav>

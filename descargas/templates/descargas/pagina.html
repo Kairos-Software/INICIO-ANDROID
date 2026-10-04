@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% comment %}
+    La app Android: link de descarga, cómo instalarla y (con publicar_app)
+    subir versiones nuevas. Diseño provisorio, con las clases del panel.
+{% endcomment %}
+
+{% block titulo %}App Android{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">App Android</h1>
+    <p class="pagina-bajada">Kairos TV para celulares y televisores Android. El cliente entra con el código de 8 números que figura en su ficha.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Descargar</h2>
+    {% if ultima %}
+    <p>Última versión: <strong>{{ ultima.version }}</strong> <span class="texto-suave">({{ ultima.subida|date:"j/m/Y" }})</span></p>
+    <p><a href="{% url 'descargas:descargar' %}" class="btn btn-primary"><i class="bi bi-download" aria-hidden="true"></i> Descargar la APK</a></p>
+    <p class="mb-1">Link directo (siempre baja la última versión):</p>
+    <p class="dato fs-5">{{ link }}</p>
+    {% if ultima.notas %}<p class="texto-suave small mb-0">Qué cambió: {{ ultima.notas|linebreaksbr }}</p>{% endif %}
+    {% else %}
+    <p class="texto-suave mb-0">Todavía no se subió ninguna versión de la app.</p>
+    {% endif %}
+</section>
+
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Cómo instalarla</h2>
+    <h3 class="h6">En un celular</h3>
+    <ol>
+        <li>Abrí el link directo desde el celular y descargá el archivo.</li>
+        <li>Al abrirlo, Android pide permiso para "instalar apps desconocidas": aceptá.</li>
+        <li>Abrí <strong>Kairos TV</strong> y poné el código del cliente.</li>
+    </ol>
+    <h3 class="h6">En un televisor Android / Google TV</h3>
+    <ol class="mb-0">
+        <li>Desde la tienda de la TV, instalá la app gratuita <strong>Downloader</strong>.</li>
+        <li>En la TV: Ajustes → Privacidad / Seguridad → permitir instalar apps desconocidas para Downloader.</li>
+        <li>Abrí Downloader, escribí el link directo con el control remoto y descargá.</li>
+        <li>Instalá, abrí <strong>Kairos TV</strong> (aparece en el menú de apps) y poné el código del cliente.</li>
+    </ol>
+</section>
+
+{% if puede_publicar %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Publicar una versión nueva</h2>
+    <p class="texto-suave small">Compilá con <code>flutter build apk --release</code> y subí <code>build/app/outputs/flutter-apk/app-release.apk</code>. Desde que la subís, el link directo entrega esta.</p>
+    <form method="post" enctype="multipart/form-data" class="row g-3 js-tarda" novalidate>
+        {% csrf_token %}
+        {% include "parciales/_campo.html" with campo=form.version ancho="col-md-3" %}
+        {% include "parciales/_campo.html" with campo=form.archivo ancho="col-md-9" %}
+        {% include "parciales/_campo.html" with campo=form.notas ancho="col-12" %}
+        <div class="col-12"><button type="submit" class="btn btn-primary"><i class="bi bi-upload" aria-hidden="true"></i> Publicar</button></div>
+    </form>
+</section>
+
+<section class="tarjeta p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Versiones</h2>
+    {% if versiones %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr><th scope="col">Versión</th><th scope="col">Subida</th><th scope="col">Por</th><th scope="col">Estado</th><th scope="col"><span class="visually-hidden">Acciones</span></th></tr></thead>
+            <tbody>
+            {% for v in versiones %}
+                <tr>
+                    <td><a href="{% url 'descargas:descargar_version' v.pk %}">{{ v.version }}</a></td>
+                    <td class="small">{{ v.subida|date:"j/m/Y H:i" }}</td>
+                    <td class="texto-suave small">{{ v.subida_por.username|default:"—" }}</td>
+                    <td>{% if v.publicada %}<span class="chip chip-si">Publicada</span>{% else %}<span class="chip">Oculta</span>{% endif %}</td>
+                    <td class="text-end">
+                        <form method="post" action="{% url 'descargas:cambiar_publicada' v.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">{% if v.publicada %}Ocultar{% else %}Publicar{% endif %}</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="texto-suave px-4 pb-4 mb-0">Sin versiones todavía.</p>
+    {% endif %}
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Subir una APK tarda: se deshabilita el botón para que no se mande dos veces
+    document.querySelectorAll('form.js-tarda').forEach(function (form) {
+        form.addEventListener('submit', function () {
+            var boton = form.querySelector('button[type=submit]');
+            boton.disabled = true;
+            boton.textContent = 'Subiendo…';
+        });
+    });
+</script>
+{% endblock %}

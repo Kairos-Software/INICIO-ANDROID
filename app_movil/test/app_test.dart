@@ -147,4 +147,35 @@ void main() {
     expect(fechaLegible(null), '');
     expect(fechaLegible('2026-10-02T15:04:00'), '02/10/2026 15:04');
   });
+
+  group('Clientes (login con código)', () {
+    test('servicio vencido o suspendido se reconoce', () {
+      expect(ApiError.desdeRespuesta(403, {'codigo': 'servicio_vencido', 'detalle': 'x'}).sinServicio, isTrue);
+      expect(ApiError.desdeRespuesta(403, {'codigo': 'suspendido', 'detalle': 'x'}).sinServicio, isTrue);
+      expect(ApiError.desdeRespuesta(403, {'codigo': 'sin_permiso', 'detalle': 'x'}).sinServicio, isFalse);
+      expect(ApiError.desdeRespuesta(409, {'codigo': 'cuenta_en_uso', 'detalle': 'x'}).sinServicio, isFalse);
+    });
+
+    test('DatosCliente', () {
+      final vence = DateTime.now().add(const Duration(days: 10, hours: 2));
+      final cliente = DatosCliente({
+        'nombre': 'Ana',
+        'vence': vence.toUtc().toIso8601String(),
+        'pantallas': 2,
+        'conectados': 1,
+      });
+      expect(cliente.nombre, 'Ana');
+      expect(cliente.pantallas, 2);
+      expect(cliente.diasRestantes, 10);
+      expect(DatosCliente({'nombre': 'Beto'}).vence, isNull);
+    });
+  });
+
+  group('Fuentes', () {
+    test('cabeceras para pedir el video', () {
+      final fuente = FuenteCanal({'id': 1, 'url': 'https://x/a.m3u8', 'tipo': 'hls', 'user_agent': 'Mozilla/5.0', 'referer': ''});
+      expect(fuente.cabeceras, {'User-Agent': 'Mozilla/5.0'});
+      expect(FuenteCanal({'id': 2, 'url': 'https://x'}).cabeceras, isEmpty);
+    });
+  });
 }

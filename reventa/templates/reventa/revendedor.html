@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% comment %} Detalle de un revendedor (solo administrador): números, créditos, clientes, compras y libreta. {% endcomment %}
+{% load humanize %}
+
+{% block titulo %}{{ revendedor }}{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{% url 'reventa:revendedores' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Revendedores</a>
+    <h1 class="pagina-titulo">{{ revendedor }}</h1>
+    <p class="pagina-bajada">Usuario <span class="dato">{{ revendedor.usuario.username }}</span>{% if revendedor.usuario.telefono %} · {{ revendedor.usuario.telefono }}{% endif %}</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Números</h2>
+    {% include "reventa/_numeros_revendedor.html" with n=numeros %}
+</section>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <section class="tarjeta h-100">
+            <h2 class="tarjeta-titulo">Créditos</h2>
+            <form method="post" action="{% url 'reventa:revendedor_accion' revendedor.pk %}" class="row g-2 align-items-end" novalidate>
+                {% csrf_token %}
+                {% include "parciales/_campo.html" with campo=form_creditos.cantidad ancho="col-sm-4" %}
+                {% include "parciales/_campo.html" with campo=form_creditos.detalle ancho="col-sm-8" %}
+                <div class="col-12 d-flex flex-wrap gap-2">
+                    <button type="submit" name="accion" value="regalar" class="btn btn-primary">Regalar créditos</button>
+                    <button type="submit" name="accion" value="ajustar" class="btn btn-outline-secondary">Ajustar (+/−)</button>
+                </div>
+                <p class="form-text mb-0">Regalar: cantidad positiva. Ajustar: corrige errores (ej: −2), con motivo obligatorio.</p>
+            </form>
+            {% if puede_confirmar %}
+            <hr>
+            <form method="post" action="{% url 'reventa:revendedor_accion' revendedor.pk %}" class="row g-2 align-items-end" novalidate>
+                {% csrf_token %}
+                {% include "parciales/_campo.html" with campo=form_paquete.paquete ancho="col-sm-8" %}
+                <div class="col-sm-4"><button type="submit" name="accion" value="compra" class="btn btn-outline-secondary w-100">Cargar compra pagada</button></div>
+                <p class="form-text mb-0">Para cuando te paga por fuera del panel: suma los créditos del paquete y cuenta como ingreso.</p>
+            </form>
+            {% endif %}
+        </section>
+    </div>
+    <div class="col-lg-6">
+        <section class="tarjeta h-100">
+            <h2 class="tarjeta-titulo">Precio por dispositivo</h2>
+            <form method="post" action="{% url 'reventa:revendedor_accion' revendedor.pk %}" class="row g-2 align-items-end" novalidate>
+                {% csrf_token %}
+                {% include "parciales/_campo.html" with campo=form_precio.precio_pantalla ancho="col-sm-8" %}
+                <div class="col-sm-4"><button type="submit" name="accion" value="precio" class="btn btn-outline-secondary w-100">Guardar</button></div>
+            </form>
+        </section>
+    </div>
+</div>
+
+<section class="tarjeta mb-4 p-0">
+    <div class="d-flex justify-content-between align-items-center px-4 pt-4">
+        <h2 class="tarjeta-titulo">Clientes</h2>
+        <a href="{% url 'reventa:clientes' %}?revendedor={{ revendedor.pk }}" class="small">Ver todos</a>
+    </div>
+    {% if clientes %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr><th scope="col">Cliente</th><th scope="col">Dispositivos</th><th scope="col">Vence</th><th scope="col">Estado</th></tr></thead>
+            <tbody>
+            {% for c in clientes %}
+                <tr>
+                    <td><a href="{% url 'reventa:cliente' c.pk %}">{{ c.nombre }}</a></td>
+                    <td class="dato">{% if c.vigente and c.dispositivos_hoy %}{{ c.dispositivos_hoy }}{% else %}—{% endif %}</td>
+                    <td class="small">{{ c.vence|date:"j/m/Y"|default:"—" }}</td>
+                    <td>{% include "reventa/_estado_cliente.html" with c=c %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="texto-suave px-4 pb-4 mb-0">Todavía no tiene clientes.</p>
+    {% endif %}
+</section>
+
+<section class="tarjeta mb-4 p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Compras</h2>
+    {% if compras %}
+    {% include "reventa/_tabla_compras.html" with compras=compras volver="revendedor" %}
+    {% else %}
+    <p class="texto-suave px-4 pb-4 mb-0">No compró paquetes todavía.</p>
+    {% endif %}
+</section>
+
+<section class="tarjeta p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Libreta de créditos</h2>
+    {% include "reventa/_libreta.html" with pagina=movimientos %}
+</section>
+{% include "parciales/_paginacion.html" with pagina=movimientos %}
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block titulo %}Reventa{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">Reventa</h1>
+    <p class="pagina-bajada">1 crédito = 1 pantalla durante 30 días. Los créditos sin usar no vencen.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+{% if general %}
+<section class="tarjeta tarjeta-datos mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <h2 class="tarjeta-titulo">El negocio</h2>
+        <a href="{% url 'reventa:estadisticas' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-bar-chart" aria-hidden="true"></i> Estadísticas mes a mes</a>
+    </div>
+    <div class="metricas-bloque">
+    <h3 class="metricas-bloque-titulo"><i class="bi bi-activity" aria-hidden="true"></i> Operación general</h3>
+    <dl class="ficha-datos resumen-metricas resumen-negocio">
+        <div><dt>Revendedores</dt><dd class="dato">{{ general.revendedores }}</dd></div>
+        <div><dt>Ingresos totales</dt><dd class="dato">$ {{ general.ingresos|floatformat:2|intcomma }}</dd></div>
+        <div><dt>Por paquetes</dt><dd class="dato">$ {{ general.ingresos_paquetes|floatformat:2|intcomma }}</dd></div>
+        <div><dt>Por clientes directos</dt><dd class="dato">$ {{ general.ingresos_directos|floatformat:2|intcomma }}</dd></div>
+        <div><dt>Créditos vendidos</dt><dd class="dato">{{ general.creditos_vendidos }}</dd></div>
+        <div><dt>Créditos regalados</dt><dd class="dato">{{ general.creditos_regalados }}</dd></div>
+        <div><dt>Créditos usados</dt><dd class="dato">{{ general.creditos_usados }}</dd></div>
+        <div><dt>Créditos sin usar</dt><dd class="dato">{{ general.creditos_sin_usar }}</dd></div>
+    </dl>
+    </div>
+    <div class="metricas-bloque">
+    <h3 class="metricas-bloque-titulo"><i class="bi bi-people" aria-hidden="true"></i> Estado de clientes</h3>
+    <dl class="ficha-datos resumen-metricas resumen-clientes">
+        <div><dt>Clientes vigentes</dt><dd class="dato">{{ general.clientes.vigentes }}</dd></div>
+        <div><dt>Por vencer (7 días)</dt><dd class="dato">{{ general.clientes.por_vencer }}</dd></div>
+        <div><dt>Vencidos</dt><dd class="dato">{{ general.clientes.vencidos }}</dd></div>
+        <div><dt>Sin activar</dt><dd class="dato">{{ general.clientes.sin_activar }}</dd></div>
+    </dl>
+    </div>
+</section>
+
+<section class="tarjeta tarjeta-datos mb-4">
+    <h2 class="tarjeta-titulo">Compras pendientes de pago ({{ general.compras_pendientes }})</h2>
+    {% if pendientes %}
+    {% include "reventa/_tabla_compras.html" with compras=pendientes volver="inicio" mostrar_revendedor=True %}
+    {% else %}
+    <p class="texto-suave mb-0">No hay compras esperando confirmación.</p>
+    {% endif %}
+</section>
+{% endif %}
+
+{% if mio %}
+<section class="tarjeta tarjeta-datos mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <h2 class="tarjeta-titulo">Mis números</h2>
+        <div class="d-flex gap-2">
+            <a href="{% url 'reventa:cliente_nuevo' %}" class="btn btn-acento btn-sm"><i class="bi bi-person-plus" aria-hidden="true"></i> Nuevo cliente</a>
+            <a href="{% url 'reventa:creditos' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-coin" aria-hidden="true"></i> Comprar créditos</a>
+            <a href="{% url 'reventa:estadisticas' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-bar-chart" aria-hidden="true"></i> Estadísticas</a>
+        </div>
+    </div>
+    {% include "reventa/_numeros_revendedor.html" with n=mio %}
+</section>
+
+<section class="tarjeta tarjeta-datos">
+    <h2 class="tarjeta-titulo">Clientes por vencer</h2>
+    {% if por_vencer %}
+    <ul class="mb-0">
+        {% for c in por_vencer %}
+        <li><a href="{% url 'reventa:cliente' c.pk %}">{{ c.nombre }}</a> — vence el {{ c.vence|date:"j/m H:i" }}{% if c.telefono %} · {{ c.telefono }}{% endif %}</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="texto-suave mb-0">Ningún cliente vence en los próximos 7 días.</p>
+    {% endif %}
+</section>
+{% endif %}
+{% endblock %}

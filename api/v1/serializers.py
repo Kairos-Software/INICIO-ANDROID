@@ -10,6 +10,7 @@ validaciones.
 from rest_framework import serializers
 
 from canales.models import Canal, Fuente
+from canales.verificacion import USER_AGENT_REPRODUCTOR
 from notificaciones.models import Notificacion
 from usuarios.catalogo_permisos import MODULOS_PERMISOS
 from usuarios.forms import CAMPOS_PERFIL, CAMPOS_USUARIO, SECCIONES_PERFIL_SOLO_LECTURA
@@ -100,9 +101,19 @@ class NotificacionSerializer(serializers.ModelSerializer):
 
 
 class FuenteSerializer(serializers.ModelSerializer):
+    """
+    Una fuente, con las cabeceras con que la app tiene que pedirla: el
+    User-Agent propio de la fuente o, si no tiene, el de siempre (así se puede
+    cambiar desde el servidor sin publicar otra versión de la app).
+    """
+    user_agent = serializers.SerializerMethodField()
+
     class Meta:
         model = Fuente
-        fields = ['id', 'url', 'tipo']
+        fields = ['id', 'url', 'tipo', 'user_agent', 'referer']
+
+    def get_user_agent(self, fuente):
+        return fuente.user_agent or USER_AGENT_REPRODUCTOR
 
 
 class CanalSerializer(serializers.ModelSerializer):

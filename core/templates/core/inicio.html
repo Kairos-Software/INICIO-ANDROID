@@ -16,70 +16,94 @@
     <div class="linea-dia" data-momento="linea" style="--avance-dia: {% avance_dia %}" aria-hidden="true"></div>
 </div>
 
-<div class="row g-4">
-    <div class="col-lg-4">
-        <section class="tarjeta h-100">
-            <h2 class="tarjeta-titulo">Tu cuenta</h2>
-            <dl class="datos-lista">
-                <div>
-                    <dt>Usuario</dt>
-                    <dd class="dato">{{ user.username }}</dd>
-                </div>
-                <div>
-                    <dt>Rol</dt>
-                    <dd>{% if user.is_superuser %}Superusuario (acceso total){% else %}{{ user.descripcion_rol }}{% endif %}</dd>
-                </div>
-                <div>
-                    <dt>Email</dt>
-                    <dd>{{ user.email|default:"Sin email cargado" }}</dd>
-                </div>
-                <div>
-                    <dt>Ingreso anterior</dt>
-                    <dd>{{ ingreso_anterior|date:"j/m/Y H:i"|default:"Es tu primer ingreso" }}</dd>
-                </div>
-            </dl>
-            <a href="{% url 'usuarios:perfil' %}" class="btn btn-outline-secondary btn-sm mt-4">Ver mi perfil</a>
-        </section>
-    </div>
-
-    <div class="col-lg-8">
-        <section class="tarjeta h-100">
-            <h2 class="tarjeta-titulo">Accesos</h2>
-            {% comment %}
-                Cada módulo suma acá su acceso rápido, protegido por su permiso.
-            {% endcomment %}
-            <div class="row g-3">
-                {% if permisos.ver_usuarios %}
-                <div class="col-md-6">
-                    <a href="{% url 'usuarios:lista' %}" class="acceso-rapido">
-                        <span class="acceso-rapido-icono"><i class="bi bi-people" aria-hidden="true"></i></span>
-                        <span><strong>Usuarios</strong><span>Altas, datos y estado de cada persona</span></span>
-                    </a>
-                </div>
-                {% endif %}
-                {% if permisos.ver_roles %}
-                <div class="col-md-6">
-                    <a href="{% url 'usuarios:roles_lista' %}" class="acceso-rapido">
-                        <span class="acceso-rapido-icono"><i class="bi bi-shield-check" aria-hidden="true"></i></span>
-                        <span><strong>Roles</strong><span>Paquetes de permisos para asignar</span></span>
-                    </a>
-                </div>
-                {% endif %}
-                {% if user.is_staff %}
-                <div class="col-md-6">
-                    <a href="{% url 'admin:index' %}" class="acceso-rapido">
-                        <span class="acceso-rapido-icono"><i class="bi bi-tools" aria-hidden="true"></i></span>
-                        <span><strong>Admin de Django</strong><span>Herramienta técnica</span></span>
-                    </a>
-                </div>
-                {% endif %}
-                {% if not permisos and not user.is_staff %}
-                <div class="col-12">
-                    <p class="texto-suave mb-0">Todavía no tenés módulos asignados. Si necesitás acceso a algo, pedíselo a un administrador.</p>
-                </div>
-                {% endif %}
+<div class="tablero-grid">
+    <section class="cuenta-panel">
+        <div class="cuenta-identidad">
+            {% include "parciales/_avatar.html" with u=user clase="avatar-cuenta" %}
+            <div>
+                <span class="cuenta-etiqueta">Tu cuenta</span>
+                <h2>{{ user.get_full_name }}</h2>
+                <span class="cuenta-rol">{% if user.is_superuser %}Superusuario · acceso total{% else %}{{ user.descripcion_rol }}{% endif %}</span>
             </div>
-        </section>
-    </div>
+        </div>
+
+        <dl class="cuenta-detalles">
+            <div>
+                <dt><i class="bi bi-at" aria-hidden="true"></i> Usuario</dt>
+                <dd class="dato">{{ user.username }}</dd>
+            </div>
+            <div>
+                <dt><i class="bi bi-envelope" aria-hidden="true"></i> Email</dt>
+                <dd>{{ user.email|default:"Sin email cargado" }}</dd>
+            </div>
+            <div>
+                <dt><i class="bi bi-clock-history" aria-hidden="true"></i> Ingreso anterior</dt>
+                <dd>{{ ingreso_anterior|date:"j/m/Y H:i"|default:"Es tu primer ingreso" }}</dd>
+            </div>
+        </dl>
+
+        <a href="{% url 'usuarios:perfil' %}" class="cuenta-enlace">
+            Administrar mi perfil <i class="bi bi-arrow-right" aria-hidden="true"></i>
+        </a>
+    </section>
+
+    <section class="modulos-panel">
+        <header class="seccion-encabezado">
+            <div>
+                <span class="seccion-sobrelinea">Panel de gestión</span>
+                <h2>Tus herramientas</h2>
+                <p>Entrá directamente al área que necesitás administrar.</p>
+            </div>
+        </header>
+
+        <div class="modulos-grid">
+            {% if permisos.administrar_reventa or user.revendedor %}
+            <a href="{% url 'reventa:inicio' %}" class="acceso-rapido acceso-tv">
+                <span class="acceso-rapido-icono"><i class="bi bi-graph-up-arrow" aria-hidden="true"></i></span>
+                <span class="acceso-rapido-texto"><strong>Reventa</strong><span>Créditos, ingresos y vencimientos</span></span>
+                <i class="bi bi-arrow-up-right acceso-rapido-flecha" aria-hidden="true"></i>
+            </a>
+            <a href="{% url 'reventa:clientes' %}" class="acceso-rapido acceso-clientes">
+                <span class="acceso-rapido-icono"><i class="bi bi-person-video3" aria-hidden="true"></i></span>
+                <span class="acceso-rapido-texto"><strong>Clientes</strong><span>Altas, dispositivos y renovaciones</span></span>
+                <i class="bi bi-arrow-up-right acceso-rapido-flecha" aria-hidden="true"></i>
+            </a>
+            {% endif %}
+            {% if permisos.ver_canales %}
+            <a href="{% url 'canales:inicio' %}" class="acceso-rapido acceso-canales">
+                <span class="acceso-rapido-icono"><i class="bi bi-broadcast" aria-hidden="true"></i></span>
+                <span class="acceso-rapido-texto"><strong>Canales</strong><span>Fuentes, señales y disponibilidad</span></span>
+                <i class="bi bi-arrow-up-right acceso-rapido-flecha" aria-hidden="true"></i>
+            </a>
+            {% endif %}
+            {% if permisos.ver_usuarios %}
+            <a href="{% url 'usuarios:lista' %}" class="acceso-rapido acceso-usuarios">
+                <span class="acceso-rapido-icono"><i class="bi bi-people" aria-hidden="true"></i></span>
+                <span class="acceso-rapido-texto"><strong>Usuarios</strong><span>Personas, datos y accesos</span></span>
+                <i class="bi bi-arrow-up-right acceso-rapido-flecha" aria-hidden="true"></i>
+            </a>
+            {% endif %}
+            {% if permisos.ver_roles %}
+            <a href="{% url 'usuarios:roles_lista' %}" class="acceso-rapido acceso-roles">
+                <span class="acceso-rapido-icono"><i class="bi bi-shield-check" aria-hidden="true"></i></span>
+                <span class="acceso-rapido-texto"><strong>Roles</strong><span>Permisos y niveles de acceso</span></span>
+                <i class="bi bi-arrow-up-right acceso-rapido-flecha" aria-hidden="true"></i>
+            </a>
+            {% endif %}
+            {% if user.is_staff %}
+            <a href="{% url 'admin:index' %}" class="acceso-rapido acceso-tecnico">
+                <span class="acceso-rapido-icono"><i class="bi bi-tools" aria-hidden="true"></i></span>
+                <span class="acceso-rapido-texto"><strong>Administración técnica</strong><span>Herramientas avanzadas de Django</span></span>
+                <i class="bi bi-arrow-up-right acceso-rapido-flecha" aria-hidden="true"></i>
+            </a>
+            {% endif %}
+            {% if not permisos and not user.is_staff %}
+            <div class="modulos-vacio">
+                <i class="bi bi-grid" aria-hidden="true"></i>
+                <p>Todavía no tenés módulos asignados. Si necesitás acceso, pedíselo a un administrador.</p>
+            </div>
+            {% endif %}
+        </div>
+    </section>
 </div>
 {% endblock %}

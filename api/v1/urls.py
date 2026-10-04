@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from . import auth, canales, notificaciones, perfil, usuarios
+from . import auth, canales, cliente, notificaciones, perfil, usuarios
 
 app_name = 'api_v1'
 
@@ -27,6 +27,9 @@ def indice(request):
             'usuarios_opciones': url('usuarios_opciones'),
             'notificaciones': url('notificaciones'),
             'canales': url('canales'),
+            'cliente_login': url('cliente_login'),
+            'cliente': url('cliente'),
+            'cliente_logout': url('cliente_logout'),
         },
     })
 
@@ -48,6 +51,12 @@ urlpatterns = [
          name='usuario_restablecer_password'),
 
     path('canales/', canales.lista, name='canales'),
+    path('canales/fuentes/<int:pk>/falla/', canales.avisar_falla, name='fuente_falla'),
+
+    # La app de los clientes (login con código)
+    path('cliente/login/', cliente.login, name='cliente_login'),
+    path('cliente/', cliente.estado, name='cliente'),
+    path('cliente/logout/', cliente.logout, name='cliente_logout'),
 
     path('notificaciones/', notificaciones.lista, name='notificaciones'),
     path('notificaciones/<int:pk>/leida/', notificaciones.marcar_leida, name='notificacion_leida'),

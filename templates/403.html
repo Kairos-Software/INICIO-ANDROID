@@ -1,8 +1,10 @@
 {% extends "base_html.html" %}
+{% load static %}
 {% block titulo %}Sin permiso{% endblock %}
 {% block cuerpo %}
-<main class="error-pagina">
+<main class="error-pagina" id="contenido-principal">
     <div>
+        <img class="error-marca" src="{% static 'img/kairos-tv-symbol.png' %}" alt="Kairos TV">
         <div class="error-codigo">403</div>
         <h1 class="h3 mt-3">No tenés permiso para ver esta página</h1>
         <p class="texto-suave">Si necesitás acceso, pedíselo a un administrador del sistema.</p>

@@ -8,6 +8,9 @@ urlpatterns = [
     path('', include('core.urls')),
     path('', include('usuarios.urls')),
     path('actividad/', include('actividad.urls')),
+    path('canales/', include('canales.urls')),
+    path('reventa/', include('reventa.urls')),
+    path('', include('descargas.urls')),   # /descargar/ y /app-android/
     path('notificaciones/', include('notificaciones.urls')),
     path('api/', include('api.urls')),
 ]

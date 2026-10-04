@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% comment %}
+    Canales: resumen, importar una lista M3U (con verificación de las
+    fuentes) y volver a verificar todo. Diseño provisorio: el diseño nuevo
+    del panel viene al final.
+{% endcomment %}
+
+{% block titulo %}Canales{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <h1 class="pagina-titulo">Canales</h1>
+    <p class="pagina-bajada">Importá listas M3U: cada fuente se prueba antes de guardarla. La app solo usa las que funcionan (o que todavía no se verificaron).</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Resumen</h2>
+    <dl class="ficha-datos">
+        <div><dt>Canales cargados</dt><dd class="dato">{{ resumen.canales }}</dd></div>
+        <div><dt>Canales que ve la app</dt><dd class="dato">{{ resumen.canales_en_la_app }}</dd></div>
+        <div><dt>Fuentes que funcionan</dt><dd class="dato">{{ resumen.funcionan }}</dd></div>
+        <div><dt>Fuentes caídas</dt><dd class="dato">{{ resumen.caidas }}</dd></div>
+        <div><dt>Fuentes sin verificar</dt><dd class="dato">{{ resumen.sin_verificar }}</dd></div>
+    </dl>
+    {% if puede_importar %}
+    <hr>
+    <form method="post" action="{% url 'canales:verificar' %}" class="d-flex flex-wrap align-items-center gap-3 js-tarda">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-repeat" aria-hidden="true"></i> Volver a verificar todas
+        </button>
+        <span class="texto-suave small">Las caídas que volvieron se reactivan solas. Puede tardar 1 o 2 minutos.</span>
+    </form>
+    {% endif %}
+</section>
+
+{% if puede_importar %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Importar una lista</h2>
+    <p class="texto-suave">Los canales nuevos se crean. Si un canal ya existe (mismo tvg-id o mismo nombre), la dirección se suma como fuente alternativa. Lo repetido se ignora. Las fuentes que no responden se guardan como <strong>caídas</strong> y la app no las usa.</p>
+    <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end js-tarda" novalidate>
+        {% csrf_token %}
+        {% include "parciales/_campo.html" with campo=form.archivo %}
+        <div class="col-md-6">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-upload" aria-hidden="true"></i> Importar y verificar
+            </button>
+        </div>
+    </form>
+</section>
+{% endif %}
+
+{% if resultado %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Resultado de la importación</h2>
+    <dl class="ficha-datos">
+        <div><dt>Canales nuevos</dt><dd class="dato">{{ resultado.canales_nuevos }}</dd></div>
+        <div><dt>Fuentes nuevas</dt><dd class="dato">{{ resultado.fuentes_nuevas }}</dd></div>
+        <div><dt>Ya existían</dt><dd class="dato">{{ resultado.repetidas }}</dd></div>
+        <div><dt>Funcionan</dt><dd class="dato">{{ resultado.funcionan }}</dd></div>
+        <div><dt>Caídas</dt><dd class="dato">{{ resultado.caidas }}</dd></div>
+        <div><dt>Sin verificar (YouTube)</dt><dd class="dato">{{ resultado.sin_verificar }}</dd></div>
+    </dl>
+    {% if resultado.detalle_caidas %}
+    <details class="mt-3">
+        <summary>Ver las {{ resultado.detalle_caidas|length }} fuente{{ resultado.detalle_caidas|length|pluralize }} caída{{ resultado.detalle_caidas|length|pluralize }} de esta lista</summary>
+        <ul class="small mt-2">
+            {% for nombre, url, motivo in resultado.detalle_caidas %}
+            <li><strong>{{ nombre }}</strong>: {{ motivo }} <span class="texto-suave">{{ url|truncatechars:80 }}</span></li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+</section>
+{% endif %}
+
+<section class="tarjeta p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">Fuentes caídas</h2>
+    {% if caidas %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr><th scope="col">Canal</th><th scope="col">Motivo</th><th scope="col">Dirección</th><th scope="col">Verificada</th></tr></thead>
+            <tbody>
+                {% for f in caidas %}
+                <tr>
+                    <td>{{ f.canal.nombre }}</td>
+                    <td>{{ f.error|default:"—" }}</td>
+                    <td class="texto-suave small" style="overflow-wrap:anywhere">{{ f.url|truncatechars:70 }}</td>
+                    <td class="texto-suave small">{{ f.verificada|date:"j/m H:i"|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="vacio">
+        <i class="bi bi-broadcast" aria-hidden="true"></i>
+        <p>No hay fuentes caídas.</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Verificar tarda: mientras tanto se deshabilita el botón para que no se mande dos veces.
+    document.querySelectorAll('form.js-tarda').forEach(function (form) {
+        form.addEventListener('submit', function () {
+            var boton = form.querySelector('button[type=submit]');
+            boton.disabled = true;
+            boton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Verificando fuentes…';
+        });
+    });
+</script>
+{% endblock %}
