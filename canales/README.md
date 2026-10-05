@@ -167,6 +167,19 @@ por su cuenta (como máximo una vez cada 5 minutos por fuente) y, si también
 le falla, la marca caída: desde la próxima actualización de la lista, la app
 ya no la recibe.
 
+**Lo que el servidor ve bien pero los aparatos no:** hay señales que al
+servidor le responden pero en los celulares y TV no se reproducen (un formato
+de video que el aparato no lee, servidores que aceptan una sola conexión,
+otros que rechazan a los reproductores). Por eso la app manda también el
+motivo (`{"motivo": "formato" | "rechazo" | "tiempo" | "conexion" | "error",
+"detalle"}`). Si en un día avisan **3 aparatos distintos** (o el mismo, con
+media hora de diferencia), la fuente se **oculta 7 días** aunque al servidor
+le ande (`Fuente.oculta_desde`, `falla_en_aparatos`; ver
+`servicios.registrar_falla_en_aparato`). En el catálogo el canal aparece como
+"Oculto porque no se reproduce en los aparatos (motivo)". Pasados los 7 días,
+la app lo vuelve a intentar sola. Si falla porque el aparato no tiene
+internet, la app no avisa.
+
 ## Formato M3U (resumen)
 
 ```

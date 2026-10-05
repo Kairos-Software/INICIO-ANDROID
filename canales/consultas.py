@@ -4,7 +4,7 @@ Lo que el sistema BUSCA de los canales (capa Base).
 
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 
-from .models import Canal, Categoria, Contenido, Fuente, Importacion
+from .models import Canal, Categoria, Contenido, Fuente, Importacion, hace_dias_oculta
 
 # Lo que el reproductor de la app sabe reproducir. La app nueva lo dice al
 # pedir los canales (?formatos=hls,dash,directo,rtsp,youtube,pagina); la
@@ -23,11 +23,13 @@ def tipos_pedidos(texto):
 
 def fuentes_usables(tipos=None):
     """
-    Las que la app puede usar: activas, no caídas y de un tipo que sabe
-    reproducir. Las "sin verificar" sí (todavía no se sabe que fallen).
+    Las que la app puede usar: activas, no caídas, no ocultas por fallar en
+    los aparatos y de un tipo que sabe reproducir. Las "sin verificar" sí
+    (todavía no se sabe que fallen).
     """
     return (Fuente.objects.filter(activa=True, tipo__in=tipos or TIPOS_QUE_REPRODUCE_LA_APP)
-            .exclude(estado=Fuente.Estado.CAIDA))
+            .exclude(estado=Fuente.Estado.CAIDA)
+            .exclude(oculta_desde__gt=hace_dias_oculta()))
 
 
 def canales_disponibles(tipos=None, contenido=Contenido.VIVO):
@@ -100,6 +102,7 @@ def catalogo(texto='', categoria='', idioma='', estado='', sin_logo=False, orige
             fuentes_funcionan=Count('fuentes', filter=Q(fuentes__estado=Fuente.Estado.FUNCIONA), distinct=True),
             fuentes_caidas=Count('fuentes', filter=Q(fuentes__estado=Fuente.Estado.CAIDA), distinct=True),
             tiene_usable=Exists(usables),
+            fuentes_ocultas=Count('fuentes', filter=Q(fuentes__oculta_desde__gt=hace_dias_oculta()), distinct=True),
         )
         .prefetch_related(Prefetch('fuentes', queryset=Fuente.objects.order_by('prioridad', 'pk')))
         .order_by('categoria__orden', 'categoria__nombre', 'orden', 'nombre')
@@ -115,7 +118,7 @@ def catalogo(texto='', categoria='', idioma='', estado='', sin_logo=False, orige
     elif idioma:
         canales = canales.filter(idioma=idioma)
     if estado == 'en_app':
-        canales = canales.filter(activo=True, tiene_usable=True, contenido=Contenido.VIVO)
+        canales = canales.filter(activo=True, tiene_usable=True)
     elif estado == 'fuera':
         canales = canales.filter(activo=True, tiene_usable=False)
     elif estado == 'quitados':
@@ -134,13 +137,16 @@ def por_que_no_se_ve(canal):
     if not canal.activo:
         return f'Quitado: {canal.motivo_quitado}' if canal.motivo_quitado else 'Quitado a mano.'
     if canal.tiene_usable:
-        if canal.contenido != Contenido.VIVO:
-            return 'Funciona, pero la app todavía no tiene la sección de películas y series.'
         return ''
     if not canal.fuentes_total:
         return 'No tiene fuentes.'
     if canal.fuentes_caidas == canal.fuentes_total:
         return 'Todas sus fuentes están caídas.'
+    if canal.fuentes_ocultas:
+        oculta = next((f for f in canal.fuentes.all() if f.oculta_por_aparatos), None)
+        if oculta:
+            return (f'Oculto porque no se reproduce en los aparatos ({oculta.falla_en_aparatos}). '
+                    f'La app lo vuelve a intentar el {oculta.vuelve_a_probarse:%d/%m}.')
     return 'Sus fuentes están apagadas a mano o son de un formato que la app no reproduce.'
 
 

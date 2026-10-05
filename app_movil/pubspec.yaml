@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.13.5
@@ -55,6 +55,13 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+
+# El reproductor de Android con 5 segundos de buffer (en vez de 2,5) para que
+# no se corte: es una copia del paquete oficial con ese único cambio (ver
+# paquetes/README.md).
+dependency_overrides:
+  video_player_android:
+    path: paquetes/video_player_android
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -145,11 +152,11 @@ flutter:
   # see https://flutter.dev/to/font-from-package
 
 # Genera los íconos de Android a partir del logo: dart run flutter_launcher_icons
-# (antes: python tools/generar_marca.py, que arma icono.png e icono_frente.png desde el logo)
+# (antes: python tools/generar_marca.py, que dibuja icono.png e icono_frente.png)
 flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/logo/icono.png"
-  adaptive_icon_background: "#050D1D"   # azul noche (Colores.fondo)
+  adaptive_icon_background: "#131317"   # grafito (Tono.fondo de lib/movil/estilo.dart)
   adaptive_icon_foreground: "assets/logo/icono_frente.png"
   min_sdk_android: 21

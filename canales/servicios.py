@@ -18,6 +18,7 @@ La real es `canales.verificacion.verificar_varias(fuentes, cabeceras=..., hasta=
 
 import time
 from dataclasses import dataclass
+from datetime import timedelta
 
 from django.core.cache import cache
 from django.db import DatabaseError, transaction
@@ -581,3 +582,46 @@ def reverificar_por_aviso(fuente, verificar_url):
         registrar(None, Accion.SISTEMA, f'La fuente de {fuente.canal} se cayó (avisó la app): {fuente.error}',
                   modulo='canales')
     return fuente.estado
+
+
+# Lo que la app manda al avisar una falla ("motivo"), en palabras del panel.
+MOTIVOS_DE_LOS_APARATOS = {
+    'formato': 'el aparato no puede leer el formato del video',
+    'rechazo': 'el servidor de la señal rechaza al aparato',
+    'tiempo': 'tarda demasiado en arrancar',
+    'conexion': 'no se puede conectar con la señal',
+    'error': 'da error al reproducir',
+}
+# Cuántos avisos (de aparatos distintos, o del mismo pero separados por
+# ESPERA_ENTRE_AVISOS) en un día hacen falta para ocultarla.
+AVISOS_PARA_OCULTAR = 3
+ESPERA_ENTRE_AVISOS = 30 * 60   # segundos
+
+
+def registrar_falla_en_aparato(fuente, quien, motivo, detalle=''):
+    """
+    Cuenta un aviso de falla de un aparato (`quien`: algo que lo identifique,
+    ej. el id de su sesión). Con AVISOS_PARA_OCULTAR en un día, la fuente se
+    oculta DIAS_OCULTA días aunque al servidor le ande: se ve que en los
+    aparatos no se reproduce. El mismo aparato cuenta una vez cada
+    ESPERA_ENTRE_AVISOS (reintentar diez veces seguidas no la oculta).
+    Devuelve True si quedó oculta.
+    """
+    if fuente.oculta_por_aparatos:
+        return True
+    if not cache.add(f'falla_aparato:{fuente.pk}:{quien}', True, timeout=ESPERA_ENTRE_AVISOS):
+        return False
+    ahora = timezone.now()
+    if fuente.primer_aviso is None or ahora - fuente.primer_aviso > timedelta(days=1):
+        fuente.avisos_de_aparatos, fuente.primer_aviso = 0, ahora
+    fuente.avisos_de_aparatos += 1
+    texto = MOTIVOS_DE_LOS_APARATOS.get(motivo, MOTIVOS_DE_LOS_APARATOS['error'])
+    fuente.falla_en_aparatos = (f'{texto}: {detalle}' if detalle else texto)[:200]
+    if fuente.avisos_de_aparatos >= AVISOS_PARA_OCULTAR:
+        fuente.oculta_desde = ahora
+        registrar(None, Accion.SISTEMA,
+                  f'Se ocultó una fuente de {fuente.canal}: no se reproduce en los aparatos ({texto}).',
+                  modulo='canales')
+    fuente.save(update_fields=['avisos_de_aparatos', 'primer_aviso', 'falla_en_aparatos', 'oculta_desde'])
+    return fuente.oculta_desde is not None and fuente.oculta_por_aparatos
+

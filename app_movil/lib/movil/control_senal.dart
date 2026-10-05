@@ -1,7 +1,7 @@
 /// Reproduce un canal, película o capítulo probando sus fuentes en orden:
 /// si una no arranca, da error o se queda trabada cargando, pasa sola a la
-/// siguiente (failover) y le avisa al servidor que esa falló. Si ninguna
-/// anda, queda con [error].
+/// siguiente (failover) y le avisa al servidor que esa falló y por qué (ver
+/// [Falla]). Si ninguna anda, queda con [error]: el motivo de la última.
 ///
 /// Lo usan el reproductor chico de "En vivo" y los de pantalla completa.
 ///
@@ -13,6 +13,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../api/cliente.dart';
@@ -22,10 +23,16 @@ import '../senales.dart';
 class ControlSenal extends ChangeNotifier {
   ControlSenal(this.api);
 
-  static const _esperaInicio = Duration(seconds: 15);
+  /// Cuánto se espera a que arranque. Una película o capítulo es un archivo
+  /// grande y tarda más en empezar que un canal en vivo.
+  static const _esperaVivo = Duration(seconds: 15);
+  static const _esperaArchivo = Duration(seconds: 30);
   static const _esperaTrabado = Duration(seconds: 20);
 
   final ApiCliente api;
+
+  /// Se llama cuando un canal en vivo empieza a verse (para "Últimos canales vistos").
+  void Function(Canal canal)? alVerCanal;
 
   Canal? canal;
   VideoPlayerController? video;
@@ -39,6 +46,9 @@ class ControlSenal extends ChangeNotifier {
   Timer? _vigiaTrabado;
   Duration? _desde;
   double _volumen = 1;
+  Falla? _ultimaFalla;
+
+  Duration get _esperaInicio => canal?.contenido == 'vivo' ? _esperaVivo : _esperaArchivo;
 
   List<FuenteCanal> get fuentes => canal?.fuentesReproducibles ?? const [];
 
@@ -50,11 +60,15 @@ class ControlSenal extends ChangeNotifier {
   Future<void> abrir(Canal nuevo, {Duration? desde}) {
     canal = nuevo;
     _desde = desde;
+    _ultimaFalla = null;
     return _probar(0);
   }
 
   /// Vuelve a intentar desde la primera fuente.
-  Future<void> reintentar() => _probar(0);
+  Future<void> reintentar() {
+    _ultimaFalla = null;
+    return _probar(0);
+  }
 
   /// Pasa a una fuente en particular (el usuario la eligió).
   Future<void> usarFuente(int indice) => _probar(indice);
@@ -73,7 +87,7 @@ class ControlSenal extends ChangeNotifier {
     if (indice >= fuentes.length) {
       error = fuentes.isEmpty
           ? 'Este canal no tiene una señal que la app pueda reproducir.'
-          : 'No se pudo conectar con la señal. Puede estar caída o no disponible en tu zona.';
+          : (_ultimaFalla?.mensaje ?? Falla.conexion.mensaje);
       _avisar();
       return;
     }
@@ -83,9 +97,9 @@ class ControlSenal extends ChangeNotifier {
     try {
       // YouTube, Twitch...: primero hay que averiguar dónde está el video (ver senales.dart)
       senal = await resolverSenal(elegida, api).timeout(_esperaInicio);
-    } catch (_) {
+    } catch (e) {
       if (intento == _intento && !_cerrado) {
-        _avisarFalla(elegida);
+        _avisarFalla(elegida, Falla.de(e));
         _probar(indice + 1);
       }
       return;
@@ -99,10 +113,10 @@ class ControlSenal extends ChangeNotifier {
     );
     try {
       await nuevo.initialize().timeout(_esperaInicio);
-    } catch (_) {
+    } catch (e) {
       await nuevo.dispose();
       if (intento == _intento && !_cerrado) {
-        _avisarFalla(elegida);
+        _avisarFalla(elegida, Falla.de(e));
         _probar(indice + 1);
       }
       return;
@@ -120,6 +134,7 @@ class ControlSenal extends ChangeNotifier {
     nuevo.addListener(_vigilar);
     await nuevo.play();
     video = nuevo;
+    if (canal?.contenido == 'vivo') alVerCanal?.call(canal!);
     _avisar();
   }
 
@@ -129,7 +144,7 @@ class ControlSenal extends ChangeNotifier {
     if (actual == null || _cerrado) return;
     if (actual.value.hasError) {
       actual.removeListener(_vigilar);
-      _avisarFalla(fuentes[fuente]);
+      _avisarFalla(fuentes[fuente], Falla.de(actual.value.errorDescription ?? ''));
       _probar(fuente + 1);
       return;
     }
@@ -138,7 +153,7 @@ class ControlSenal extends ChangeNotifier {
         _vigiaTrabado = null;
         if (!_cerrado && video == actual && actual.value.isBuffering) {
           actual.removeListener(_vigilar);
-          _avisarFalla(fuentes[fuente]);
+          _avisarFalla(fuentes[fuente], Falla.trabada);
           _probar(fuente + 1);
         }
       });
@@ -149,10 +164,16 @@ class ControlSenal extends ChangeNotifier {
     _avisar();
   }
 
-  /// Le avisa al servidor que esta fuente no anduvo. El servidor la vuelve a
-  /// probar por su cuenta y, si también le falla, deja de mandarla. No se espera la respuesta.
-  void _avisarFalla(FuenteCanal fuente) {
-    api.post('canales/fuentes/${fuente.id}/falla/').catchError((Object _) => null);
+  /// Le avisa al servidor que esta fuente no anduvo y por qué. El servidor la
+  /// vuelve a probar por su cuenta y, si también le falla (o si falla en varios
+  /// aparatos), deja de mandarla. No se espera la respuesta.
+  void _avisarFalla(FuenteCanal fuente, Falla falla) {
+    _ultimaFalla = falla;
+    // Si el problema es la conexión de este aparato, la señal no tiene la culpa
+    if (falla.motivo == Falla.sinInternet.motivo) return;
+    api
+        .post('canales/fuentes/${fuente.id}/falla/', {'motivo': falla.motivo, 'detalle': falla.detalle})
+        .catchError((Object _) => null);
   }
 
   void alternarPausa() {
@@ -196,5 +217,53 @@ class ControlSenal extends ChangeNotifier {
     _vigiaTrabado?.cancel();
     video?.dispose();
     super.dispose();
+  }
+}
+
+/// Por qué no se pudo reproducir una fuente: lo que se le muestra a la persona
+/// y lo que se le avisa al servidor ([motivo]: formato, rechazo, tiempo,
+/// conexion, error; ver canales/servicios.py -> MOTIVOS_DE_LOS_APARATOS).
+class Falla {
+  const Falla(this.motivo, this.mensaje, [this.detalle = '']);
+
+  final String motivo;
+  final String mensaje;
+
+  /// Lo técnico (lo que dijo el reproductor), recortado. Para el panel.
+  final String detalle;
+
+  static const formato = Falla('formato', 'Este aparato no puede reproducir el formato de este video.');
+  static const tiempo = Falla('tiempo', 'La señal tardó demasiado en arrancar. Probá de nuevo en un rato.');
+  static const trabada = Falla('tiempo', 'La señal se quedó trabada cargando.');
+  static const conexion = Falla(
+    'conexion',
+    'No se pudo conectar con la señal. Puede estar caída o no disponible en tu zona.',
+  );
+  static const sinInternet = Falla('sin_internet', 'Revisá la conexión a internet de este aparato.');
+
+  /// Lee el error que dio el reproductor (ExoPlayer) o la espera.
+  factory Falla.de(Object error) {
+    if (error is TimeoutException) return tiempo;
+    final texto = error is PlatformException ? '${error.message} ${error.details ?? ''}' : '$error';
+    final detalle = texto.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final corto = detalle.length > 120 ? detalle.substring(0, 120) : detalle;
+    if (RegExp(
+      r'UnknownHost|Unable to resolve host|ENETUNREACH|Network is unreachable',
+      caseSensitive: false,
+    ).hasMatch(texto)) {
+      return sinInternet;
+    }
+    final codigo = RegExp(r'Response code: (\d{3})').firstMatch(texto)?.group(1);
+    if (codigo != null && codigo.startsWith('4')) {
+      return Falla('rechazo', 'El servidor de la señal no deja verla (error $codigo).', corto);
+    }
+    if (RegExp(
+      r'Decoder|MediaCodec|NO_UNSUPPORTED|format_supported=NO|UnrecognizedInputFormat|None of the available extractors',
+      caseSensitive: false,
+    ).hasMatch(texto)) {
+      return Falla(formato.motivo, formato.mensaje, corto);
+    }
+    if (error is SenalNoDisponible) return Falla('error', error.toString(), corto);
+    return Falla(conexion.motivo, conexion.mensaje, corto);
   }
 }

@@ -200,7 +200,8 @@ class DatosCliente {
       codigo = '${json['codigo'] ?? ''}',
       vence = DateTime.tryParse('${json['vence'] ?? ''}')?.toLocal(),
       pantallas = json['pantallas'] as int? ?? 0,
-      conectados = json['conectados'] as int? ?? 0;
+      conectados = json['conectados'] as int? ?? 0,
+      vendedor = Vendedor(json['vendedor']);
 
   final String nombre;
 
@@ -210,6 +211,24 @@ class DatosCliente {
   final int pantallas;
   final int conectados;
 
+  /// A quién pedirle la renovación.
+  final Vendedor vendedor;
+
   /// Días que le quedan (0 si vence hoy).
   int? get diasRestantes => vence?.difference(DateTime.now()).inDays;
+}
+
+/// Quien le vendió el servicio a un cliente: {"nombre", "telefono"} (vacíos si es cliente directo).
+class Vendedor {
+  Vendedor(Object? json)
+    : nombre = json is Map ? '${json['nombre'] ?? ''}' : '',
+      telefono = json is Map ? '${json['telefono'] ?? ''}' : '';
+
+  final String nombre;
+  final String telefono;
+
+  bool get hayDatos => nombre.isNotEmpty || telefono.isNotEmpty;
+
+  /// Para WhatsApp: solo los números ("+54 9 11 1234-5678" -> "5491112345678").
+  String get numeroWhatsapp => telefono.replaceAll(RegExp(r'\D'), '');
 }

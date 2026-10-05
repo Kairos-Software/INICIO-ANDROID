@@ -82,12 +82,21 @@ def liberar_inactivos(cliente):
     return cantidad
 
 
+def contacto_del_vendedor(cliente):
+    """A quién recurrir para renovar: la app lo muestra en "Tu servicio venció" y en "Mi cuenta"."""
+    if cliente.revendedor is None:   # cliente directo: no hay revendedor que mostrar
+        return {'nombre': '', 'telefono': ''}
+    usuario = cliente.revendedor.usuario
+    return {'nombre': usuario.get_full_name() or usuario.username, 'telefono': usuario.telefono}
+
+
 def chequear_vigente(cliente):
     if cliente.suspendido:
-        raise AccesoDenegado('Tu servicio está suspendido. Comunicate con quien te lo vendió.', 'suspendido')
+        raise AccesoDenegado('Tu servicio está suspendido. Comunicate con quien te lo vendió.', 'suspendido',
+                             {'vendedor': contacto_del_vendedor(cliente)})
     if not cliente.vigente:
         raise AccesoDenegado('Tu servicio venció. Comunicate con quien te lo vendió para renovarlo.',
-                             'servicio_vencido', {'vence': cliente.vence})
+                             'servicio_vencido', {'vence': cliente.vence, 'vendedor': contacto_del_vendedor(cliente)})
 
 
 @transaction.atomic

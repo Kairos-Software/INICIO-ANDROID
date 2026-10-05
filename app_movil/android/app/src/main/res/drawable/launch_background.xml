@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pantalla de arranque (lo que se ve mientras Flutter carga): azul noche con el símbolo de Kairos -->
+<!-- Pantalla de arranque (lo que se ve mientras Flutter carga): grafito con el símbolo de Kairos -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/fondo_arranque" />
     <item>

@@ -3,12 +3,11 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../marca.dart';
 import '../tema.dart';
 
-/// La marca Kairos TV: vertical = el logo completo; horizontal = el televisor
-/// con "KairosTV" al lado, igual que el menú del panel ("Kairos" blanco y
-/// "TV" naranja, en Sora). El texto se dibuja (el del PNG es azul oscuro y
-/// no se vería sobre el fondo).
+/// La marca Kairos TV (ver lib/marca.dart): vertical = el símbolo grande con
+/// "KairosTV" abajo; horizontal = el símbolo con el nombre al lado.
 class MarcaKairos extends StatelessWidget {
   const MarcaKairos({super.key, this.tamanio = 56, this.vertical = false});
 
@@ -16,42 +15,16 @@ class MarcaKairos extends StatelessWidget {
   final bool vertical;
 
   @override
-  Widget build(BuildContext context) {
-    // Vertical (login y pantallas de bienvenida): el logo completo, con su texto "KairosTV"
-    if (vertical) {
-      return Image.asset('assets/logo/logo.png', height: tamanio * 2.4);
-    }
-    // El símbolo con el brillo celeste del panel (drop-shadow del .marca-isotipo)
-    final simbolo = DecoratedBox(
-      decoration: BoxDecoration(
-        boxShadow: [BoxShadow(color: Colores.celeste.withValues(alpha: 0.22), blurRadius: tamanio * 0.45)],
-      ),
-      child: Image.asset('assets/logo/simbolo.png', height: tamanio),
-    );
-    final texto = Text.rich(
-      TextSpan(
-        children: [
-          const TextSpan(
-            text: 'Kairos',
-            style: TextStyle(color: Colores.texto),
-          ),
-          const TextSpan(
-            text: 'TV',
-            style: TextStyle(color: Colores.naranja),
-          ),
-        ],
-      ),
-      style: estiloTitulo(tamanio * 0.56).copyWith(height: 1.0, letterSpacing: -tamanio * 0.025),
-    );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        simbolo,
-        SizedBox(width: tamanio * 0.24),
-        texto,
-      ],
-    );
-  }
+  Widget build(BuildContext context) => vertical
+      ? Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SimboloKairos(tamanio: tamanio * 1.4),
+            SizedBox(height: tamanio * 0.3),
+            NombreKairos(tamanio: tamanio * 0.5),
+          ],
+        )
+      : LogoKairos(tamanio: tamanio);
 }
 
 /// El botón principal: el .btn-primary del panel (azul, con su sombra).

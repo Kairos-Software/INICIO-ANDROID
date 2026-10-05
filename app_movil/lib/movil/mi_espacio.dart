@@ -1,11 +1,11 @@
-/// Mi Espacio: la cuenta (código, vencimiento, pantallas), "Continuar
-/// viendo", "Mi lista" y, para los usuarios del panel, sus herramientas.
+/// Mi Espacio: la cuenta (código, vencimiento, pantallas, vendedor),
+/// "Continuar viendo", las preferencias y, para los usuarios del panel, sus
+/// herramientas. Los favoritos tienen su propia sección (favoritos.dart).
 /// Stitch no tenía esta pantalla: está armada con sus mismas piezas.
 library;
 
 import 'package:flutter/material.dart';
 
-import '../api/modelos.dart';
 import '../pantallas/notificaciones.dart';
 import '../pantallas/perfil.dart';
 import '../pantallas/usuarios_lista.dart';
@@ -15,7 +15,6 @@ import 'componentes.dart';
 import 'datos.dart';
 import 'estilo.dart';
 import 'estructura.dart';
-import 'grilla.dart';
 import 'inicio.dart';
 
 class SeccionMiEspacio extends StatelessWidget {
@@ -31,21 +30,6 @@ class SeccionMiEspacio extends StatelessWidget {
         final catalogo = datos.catalogo;
         final biblioteca = datos.biblioteca;
 
-        // Mi lista: canales (favoritos), películas y series
-        final canales = <Canal>[];
-        final peliculas = <Canal>[];
-        final series = <Serie>[];
-        for (final clave in biblioteca.miLista) {
-          if (clave.startsWith('s:')) {
-            final serie = catalogo.seriePorNombre(clave.substring(2));
-            if (serie != null) series.add(serie);
-          } else {
-            final canal = catalogo.canalPorId(int.tryParse(clave.substring(2)) ?? -1);
-            if (canal == null) continue;
-            (canal.contenido == 'vivo' ? canales : peliculas).add(canal);
-          }
-        }
-
         return ListView(
           padding: EdgeInsets.only(
             top: altoBarraSuperior(context) + Espacio.margen,
@@ -58,46 +42,22 @@ class SeccionMiEspacio extends StatelessWidget {
             ),
             const SizedBox(height: 28),
             _Continuar(biblioteca: biblioteca, catalogo: catalogo),
-            EncabezadoSeccion(
-              titulo: 'Mi Lista',
-              icono: const Icon(Icons.bookmark_rounded, size: 20, color: Tono.celeste),
-              final_: Text('${canales.length + peliculas.length + series.length}', style: Letra.numeros),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Espacio.margen),
+              child: Material(
+                color: Tono.capa,
+                borderRadius: BorderRadius.circular(Curva.grande),
+                clipBehavior: Clip.antiAlias,
+                child: SwitchListTile(
+                  value: biblioteca.volverAlUltimo,
+                  onChanged: (valor) => biblioteca.volverAlUltimo = valor,
+                  activeThumbColor: Tono.celeste,
+                  secondary: const Icon(Icons.restore_rounded, color: Tono.celeste),
+                  title: Text('Volver al último canal al abrir', style: Letra.etiqueta.copyWith(fontSize: 14)),
+                  subtitle: Text('Arranca directo en el canal que estabas viendo.', style: Letra.cuerpo),
+                ),
+              ),
             ),
-            if (canales.isEmpty && peliculas.isEmpty && series.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Espacio.margen, 0, Espacio.margen, 24),
-                child: Text(
-                  'Todavía no agregaste nada. Tocá el "+" de una película o serie, o el corazón de un canal.',
-                  style: Letra.cuerpo,
-                ),
-              ),
-            if (canales.isNotEmpty)
-              SizedBox(
-                height: 92,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: Espacio.margen),
-                  itemCount: canales.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: Espacio.sm),
-                  itemBuilder: (context, i) => _CanalFavorito(canal: canales[i]),
-                ),
-              ),
-            if (peliculas.isNotEmpty || series.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Espacio.margen, Espacio.margen, Espacio.margen, 0),
-                child: LayoutBuilder(
-                  builder: (context, limites) => GridView.builder(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: grillaPosters(limites.maxWidth),
-                    itemCount: peliculas.length + series.length,
-                    itemBuilder: (context, i) => i < peliculas.length
-                        ? tarjetaPelicula(context, peliculas[i])
-                        : tarjetaSerie(context, series[i - peliculas.length]),
-                  ),
-                ),
-              ),
             const SizedBox(height: 28),
             if (sesion.perfil != null && !sesion.esCliente) const _HerramientasDelPanel(),
             Padding(
@@ -218,6 +178,14 @@ class _Cuenta extends StatelessWidget {
                 ),
               ],
             ),
+            if (cliente.vendedor.hayDatos)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'Tu vendedor: ${[cliente.vendedor.nombre, cliente.vendedor.telefono].where((d) => d.isNotEmpty).join(' · ')}',
+                  style: Letra.cuerpo,
+                ),
+              ),
             if (dias != null && dias <= 3)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
@@ -321,45 +289,6 @@ class _Continuar extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Un canal favorito: el logo chico; al tocarlo, a En Vivo reproduciéndolo.
-class _CanalFavorito extends StatelessWidget {
-  const _CanalFavorito({required this.canal});
-
-  final Canal canal;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 96,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(Curva.grande),
-        onTap: () => NavegacionMovil.of(context).irA(Seccion.enVivo, canal: canal.id),
-        child: Column(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(Curva.grande),
-              child: SizedBox(
-                width: 96,
-                height: 60,
-                child: Imagen(
-                  url: canal.logo,
-                  nombre: canal.nombre,
-                  ajuste: BoxFit.contain,
-                  relleno: const EdgeInsets.all(8),
-                  fondo: Tono.capa,
-                  tamanioIniciales: 16,
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(canal.nombre, maxLines: 1, overflow: TextOverflow.ellipsis, style: Letra.mini),
-          ],
-        ),
       ),
     );
   }

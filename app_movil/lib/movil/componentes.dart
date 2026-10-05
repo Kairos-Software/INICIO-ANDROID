@@ -529,11 +529,14 @@ class TarjetaPoster extends StatelessWidget {
 
 /// Tarjeta 16:9 de "Directos Destacados Ahora" (un canal en vivo).
 class TarjetaEnVivo extends StatelessWidget {
-  const TarjetaEnVivo({super.key, required this.canal, required this.alTocar, this.ancho = 288});
+  const TarjetaEnVivo({super.key, required this.canal, required this.alTocar, this.ancho = 288, this.numero});
 
   final Canal canal;
   final VoidCallback alTocar;
   final double ancho;
+
+  /// El número del canal (Catalogo.numeroDe); si no se pasa, el que trae la lista.
+  final String? numero;
 
   @override
   Widget build(BuildContext context) {
@@ -585,8 +588,8 @@ class TarjetaEnVivo extends StatelessWidget {
                       ),
                     ),
                     const Positioned(top: 10, left: 10, child: InsigniaEnVivo()),
-                    if (canal.numero.isNotEmpty)
-                      Positioned(bottom: 10, right: 10, child: Etiqueta('CH ${canal.numero}', redondeada: false)),
+                    if ((numero ?? canal.numero).isNotEmpty)
+                      Positioned(bottom: 10, right: 10, child: Etiqueta('CH ${numero ?? canal.numero}')),
                   ],
                 ),
               ),

@@ -7,7 +7,8 @@ su estado y cerrar sesión. Ver reventa/sesiones.py para las reglas.
       -> 400 codigo_invalido · 403 servicio_vencido / suspendido · 409 cuenta_en_uso
       -> 429 login_bloqueado (demasiados códigos equivocados desde la misma conexión)
 
-    GET  /api/v1/cliente/          (con el token) -> {"nombre", "codigo", "vence", "pantallas", ...}
+    GET  /api/v1/cliente/          (con el token) -> {"nombre", "codigo", "vence", "pantallas", "vendedor", ...}
+      "vendedor": {"nombre", "telefono"} de quien le vendió (también viene en el 403 servicio_vencido / suspendido).
       La app lo llama cada pocos minutos: es la "señal" que mantiene ocupada
       la pantalla. Si el servicio venció responde 403; si liberaron el
       dispositivo, 401 (la app vuelve a la pantalla del código).
@@ -45,6 +46,7 @@ def datos_cliente(cliente):
         'pantallas': cliente.pantallas_vigentes(),
         'conectados': cliente.dispositivos.count(),
         'horas_sin_senal': HORAS_SIN_SENAL,
+        'vendedor': sesiones.contacto_del_vendedor(cliente),   # {"nombre", "telefono"}: para renovar
     }
 
 

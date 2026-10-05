@@ -25,6 +25,15 @@ class Aparato {
   /// Abre el instalador de Android con la APK de [ruta] (la persona confirma).
   static Future<void> instalar(String ruta) => _canal.invokeMethod('instalar', {'ruta': ruta});
 
+  /// Abre un enlace en otra app (WhatsApp, el navegador). false = no hay ninguna que lo abra.
+  static Future<bool> abrir(String url) async {
+    try {
+      return await _canal.invokeMethod<bool>('abrir', {'url': url}) ?? false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   static Future<void> cargar() async {
     try {
       final datos = await _canal.invokeMapMethod<String, Object?>('datos');

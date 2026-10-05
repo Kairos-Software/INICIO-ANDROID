@@ -71,7 +71,10 @@ class EntrarTests(Base):
 
     def test_vencido_o_suspendido_no_entra(self):
         Cliente.objects.filter(pk=self.cliente.pk).update(vence=timezone.now() - timedelta(days=1))
-        self.assertEqual(self.entrar().json()['codigo'], 'servicio_vencido')
+        datos = self.entrar().json()
+        self.assertEqual(datos['codigo'], 'servicio_vencido')
+        # La app muestra a quién pedirle la renovación
+        self.assertEqual(datos['vendedor']['nombre'], str(self.juan))
         Cliente.objects.filter(pk=self.cliente.pk).update(vence=timezone.now() + timedelta(days=1), suspendido=True)
         self.assertEqual(self.entrar().json()['codigo'], 'suspendido')
 

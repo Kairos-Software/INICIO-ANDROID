@@ -19,6 +19,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../api/modelos.dart';
 import '../sesion.dart';
+import '../marca.dart';
 import 'componentes.dart';
 import 'control_senal.dart';
 import 'datos.dart';
@@ -474,7 +475,7 @@ class _BarraReproductor extends StatelessWidget implements PreferredSizeWidget {
                   onPressed: () => Navigator.maybePop(context),
                   icon: const Icon(Icons.arrow_back_rounded, size: 24, color: Tono.texto),
                 ),
-                Image.asset('assets/logo/simbolo.png', height: 22),
+                const SimboloKairos(tamanio: 22),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(titulo, maxLines: 1, overflow: TextOverflow.ellipsis, style: Letra.titulo),

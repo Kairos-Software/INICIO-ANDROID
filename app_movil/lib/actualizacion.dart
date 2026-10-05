@@ -45,6 +45,11 @@ class VigilarActualizacion extends StatefulWidget {
 
   @override
   State<VigilarActualizacion> createState() => _VigilarActualizacionState();
+
+  /// "Buscar actualizaciones" (Mi cuenta): pregunta ya, sin esperar.
+  /// true = había una nueva (se mostró el cartel); false = ya tiene la última; null = no se pudo preguntar.
+  static Future<bool?> buscarAhora(BuildContext context) async =>
+      context.findAncestorStateOfType<_VigilarActualizacionState>()?._consultar(forzar: true);
 }
 
 class _VigilarActualizacionState extends State<VigilarActualizacion> with WidgetsBindingObserver {
@@ -78,20 +83,20 @@ class _VigilarActualizacionState extends State<VigilarActualizacion> with Widget
     if (estado == AppLifecycleState.resumed) _consultar();
   }
 
-  Future<void> _consultar() async {
+  Future<bool?> _consultar({bool forzar = false}) async {
     // Sin versión conocida (tests, o fuera de Android) no se puede comparar
-    if (Aparato.version.isEmpty || _mostrando || widget.sesion.estado == EstadoSesion.cargando) return;
+    if (Aparato.version.isEmpty || _mostrando || widget.sesion.estado == EstadoSesion.cargando) return null;
     final ahora = DateTime.now();
-    if (_ultimaConsulta != null && ahora.difference(_ultimaConsulta!) < _cadaCuanto) return;
+    if (!forzar && _ultimaConsulta != null && ahora.difference(_ultimaConsulta!) < _cadaCuanto) return null;
     _ultimaConsulta = ahora;
     try {
       final datos = await widget.sesion.api.get('app/') as Map<String, dynamic>;
       final version = datos['version'] as String?;
       final descarga = datos['descarga'] as String?;
-      if (version == null || descarga == null || version == _postergada) return;
-      if (!esMasNueva(version, Aparato.version)) return;
+      if (version == null || descarga == null || (!forzar && version == _postergada)) return false;
+      if (!esMasNueva(version, Aparato.version)) return false;
       final contexto = widget.navegador.currentContext;
-      if (contexto == null || !contexto.mounted) return;
+      if (contexto == null || !contexto.mounted) return null;
       _mostrando = true;
       final actualizo = await showDialog<bool>(
         context: contexto,
@@ -101,9 +106,11 @@ class _VigilarActualizacionState extends State<VigilarActualizacion> with Widget
       );
       _mostrando = false;
       if (actualizo != true) _postergada = version;
+      return true;
     } catch (_) {
       // Sin conexión o un servidor viejo (sin /app/): se pregunta la próxima vez
       _ultimaConsulta = null;
+      return null;
     }
   }
 
@@ -210,7 +217,10 @@ class _CartelActualizacionState extends State<_CartelActualizacion> {
   @override
   Widget build(BuildContext context) {
     final bajando = _paso == _Paso.bajando;
-    return PopScope(
+    // En la TV (pantalla ancha, ver tv/escala.dart) todo más grande: se lee desde el sillón
+    final medidas = MediaQuery.of(context);
+    final tv = medidas.size.width >= 900;
+    final cartel = PopScope(
       canPop: !bajando,
       child: AlertDialog(
         backgroundColor: Tono.capaAlta,
@@ -222,7 +232,7 @@ class _CartelActualizacionState extends State<_CartelActualizacion> {
           style: TextStyle(fontFamily: Letra.titulos, fontWeight: FontWeight.w700, color: Tono.texto),
         ),
         content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
+          constraints: BoxConstraints(maxWidth: tv ? 720 : 420),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -247,6 +257,12 @@ class _CartelActualizacionState extends State<_CartelActualizacion> {
         actions: _botones(),
       ),
     );
+    return tv
+        ? MediaQuery(
+            data: medidas.copyWith(textScaler: const TextScaler.linear(1.6)),
+            child: cartel,
+          )
+        : cartel;
   }
 
   List<Widget> _estado() {

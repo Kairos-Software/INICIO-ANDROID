@@ -4,18 +4,21 @@ El código de la app. Flutter arranca por `main.dart`.
 
 | Archivo / carpeta | Para qué | Equivalente en Django |
 |---|---|---|
-| `main.dart` | Arranque, tema, idioma, y `Raiz`: decide si mostrar el login o el sistema según la sesión. | `urls.py` + `@login_required` |
+| `main.dart` | Arranque, tema, idioma, y `Raiz`: decide qué mostrar según la sesión (carga, login, servicio vencido, sin conexión) y, con sesión, el celular (`movil/`) o la TV (`tv/`). | `urls.py` + `@login_required` |
 | `config.dart` | Nombre de la app ("Kairos TV") y dirección del servidor por defecto. | `.env` |
 | `sesion.dart` | Quién está logueado (un **cliente** con código o un **usuario** del panel), el token guardado, entrar y salir, y la "señal" del cliente cada 5 min. | `request.user` + sesiones |
-| `aparato.dart` | Nombre del aparato, si es una TV y la versión instalada (lo da `MainActivity.kt`). | — |
+| `aparato.dart` | Nombre del aparato, si es una TV y la versión instalada (lo da `MainActivity.kt`); instalar una APK y abrir enlaces (WhatsApp). | — |
+| `acceso.dart` | Lo de antes de entrar, igual en celular y TV: el login (código del cliente con teclado numérico; usuario y contraseña del panel aparte), "Tu servicio venció" (con el contacto del vendedor), la pantalla de carga y la de sin conexión. | `login.html` |
+| `marca.dart` | El logo de Kairos TV **dibujado** (el portal de cuatro paneles con el punto rubí): `SimboloKairos`, `LogoKairos`, `NombreKairos`. Las imágenes de `assets/logo/` salen de las mismas medidas (`tools/generar_marca.py`). | — |
 | `actualizacion.dart` | El aviso "Hay una versión nueva": pregunta a `/api/v1/app/` al abrir, baja la APK y abre el instalador de Android. | — |
-| `tema.dart` | El diseño: el mismo del panel en versión oscura (azul noche del menú, celeste/azul en lo activo, naranja en el foco del control remoto), letras Sora y Manrope, radios y `FondoMarca`. Si cambian los colores del panel, se cambian acá. | `static/css/sistema.css` |
+| `tema.dart` | El diseño viejo (lo usan todavía las pantallas de `pantallas/`): el del panel en versión oscura (azul noche del menú, celeste/azul en lo activo, naranja en el foco del control remoto), letras Sora y Manrope, radios y `FondoMarca`. Si cambian los colores del panel, se cambian acá. | `static/css/sistema.css` |
 | `campos.dart` | Los campos del usuario agrupados por sección, como en `usuarios/forms.py`. | `SECCIONES_USUARIO` |
 | `senales.dart` | De una fuente a la dirección que abre el reproductor: YouTube se resuelve en el aparato (con Cronet), las páginas de video (Twitch...) se le piden al servidor, y le dice al reproductor el formato (HLS, DASH, video directo). | `canales/paginas.py` |
 | `utiles.dart` | Funciones chicas: fechas legibles, mensajes, "¿seguro?". | `herramientas/` |
-| `movil/` | La app en el **celular** con el diseño de Stitch (inicio, en vivo, películas, series, detalle, reproductores, mi espacio). Ver su README. En la TV todavía se usa `pantallas/`. | templates |
+| `movil/` | La app en el **celular** con el diseño de Stitch (inicio, en vivo, guía, películas, series, favoritos, detalle, reproductores, mi espacio). También los datos que usa la TV (`datos.dart`, `control_senal.dart`) y los colores y letras (`estilo.dart`). Ver su README. | templates |
+| `tv/` | La app en la **TV**, manejada con el control remoto (diseño de `diseno_kairos_tv/`). Ver su README. | templates |
 | `api/` | Cómo se habla con la API y las clases de los datos. Ver su README. | — |
-| `pantallas/` | Cada pantalla de la app. Ver su README. | `views.py` + templates |
+| `pantallas/` | Las herramientas del panel en el celular (perfil, usuarios, avisos). Ver su README. | `views.py` + templates |
 | `widgets/` | Piezas de pantalla reutilizables. Ver su README. | `templates/parciales/` |
 
 ## Cómo fluye una pantalla
@@ -27,4 +30,4 @@ El código de la app. Flutter arranca por `main.dart`.
    (errores de cada campo, para los formularios).
 5. Si la sesión venció (401), `Sesion` vuelve sola al login.
 6. Si un cliente se quedó sin servicio (403 `servicio_vencido` / `suspendido`),
-   `Sesion` muestra "Tu servicio venció" (`pantallas/cliente.dart`).
+   `Sesion` muestra "Tu servicio venció" (`acceso.dart`).

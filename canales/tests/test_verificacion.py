@@ -6,12 +6,14 @@ por uno de mentira.
 
 import time
 import urllib.error
+from datetime import timedelta
 from unittest import mock
 
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from api import tokens
@@ -392,6 +394,36 @@ class AvisoDeFallaTests(TestCase):
         for _ in range(5):
             self.avisar()
         self.assertEqual(verificar_url.call_count, 1)
+
+    def avisar_desde(self, quien, motivo='formato'):
+        """Un aviso desde otra sesión (otro aparato)."""
+        app = APIClient()
+        clave, _ = tokens.crear_token(Usuario.objects.create_user(quien, None, 'x'))
+        app.credentials(HTTP_AUTHORIZATION=f'Bearer {clave}')
+        return app.post(reverse('api_v1:fuente_falla', args=[self.fuente.pk]),
+                        {'motivo': motivo, 'detalle': 'Decoder init failed'}, format='json')
+
+    def test_si_falla_en_varios_aparatos_se_oculta_aunque_al_servidor_le_ande(self, verificar_url):
+        verificar_url.return_value = Resultado(FUNCIONA)
+        self.assertEqual(self.avisar_desde('a').json()['estado'], FUNCIONA)
+        self.assertEqual(self.avisar_desde('b').json()['estado'], FUNCIONA)
+        self.assertEqual(self.avisar_desde('c').json()['estado'], CAIDA)
+        self.assertEqual(self.app.get(reverse('api_v1:canales')).json()['cantidad'], 0)
+        self.fuente.refresh_from_db()
+        self.assertIn('no puede leer el formato', self.fuente.falla_en_aparatos)
+        self.assertEqual(self.fuente.estado, FUNCIONA)   # para el servidor sigue andando
+        # Pasados los días de castigo, la app la vuelve a recibir
+        Fuente.objects.filter(pk=self.fuente.pk).update(oculta_desde=timezone.now() - timedelta(days=8))
+        self.assertEqual(self.app.get(reverse('api_v1:canales')).json()['cantidad'], 1)
+
+    def test_el_mismo_aparato_reintentando_no_la_oculta(self, verificar_url):
+        verificar_url.return_value = Resultado(FUNCIONA)
+        self.avisar_desde('a')
+        for _ in range(4):
+            self.avisar()
+        self.fuente.refresh_from_db()
+        self.assertEqual(self.fuente.avisos_de_aparatos, 2)   # "a" y el de setUp, una vez cada uno
+        self.assertIsNone(self.fuente.oculta_desde)
 
     def test_solo_fuentes_que_la_app_recibe(self, verificar_url):
         apagada = Fuente.objects.get(canal__nombre='Encuentro')

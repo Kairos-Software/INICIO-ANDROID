@@ -4,18 +4,16 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'acceso.dart';
 import 'actualizacion.dart';
 import 'aparato.dart';
 import 'config.dart';
 import 'movil/estructura.dart';
-import 'pantallas/canales.dart';
-import 'pantallas/cliente.dart';
-import 'pantallas/login.dart';
 import 'pantallas/perfil.dart';
-import 'pantallas/principal.dart';
 import 'sesion.dart';
 import 'tema.dart';
-import 'widgets/comunes.dart';
+import 'tv/escala.dart';
+import 'tv/estructura.dart';
 
 /// Permite volver a la primera pantalla desde cualquier lado (ej: al vencer la sesión).
 final claveNavegador = GlobalKey<NavigatorState>();
@@ -49,6 +47,8 @@ class App extends StatelessWidget {
       locale: const Locale('es', 'AR'),
       supportedLocales: const [Locale('es', 'AR'), Locale('es')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      // En la TV todo se dibuja en 1920×1080 (las medidas del diseño) y se escala a la pantalla
+      builder: (context, hijo) => Aparato.esTv ? EscalaTv(child: hijo!) : hijo!,
       home: const Raiz(),
     );
   }
@@ -63,35 +63,22 @@ class Raiz extends StatelessWidget {
     final sesion = SesionScope.of(context);
     switch (sesion.estado) {
       case EstadoSesion.cargando:
-        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        return const PantallaCarga();
       case EstadoSesion.sinConexion:
-        return Scaffold(
-          body: SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: VistaError(mensaje: sesion.errorConexion ?? '', alReintentar: sesion.reintentar),
-                ),
-                TextButton(onPressed: sesion.salir, child: const Text('Cerrar sesión e ingresar con otro servidor')),
-                const SizedBox(height: 16),
-              ],
-            ),
-          ),
-        );
+        return const PantallaSinConexion();
       case EstadoSesion.sinSesion:
-        return const PantallaLogin();
+        return const PantallaAcceso();
       case EstadoSesion.sinServicio:
-        return const PantallaSinServicio();
+        return const PantallaServicioVencido();
       case EstadoSesion.conSesion:
         // Un administrador le asignó una contraseña temporal: primero tiene que cambiarla
         if (!sesion.esCliente && sesion.perfil!.debeCambiarPassword) {
           return const PantallaCambiarPassword(obligatorio: true);
         }
-        // En el celular: el diseño nuevo (lib/movil/), para clientes y usuarios del panel
-        if (!Aparato.esTv) return const PantallaMovil();
-        // En la TV, por ahora, el de siempre. Un cliente (entró con código) solo ve los canales
-        if (sesion.esCliente) return const PantallaCanales(esCliente: true);
-        return const PantallaPrincipal();
+        // Celular (lib/movil/) o TV (lib/tv/): el mismo diseño, cada uno a su medida.
+        // Los clientes y los usuarios del panel ven lo mismo; estos últimos tienen
+        // además sus herramientas en "Mi Espacio" del celular.
+        return Aparato.esTv ? const PantallaTv() : const PantallaMovil();
     }
   }
 }

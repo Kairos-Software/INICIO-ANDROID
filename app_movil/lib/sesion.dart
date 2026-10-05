@@ -54,8 +54,13 @@ class Sesion extends ChangeNotifier {
 
   String? errorConexion;
 
-  /// Por qué no puede ver (servicio vencido o suspendido).
+  /// Por qué no puede ver (servicio vencido o suspendido) y a quién pedirle la renovación.
   String? motivoSinServicio;
+  Vendedor vendedorSinServicio = Vendedor(null);
+
+  /// El código con el que se intentó entrar y el servicio estaba vencido:
+  /// "Volver a intentar" lo vuelve a probar sin tener que escribirlo.
+  String? _codigoSinServicio;
 
   Timer? _senal;
 
@@ -80,6 +85,18 @@ class Sesion extends ChangeNotifier {
 
   /// Vuelve a pedir los datos con el token guardado (al abrir la app, o tras un error).
   Future<void> reintentar() async {
+    if (api.token == null) {
+      // Venía de un código vencido (todavía no entró): se prueba ese código de nuevo
+      final codigo = _codigoSinServicio;
+      if (codigo == null) return _cambiar(EstadoSesion.sinSesion);
+      _cambiar(EstadoSesion.cargando);
+      try {
+        await ingresarConCodigo(codigo);
+      } on ApiError catch (error) {
+        if (!error.sinServicio) _cambiar(EstadoSesion.sinSesion);
+      }
+      return;
+    }
     _cambiar(EstadoSesion.cargando);
     try {
       if (esCliente) {
@@ -115,8 +132,10 @@ class Sesion extends ChangeNotifier {
 
   /// Cliente: su código de 8 números.
   Future<void> ingresarConCodigo(String codigo) async {
+    _codigoSinServicio = codigo;
     final datos =
         await api.post('cliente/login/', {'codigo': codigo, 'dispositivo': Aparato.nombre}) as Map<String, dynamic>;
+    _codigoSinServicio = null;
     await _guardarToken(datos['token'] as String);
     ultimoCodigo = codigo.replaceAll(RegExp(r'\D'), '');
     await _almacen.write(key: _claveUltimoCodigo, value: ultimoCodigo);
@@ -186,6 +205,8 @@ class Sesion extends ChangeNotifier {
   /// "Reintentar" lo deja seguir sin volver a poner el código.
   void _servicioPerdido(ApiError error) {
     motivoSinServicio = error.detalle;
+    vendedorSinServicio = Vendedor(error.extra['vendedor']);
+    if (api.token != null) _codigoSinServicio = null;
     _senal?.cancel();
     if (estado != EstadoSesion.sinServicio) {
       _cambiar(EstadoSesion.sinServicio);
@@ -195,6 +216,7 @@ class Sesion extends ChangeNotifier {
 
   Future<void> _olvidarSesion() async {
     _senal?.cancel();
+    _codigoSinServicio = null;
     api.token = null;
     perfil = null;
     cliente = null;

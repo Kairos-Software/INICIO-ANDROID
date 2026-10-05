@@ -52,10 +52,10 @@ Hay **dos tipos de sesión**:
 | POST | `/api/v1/usuarios/<id>/estado/` | `editar_usuarios` | `{activo: true/false}` |
 | POST | `/api/v1/usuarios/<id>/restablecer-password/` | `restablecer_password_usuarios` | `{password1, password2, obligar_cambio}` |
 | GET | `/api/v1/canales/` | sesión (usuario o cliente vigente) | Canales de TV activos, agrupados por categoría, con sus fuentes en orden de prioridad |
-| POST | `/api/v1/canales/fuentes/<id>/falla/` | sesión (usuario o cliente) | La app avisa que no pudo reproducir esa fuente: el servidor la vuelve a probar y, si también falla, deja de mandarla. → `{estado}` |
+| POST | `/api/v1/canales/fuentes/<id>/falla/` | sesión (usuario o cliente) | `{motivo, detalle}` (opcionales). La app avisa que no pudo reproducir esa fuente: el servidor la vuelve a probar y, si también falla, deja de mandarla; si a él le anda pero fallan 3 aparatos en un día, la oculta 7 días. → `{estado}` |
 | GET | `/api/v1/app/` | — | Última versión publicada de la app: `{version, notas, descarga}` (`version: null` si no hay). La app lo consulta al abrirse |
 | POST | `/api/v1/cliente/login/` | — | `{codigo, dispositivo}` → `{token, cliente}`. Errores: 400 `codigo_invalido`, 403 `servicio_vencido`/`suspendido`, 409 `cuenta_en_uso`, 429 `login_bloqueado` |
-| GET | `/api/v1/cliente/` | cliente | Su estado (`nombre`, `vence`, `pantallas`, `conectados`). La app lo llama cada 5 min: es la "señal" que mantiene ocupada su pantalla |
+| GET | `/api/v1/cliente/` | cliente | Su estado (`nombre`, `vence`, `pantallas`, `conectados`, `vendedor`: `{nombre, telefono}`). La app lo llama cada 5 min: es la "señal" que mantiene ocupada su pantalla |
 | POST | `/api/v1/cliente/logout/` | cliente | Cierra la sesión y libera la pantalla |
 | GET | `/api/v1/notificaciones/` | sesión | Mis notificaciones (`?no_leidas=1`); trae `no_leidas` |
 | POST | `/api/v1/notificaciones/<id>/leida/` | sesión | Marcar una como leída |

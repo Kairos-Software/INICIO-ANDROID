@@ -23,6 +23,7 @@ import 'componentes.dart';
 import 'control_senal.dart';
 import 'datos.dart';
 import 'estilo.dart';
+import 'guia.dart';
 import 'estructura.dart';
 
 /// Lo que se pidió al venir a En Vivo desde otra sección.
@@ -46,7 +47,9 @@ class SeccionEnVivo extends StatefulWidget {
 }
 
 class _SeccionEnVivoState extends State<SeccionEnVivo> {
-  late final ControlSenal _control = ControlSenal(SesionScope.leer(context).api)..addListener(_alCambiar);
+  late final ControlSenal _control = ControlSenal(SesionScope.leer(context).api)
+    ..alVerCanal = ((canal) => DatosScope.of(context).biblioteca.registrarCanalVisto(canal.id))
+    ..addListener(_alCambiar);
   final _desplazamiento = ScrollController();
   String? _categoria; // null = todos
   bool _soloFavoritos = false;
@@ -106,13 +109,11 @@ class _SeccionEnVivoState extends State<SeccionEnVivo> {
   }
 
   Future<void> _expandir(List<Canal> todos) async {
-    final canal = _control.canal;
-    if (canal == null) return;
-    // Se corta acá antes de abrir la pantalla completa: hay listas que permiten una sola conexión
-    await _control.detener();
-    if (!mounted) return;
-    final ultimo = await abrirPantalla<Canal>(context, PantallaEnVivoCompleta(canal: canal, todos: todos));
-    if (mounted && widget.visible) _control.abrir(ultimo ?? canal);
+    if (_control.canal == null) return;
+    // La pantalla completa usa esta misma señal (no abre otra conexión): si se
+    // reconectara, el servidor IPTV repetiría sus últimos segundos guardados.
+    await abrirPantalla<void>(context, PantallaEnVivoCompleta(control: _control, todos: todos));
+    if (mounted) _mostrarControles();
   }
 
   Future<void> _elegirFuente() async {
@@ -187,6 +188,13 @@ class _SeccionEnVivoState extends State<SeccionEnVivo> {
                           child: Row(
                             children: [
                               Expanded(child: Text('Categorías', style: Letra.titulo)),
+                              _Pildora(
+                                icono: Icons.view_list_rounded,
+                                texto: 'Guía',
+                                activo: false,
+                                alTocar: () => abrirPantalla<void>(context, PantallaGuia(alElegir: _ver)),
+                              ),
+                              const SizedBox(width: Espacio.sm),
                               _Pildora(
                                 icono: Icons.favorite_rounded,
                                 texto: favoritos > 0 ? 'Favoritos ($favoritos)' : 'Favoritos',
@@ -707,11 +715,12 @@ class _TarjetaCanal extends StatelessWidget {
 
 /// Un canal en vivo a pantalla completa (horizontal). Arriba / abajo (o
 /// CH+ / CH−, o las flechas de la barra) cambian de canal sin salir.
-/// Al volver, devuelve el último canal que se estaba viendo.
+/// Usa la misma señal que el reproductor chico ([control]): no se corta ni se
+/// vuelve a conectar al expandir, y al volver sigue el último canal elegido.
 class PantallaEnVivoCompleta extends StatefulWidget {
-  const PantallaEnVivoCompleta({super.key, required this.canal, required this.todos});
+  const PantallaEnVivoCompleta({super.key, required this.control, required this.todos});
 
-  final Canal canal;
+  final ControlSenal control;
   final List<Canal> todos;
 
   @override
@@ -719,7 +728,7 @@ class PantallaEnVivoCompleta extends StatefulWidget {
 }
 
 class _PantallaEnVivoCompletaState extends State<PantallaEnVivoCompleta> {
-  late final ControlSenal _control = ControlSenal(SesionScope.leer(context).api)..addListener(_alCambiar);
+  late final ControlSenal _control = widget.control;
   bool _controles = true;
   Timer? _ocultar;
 
@@ -729,14 +738,14 @@ class _PantallaEnVivoCompletaState extends State<PantallaEnVivoCompleta> {
     SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WakelockPlus.enable();
-    _control.abrir(widget.canal);
+    _control.addListener(_alCambiar);
     _mostrarControles();
   }
 
   @override
   void dispose() {
     _ocultar?.cancel();
-    _control.dispose();
+    _control.removeListener(_alCambiar); // la señal sigue: es la del reproductor chico
     SystemChrome.setPreferredOrientations([]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
@@ -778,167 +787,161 @@ class _PantallaEnVivoCompletaState extends State<PantallaEnVivoCompleta> {
 
   @override
   Widget build(BuildContext context) {
-    final canal = _control.canal ?? widget.canal;
+    final canal = _control.canal!;
     final video = _control.video;
     final visibles = _controles || _control.error != null;
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (salio, _) {
-        if (!salio) Navigator.pop(context, _control.canal);
-      },
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Focus(
-          autofocus: true,
-          onKeyEvent: _tecla,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _controles ? setState(() => _controles = false) : _mostrarControles(),
-            onVerticalDragEnd: (d) {
-              final velocidad = d.primaryVelocity ?? 0;
-              if (velocidad.abs() > 300) _zapping(velocidad < 0 ? 1 : -1);
-            },
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (video != null)
-                  Center(
-                    child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video)),
-                  ),
-                if (_control.cargando) const Center(child: CircularProgressIndicator()),
-                if (_control.error != null)
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.signal_wifi_connected_no_internet_4_rounded, size: 48, color: Tono.textoSuave),
-                        const SizedBox(height: 12),
-                        Text(
-                          _control.error!,
-                          textAlign: TextAlign.center,
-                          style: Letra.cuerpo.copyWith(color: Tono.texto),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: _tecla,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _controles ? setState(() => _controles = false) : _mostrarControles(),
+          onVerticalDragEnd: (d) {
+            final velocidad = d.primaryVelocity ?? 0;
+            if (velocidad.abs() > 300) _zapping(velocidad < 0 ? 1 : -1);
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (video != null)
+                Center(
+                  child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video)),
+                ),
+              if (_control.cargando) const Center(child: CircularProgressIndicator()),
+              if (_control.error != null)
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.signal_wifi_connected_no_internet_4_rounded, size: 48, color: Tono.textoSuave),
+                      const SizedBox(height: 12),
+                      Text(
+                        _control.error!,
+                        textAlign: TextAlign.center,
+                        style: Letra.cuerpo.copyWith(color: Tono.texto),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: 180,
+                        child: BotonPrincipal(
+                          texto: 'Reintentar',
+                          icono: Icons.refresh_rounded,
+                          alto: 40,
+                          alTocar: _control.reintentar,
                         ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: 180,
-                          child: BotonPrincipal(
-                            texto: 'Reintentar',
-                            icono: Icons.refresh_rounded,
-                            alto: 40,
-                            alTocar: _control.reintentar,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                AnimatedOpacity(
-                  opacity: visibles ? 1 : 0,
-                  duration: const Duration(milliseconds: 250),
-                  child: IgnorePointer(
-                    ignoring: !visibles,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        const Align(
-                          alignment: Alignment.topCenter,
-                          child: SizedBox(
-                            height: 120,
-                            width: double.infinity,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Color(0xCC0E0E12), Colors.transparent],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        SafeArea(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 12, 20, 0),
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              child: Row(
-                                children: [
-                                  BotonRedondo(
-                                    icono: Icons.arrow_back_rounded,
-                                    tamanio: 40,
-                                    tamanioIcono: 20,
-                                    fondo: Tono.capaMaxima.withValues(alpha: .6),
-                                    alTocar: () => Navigator.pop(context, _control.canal),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(Curva.medio),
-                                    child: SizedBox(
-                                      width: 52,
-                                      height: 40,
-                                      child: Imagen(
-                                        url: canal.logo,
-                                        nombre: canal.nombre,
-                                        ajuste: BoxFit.contain,
-                                        relleno: const EdgeInsets.all(4),
-                                        fondo: Tono.capaMinima.withValues(alpha: .8),
-                                        tamanioIniciales: 14,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          canal.nombre,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Letra.titulo,
-                                        ),
-                                        Text(
-                                          [
-                                            categoriaLegible(canal.categoria),
-                                            if (canal.numero.isNotEmpty) 'CH ${canal.numero}',
-                                            if (_control.fuentes.length > 1)
-                                              'Fuente ${_control.fuente + 1} de ${_control.fuentes.length}',
-                                          ].where((t) => t.isNotEmpty).join(' • '),
-                                          style: Letra.numeros,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  BotonRedondo(
-                                    icono: Icons.keyboard_arrow_up_rounded,
-                                    tamanio: 40,
-                                    tamanioIcono: 24,
-                                    fondo: Tono.capaMaxima.withValues(alpha: .6),
-                                    ayuda: 'Canal siguiente',
-                                    alTocar: () => _zapping(1),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  BotonRedondo(
-                                    icono: Icons.keyboard_arrow_down_rounded,
-                                    tamanio: 40,
-                                    tamanioIcono: 24,
-                                    fondo: Tono.capaMaxima.withValues(alpha: .6),
-                                    ayuda: 'Canal anterior',
-                                    alTocar: () => _zapping(-1),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  const InsigniaEnVivo(),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              AnimatedOpacity(
+                opacity: visibles ? 1 : 0,
+                duration: const Duration(milliseconds: 250),
+                child: IgnorePointer(
+                  ignoring: !visibles,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      const Align(
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          height: 120,
+                          width: double.infinity,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0xCC0E0E12), Colors.transparent],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 20, 0),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: Row(
+                              children: [
+                                BotonRedondo(
+                                  icono: Icons.arrow_back_rounded,
+                                  tamanio: 40,
+                                  tamanioIcono: 20,
+                                  fondo: Tono.capaMaxima.withValues(alpha: .6),
+                                  alTocar: () => Navigator.pop(context),
+                                ),
+                                const SizedBox(width: 12),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(Curva.medio),
+                                  child: SizedBox(
+                                    width: 52,
+                                    height: 40,
+                                    child: Imagen(
+                                      url: canal.logo,
+                                      nombre: canal.nombre,
+                                      ajuste: BoxFit.contain,
+                                      relleno: const EdgeInsets.all(4),
+                                      fondo: Tono.capaMinima.withValues(alpha: .8),
+                                      tamanioIniciales: 14,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        canal.nombre,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Letra.titulo,
+                                      ),
+                                      Text(
+                                        [
+                                          categoriaLegible(canal.categoria),
+                                          if (canal.numero.isNotEmpty) 'CH ${canal.numero}',
+                                          if (_control.fuentes.length > 1)
+                                            'Fuente ${_control.fuente + 1} de ${_control.fuentes.length}',
+                                        ].where((t) => t.isNotEmpty).join(' • '),
+                                        style: Letra.numeros,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                BotonRedondo(
+                                  icono: Icons.keyboard_arrow_up_rounded,
+                                  tamanio: 40,
+                                  tamanioIcono: 24,
+                                  fondo: Tono.capaMaxima.withValues(alpha: .6),
+                                  ayuda: 'Canal siguiente',
+                                  alTocar: () => _zapping(1),
+                                ),
+                                const SizedBox(width: 6),
+                                BotonRedondo(
+                                  icono: Icons.keyboard_arrow_down_rounded,
+                                  tamanio: 40,
+                                  tamanioIcono: 24,
+                                  fondo: Tono.capaMaxima.withValues(alpha: .6),
+                                  ayuda: 'Canal anterior',
+                                  alTocar: () => _zapping(-1),
+                                ),
+                                const SizedBox(width: 12),
+                                const InsigniaEnVivo(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

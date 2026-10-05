@@ -10,9 +10,12 @@ de la misma señal. La app usa la primera que funcione y, si se corta, pasa
 sola a la siguiente (failover). Así, si una fuente se cae, el canal sigue.
 """
 
+from datetime import timedelta
+
 from django.conf import settings
 from django.core.validators import URLValidator
 from django.db import models
+from django.utils import timezone
 
 from herramientas.modelos import ModeloBase
 
@@ -79,6 +82,15 @@ class Canal(ModeloBase):
         return f'{self.numero} · {self.nombre}' if self.numero else self.nombre
 
 
+# Cuántos días queda oculta una fuente que falla en los aparatos. Después la
+# app la vuelve a intentar (por si el problema era pasajero).
+DIAS_OCULTA = 7
+
+
+def hace_dias_oculta():
+    return timezone.now() - timedelta(days=DIAS_OCULTA)
+
+
 class Fuente(models.Model):
 
     # El formato de la señal. Lo averigua la verificación mirando lo que
@@ -117,6 +129,16 @@ class Fuente(models.Model):
     origen = models.CharField(max_length=150, blank=True, help_text='De qué lista se importó.')
     creado = models.DateTimeField(auto_now_add=True)
 
+    # Lo que avisan los APARATOS (la app), aparte de la verificación del
+    # servidor: hay señales que al servidor le responden pero en los aparatos
+    # no se reproducen (formato de video que no leen, servidores que aceptan
+    # una sola conexión...). Si varios aparatos avisan que falla, se oculta
+    # unos días aunque el servidor la vea bien (ver servicios.registrar_falla_en_aparato).
+    avisos_de_aparatos = models.PositiveSmallIntegerField(default=0)
+    primer_aviso = models.DateTimeField(null=True, blank=True)
+    falla_en_aparatos = models.CharField('motivo según los aparatos', max_length=200, blank=True)
+    oculta_desde = models.DateTimeField('oculta por fallar en los aparatos desde', null=True, blank=True)
+
     class Meta:
         verbose_name = 'fuente'
         verbose_name_plural = 'fuentes'
@@ -130,7 +152,16 @@ class Fuente(models.Model):
 
     def usable(self):
         """¿La app la puede usar?"""
-        return self.activa and self.estado != self.Estado.CAIDA
+        return self.activa and self.estado != self.Estado.CAIDA and not self.oculta_por_aparatos
+
+    @property
+    def oculta_por_aparatos(self):
+        return self.oculta_desde is not None and self.oculta_desde > hace_dias_oculta()
+
+    @property
+    def vuelve_a_probarse(self):
+        """Cuándo deja de estar oculta (y la app la vuelve a intentar)."""
+        return self.oculta_desde + timedelta(days=DIAS_OCULTA) if self.oculta_desde else None
 
 
 class Importacion(models.Model):

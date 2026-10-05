@@ -4,15 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#06142c">
+    <meta name="theme-color" content="#0E0E12">
+    <meta name="color-scheme" content="dark">
     <title>Error del sistema</title>
-    <link rel="icon" type="image/png" href="{% static 'img/kairos-tv-symbol.png' %}">
+    <link rel="icon" type="image/png" href="{% static 'img/kairos-tv-symbol-v2.png' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link href="{% static 'css/sistema.css' %}" rel="stylesheet">
+    <link href="{% static 'css/panel-kairos.css' %}" rel="stylesheet">
 </head>
 <body>
 <main class="error-pagina" id="contenido-principal">
     <div>
-        <img class="error-marca" src="{% static 'img/kairos-tv-symbol.png' %}" alt="Kairos TV">
+        <img class="error-marca" src="{% static 'img/kairos-tv-symbol-v2.png' %}" alt="Kairos TV">
         <div class="error-codigo">500</div>
         <h1 style="font-size:1.5rem;margin-top:1rem">Ocurrió un error en el sistema</h1>
         <p class="texto-suave">El error quedó registrado. Probá de nuevo en unos minutos; si sigue pasando, avisá al soporte técnico.</p>

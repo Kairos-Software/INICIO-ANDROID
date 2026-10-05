@@ -1,6 +1,7 @@
 /// La app en el celular (diseño de Stitch): la barra de arriba con el logo y
-/// la sección, las cinco secciones y la barra de abajo
-/// (Inicio · En Vivo · Series · Películas · Mi Espacio).
+/// la sección, las seis secciones y la barra de abajo
+/// (Inicio · En Vivo · Series · Películas · Favoritos · Mi Espacio).
+/// Favoritos se sumó con el diseño de ChatGPT (diseno_kairos_tv/DESIGN.md -> Celular).
 ///
 /// Acá se crean el catálogo y la biblioteca, y se vuelve a pedir el catálogo
 /// al volver a la app y cada 15 minutos.
@@ -13,16 +14,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../sesion.dart';
+import '../marca.dart';
 import 'buscar.dart';
 import 'datos.dart';
 import 'en_vivo.dart';
+import 'favoritos.dart';
 import 'estilo.dart';
 import 'grilla.dart';
 import 'inicio.dart';
 import 'mi_espacio.dart';
 
 /// Las secciones de la barra de abajo.
-enum Seccion { inicio, enVivo, series, peliculas, miEspacio }
+enum Seccion { inicio, enVivo, series, peliculas, favoritos, miEspacio }
 
 /// Para que cualquier pantalla pueda cambiar de sección (ej: un chip de
 /// Inicio que lleva a En Vivo con una categoría elegida).
@@ -65,6 +68,7 @@ class _PantallaMovilState extends State<PantallaMovil> {
   void initState() {
     super.initState();
     if (widget.biblioteca == null) _biblioteca.cargar();
+    _catalogo.addListener(_volverAlUltimoCanal);
     if (widget.catalogo != null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) => _catalogo.cargar());
     _ciclo = AppLifecycleListener(onResume: _catalogo.cargar);
@@ -73,11 +77,22 @@ class _PantallaMovilState extends State<PantallaMovil> {
 
   @override
   void dispose() {
+    _catalogo.removeListener(_volverAlUltimoCanal);
     _ciclo?.dispose();
     _refresco?.cancel();
     if (widget.catalogo == null) _catalogo.dispose();
     if (widget.biblioteca == null) _biblioteca.dispose();
     super.dispose();
+  }
+
+  /// "Volver al último canal al abrir" (Mi Espacio): apenas llega el catálogo, a En Vivo con ese canal.
+  void _volverAlUltimoCanal() {
+    if (!_catalogo.cargado) return;
+    _catalogo.removeListener(_volverAlUltimoCanal);
+    final ultimo = _biblioteca.ultimoCanal;
+    if (_biblioteca.volverAlUltimo && ultimo != null && _catalogo.canalPorId(ultimo) != null) {
+      _irA(Seccion.enVivo, canal: ultimo);
+    }
   }
 
   void _irA(Seccion seccion, {String? categoria, int? canal}) {
@@ -94,6 +109,7 @@ class _PantallaMovilState extends State<PantallaMovil> {
     Seccion.enVivo: 'En Vivo',
     Seccion.series: 'Series',
     Seccion.peliculas: 'Películas',
+    Seccion.favoritos: 'Favoritos',
     Seccion.miEspacio: 'Mi Espacio',
   };
 
@@ -145,6 +161,7 @@ class _PantallaMovilState extends State<PantallaMovil> {
                     SeccionEnVivo(visible: _seccion == Seccion.enVivo, pedido: _pedidoEnVivo),
                     const SeccionGrilla(contenido: 'serie'),
                     const SeccionGrilla(contenido: 'pelicula'),
+                    const SeccionFavoritos(),
                     const SeccionMiEspacio(),
                   ],
                 ),
@@ -197,7 +214,7 @@ class _BarraSuperior extends StatelessWidget implements PreferredSizeWidget {
               padding: const EdgeInsets.symmetric(horizontal: Espacio.margen),
               child: Row(
                 children: [
-                  Image.asset('assets/logo/simbolo.png', height: 26),
+                  const SimboloKairos(tamanio: 26),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -257,7 +274,7 @@ class _BarraSuperior extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-/// "nav": vidrio oscuro (capa mínima al 90 %), cinco botones; el activo en celeste.
+/// "nav": vidrio oscuro (capa mínima al 90 %), seis botones; el activo en celeste.
 class _BarraInferior extends StatelessWidget {
   const _BarraInferior({required this.seccion, required this.alElegir});
 
@@ -269,7 +286,8 @@ class _BarraInferior extends StatelessWidget {
     (Seccion.enVivo, Icons.live_tv_outlined, Icons.live_tv_rounded, 'En Vivo'),
     (Seccion.series, Icons.video_library_outlined, Icons.video_library_rounded, 'Series'),
     (Seccion.peliculas, Icons.movie_outlined, Icons.movie_rounded, 'Películas'),
-    (Seccion.miEspacio, Icons.bookmark_outline_rounded, Icons.bookmark_rounded, 'Mi Espacio'),
+    (Seccion.favoritos, Icons.favorite_border_rounded, Icons.favorite_rounded, 'Favoritos'),
+    (Seccion.miEspacio, Icons.account_circle_outlined, Icons.account_circle_rounded, 'Mi Espacio'),
   ];
 
   @override
@@ -307,6 +325,7 @@ class _BarraInferior extends StatelessWidget {
                             style: Letra.mini.copyWith(
                               color: valor == seccion ? Tono.celeste : Tono.textoSuave,
                               fontWeight: valor == seccion ? FontWeight.w700 : FontWeight.w600,
+                              fontSize: 9.5,
                               letterSpacing: -0.2,
                             ),
                           ),

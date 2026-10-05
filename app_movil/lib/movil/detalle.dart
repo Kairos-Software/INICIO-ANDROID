@@ -1,7 +1,7 @@
 /// Detalle de una película o serie (Stitch: "(2)", celular).
 ///
 ///   imagen 16:10 con degradés · título · etiquetas · Reproducir ·
-///   Mi lista / Desde el inicio · ficha · pestañas Episodios / Más similares
+///   Favoritos / Desde el inicio · ficha · pestañas Episodios / Más similares
 ///
 /// Lo que el diseño muestra y todavía no tenemos (sinopsis, puntaje, actores,
 /// tráiler, descargar) no se inventa: queda para cuando se cargue esa info.
@@ -12,6 +12,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../api/modelos.dart';
+import '../marca.dart';
 import 'componentes.dart';
 import 'datos.dart';
 import 'estilo.dart';
@@ -169,8 +170,8 @@ class _PantallaDetalleState extends State<PantallaDetalle> {
                       children: [
                         Expanded(
                           child: _BotonAccion(
-                            icono: enMiLista ? Icons.check_rounded : Icons.add_rounded,
-                            texto: enMiLista ? 'En Mi Lista' : 'Mi Lista',
+                            icono: enMiLista ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                            texto: enMiLista ? 'En Favoritos' : 'Favoritos',
                             activo: enMiLista,
                             alTocar: () => biblioteca.alternarMiLista(clave),
                           ),
@@ -299,7 +300,7 @@ class _BarraDetalle extends StatelessWidget implements PreferredSizeWidget {
                   onPressed: () => Navigator.maybePop(context),
                   icon: const Icon(Icons.arrow_back_rounded, size: 24, color: Tono.texto),
                 ),
-                Image.asset('assets/logo/simbolo.png', height: 22),
+                const SimboloKairos(tamanio: 22),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(titulo, maxLines: 1, overflow: TextOverflow.ellipsis, style: Letra.titulo),

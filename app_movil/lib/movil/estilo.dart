@@ -102,12 +102,64 @@ class Letra {
   );
 }
 
+/// Las letras de la TV, más grandes: se leen a 3 metros (diseno_kairos_tv/DESIGN.md -> Tipografía TV).
+class LetraTv {
+  static const portada = TextStyle(
+    fontFamily: Letra.titulos,
+    fontSize: 56,
+    height: 1.06,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -1.2,
+    color: Tono.texto,
+  );
+  static const pantalla = TextStyle(
+    fontFamily: Letra.titulos,
+    fontSize: 34,
+    height: 38 / 34,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.8,
+    color: Tono.texto,
+  );
+  static const seccion = TextStyle(
+    fontFamily: Letra.titulos,
+    fontSize: 24,
+    height: 30 / 24,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.4,
+    color: Tono.texto,
+  );
+  static const tarjeta = TextStyle(
+    fontFamily: Letra.titulos,
+    fontSize: 20,
+    height: 26 / 20,
+    fontWeight: FontWeight.w700,
+    color: Tono.texto,
+  );
+  static const cuerpo = TextStyle(fontFamily: Letra.texto, fontSize: 18, height: 27 / 18, color: Tono.textoSuave);
+  static const ayuda = TextStyle(fontFamily: Letra.texto, fontSize: 14, height: 20 / 14, color: Tono.textoApagado);
+
+  /// "TELEVISIÓN", "CATÁLOGO": arriba del título de cada pantalla, en celeste.
+  static const sobretitulo = TextStyle(
+    fontFamily: Letra.texto,
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w800,
+    letterSpacing: 2.4,
+    color: Tono.celeste,
+  );
+}
+
 /// Curvas de las esquinas (tailwind.config -> borderRadius): DEFAULT 4, lg 8, xl 12, 2xl 16.
 class Curva {
   static const chico = 4.0;
   static const medio = 8.0;
   static const grande = 12.0;
   static const tarjeta = 16.0;
+
+  // Las de la TV y el login (diseno_kairos_tv/DESIGN.md -> Espaciado y geometría)
+  static const boton = 14.0;
+  static const panel = 20.0;
+  static const portada = 24.0;
 }
 
 /// Espacios (tailwind.config -> spacing).

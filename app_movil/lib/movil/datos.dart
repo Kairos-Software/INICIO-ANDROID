@@ -130,6 +130,64 @@ class Catalogo extends ChangeNotifier {
 
   List<Canal> get canales => [for (final c in categoriasEnVivo) ...c.canales];
 
+  /// El número de cada canal en vivo: el que trae la lista, o si no tiene, su
+  /// lugar en la grilla (1, 2, 3...). Con él se cambia de canal escribiendo el
+  /// número con el control remoto.
+  final Map<int, String> _numeros = {};
+
+  String numeroDe(Canal canal) {
+    if (_numeros.isEmpty && categoriasEnVivo.isNotEmpty) _numerar();
+    return _numeros[canal.id] ?? canal.numero;
+  }
+
+  /// El canal con ese número (o null).
+  Canal? canalPorNumero(String numero) {
+    final buscado = int.tryParse(numero);
+    if (buscado == null) return null;
+    for (final canal in canales) {
+      if (int.tryParse(numeroDe(canal)) == buscado) return canal;
+    }
+    return null;
+  }
+
+  void _numerar() {
+    _numeros.clear();
+    final usados = {for (final c in canales) int.tryParse(c.numero)}..remove(null);
+    var siguiente = 1;
+    for (final canal in canales) {
+      if (int.tryParse(canal.numero) != null) {
+        _numeros[canal.id] = '${int.parse(canal.numero)}';
+        continue;
+      }
+      while (usados.contains(siguiente)) {
+        siguiente++;
+      }
+      _numeros[canal.id] = '${siguiente++}';
+    }
+  }
+
+  /// Los favoritos, separados por tipo (en el orden en que se agregaron).
+  List<Canal> canalesFavoritos(Biblioteca biblioteca) => _deLaLista(biblioteca, canales);
+
+  List<Canal> peliculasFavoritas(Biblioteca biblioteca) => _deLaLista(biblioteca, peliculas);
+
+  List<Serie> seriesFavoritas(Biblioteca biblioteca) {
+    final lista = biblioteca.miLista.toList();
+    return series.where((s) => lista.contains(s.clave)).toList()
+      ..sort((a, b) => lista.indexOf(a.clave).compareTo(lista.indexOf(b.clave)));
+  }
+
+  List<Canal> _deLaLista(Biblioteca biblioteca, List<Canal> todos) {
+    final lista = biblioteca.miLista.toList();
+    return todos.where((c) => lista.contains(Biblioteca.claveDe(c))).toList()
+      ..sort((a, b) => lista.indexOf(Biblioteca.claveDe(a)).compareTo(lista.indexOf(Biblioteca.claveDe(b))));
+  }
+
+  /// Los últimos canales en vivo vistos en este aparato (el más reciente primero).
+  List<Canal> canalesRecientes(Biblioteca biblioteca) => [
+    for (final id in biblioteca.recientes) ?canales.where((c) => c.id == id).firstOrNull,
+  ];
+
   Future<void> cargar() async {
     if (cargando) return;
     cargando = true;
@@ -149,6 +207,7 @@ class Catalogo extends ChangeNotifier {
       categoriasEnVivo = resultados[0];
       peliculas = [for (final c in resultados[1]) ...c.canales];
       series = agruparSeries([for (final c in resultados[2]) ...c.canales]);
+      _numerar();
       cargado = true;
     } catch (e) {
       error = e;
@@ -221,21 +280,29 @@ class Progreso {
   };
 }
 
-/// "Mi lista" y "Continuar viendo". Se guarda en el aparato (no en el servidor).
+/// Los favoritos ("Mi lista"), "Continuar viendo", los últimos canales vistos
+/// y las preferencias. Se guarda en el aparato (no en el servidor).
 class Biblioteca extends ChangeNotifier {
   static const _claveLista = 'kairos.mi_lista';
   static const _claveProgreso = 'kairos.progreso';
+  static const _claveRecientes = 'kairos.recientes';
+  static const _claveVolverAlUltimo = 'kairos.volver_al_ultimo';
   static const _maximoProgresos = 60;
+  static const _maximoRecientes = 12;
 
   SharedPreferences? _preferencias;
   final Set<String> _miLista = {};
   final Map<int, Progreso> _progresos = {};
+  final List<int> _recientes = [];
+  bool _volverAlUltimo = false;
 
   Future<void> cargar() async {
     try {
       final preferencias = await SharedPreferences.getInstance();
       _preferencias = preferencias;
       _miLista.addAll(preferencias.getStringList(_claveLista) ?? []);
+      _recientes.addAll((preferencias.getStringList(_claveRecientes) ?? []).map(int.tryParse).nonNulls);
+      _volverAlUltimo = preferencias.getBool(_claveVolverAlUltimo) ?? false;
       final guardados = jsonDecode(preferencias.getString(_claveProgreso) ?? '[]') as List;
       for (final p in guardados) {
         final progreso = Progreso.desdeJson(p as Map<String, dynamic>);
@@ -257,6 +324,30 @@ class Biblioteca extends ChangeNotifier {
   void alternarMiLista(String clave) {
     _miLista.contains(clave) ? _miLista.remove(clave) : _miLista.add(clave);
     _preferencias?.setStringList(_claveLista, _miLista.toList());
+    notifyListeners();
+  }
+
+  // Últimos canales vistos
+  List<int> get recientes => List.unmodifiable(_recientes);
+
+  int? get ultimoCanal => _recientes.firstOrNull;
+
+  void registrarCanalVisto(int id) {
+    if (_recientes.firstOrNull == id) return;
+    _recientes
+      ..remove(id)
+      ..insert(0, id);
+    if (_recientes.length > _maximoRecientes) _recientes.removeLast();
+    _preferencias?.setStringList(_claveRecientes, [for (final r in _recientes) '$r']);
+    notifyListeners();
+  }
+
+  /// Al abrir la app, ¿arrancar con el último canal que se vio? (Mi cuenta)
+  bool get volverAlUltimo => _volverAlUltimo;
+
+  set volverAlUltimo(bool valor) {
+    _volverAlUltimo = valor;
+    _preferencias?.setBool(_claveVolverAlUltimo, valor);
     notifyListeners();
   }
 

@@ -1,11 +1,13 @@
 /// Inicio (Stitch: "stitch_modern_streaming_app_ui.zip", celular).
 ///
-///   chips de categorías · portada destacada · Continuar Viendo ·
-///   Directos Destacados Ahora · Tendencias en Kairos TV (grilla de pósters)
+///   chips de categorías · portada destacada · Tus canales favoritos ·
+///   Últimos canales vistos · Directos Destacados Ahora · Continuar Viendo ·
+///   Tendencias en Kairos TV (grilla de pósters)
 ///
-/// Todo con datos reales: la portada es una película o serie del catálogo
-/// (o un canal, si todavía no hay); "Continuar Viendo" sale de lo que se vio
-/// en este aparato.
+/// TV en vivo primero (diseno_kairos_tv/DESIGN.md, principio 1): la portada es
+/// un canal (el último que se vio, o un favorito); si no hay canales, una
+/// película o serie. Todo con datos reales: favoritos, últimos vistos y
+/// "Continuar Viendo" salen de lo que se hizo en este aparato.
 library;
 
 import 'package:flutter/material.dart';
@@ -47,8 +49,18 @@ class SeccionInicio extends StatelessWidget {
             children: [
               const _Chips(),
               const _Portada(),
-              const _ContinuarViendo(),
+              _FilaCanales(
+                titulo: 'Tus canales favoritos',
+                icono: const Icon(Icons.favorite_rounded, size: 20, color: Tono.rubi),
+                canales: catalogo.canalesFavoritos(datos.biblioteca),
+              ),
+              _FilaCanales(
+                titulo: 'Últimos canales vistos',
+                icono: const Icon(Icons.history_rounded, size: 20, color: Tono.celeste),
+                canales: catalogo.canalesRecientes(datos.biblioteca).take(10).toList(),
+              ),
               const _DirectosDestacados(),
+              const _ContinuarViendo(),
               const _Tendencias(),
               if (catalogo.canales.isEmpty && catalogo.peliculas.isEmpty && catalogo.series.isEmpty)
                 const Vacio(icono: Icons.tv_off_rounded, texto: 'Todavía no hay contenido disponible.'),
@@ -113,10 +125,19 @@ class _Portada extends StatelessWidget {
     final datos = DatosScope.of(context);
     final catalogo = datos.catalogo;
 
-    // Lo destacado: la primera película o serie con imagen; si no hay, un canal
-    final pelicula = catalogo.peliculas.where((p) => p.logo.isNotEmpty).firstOrNull;
-    final serie = catalogo.series.where((s) => s.imagen.isNotEmpty).firstOrNull;
-    final canal = catalogo.canales.where((c) => c.logo.isNotEmpty).firstOrNull ?? catalogo.canales.firstOrNull;
+    // Lo destacado: un canal en vivo (el último visto, un favorito o uno con logo);
+    // si no hay canales, la primera película o serie con imagen
+    final biblioteca = datos.biblioteca;
+    final canal = [
+      ...catalogo.canalesRecientes(biblioteca),
+      ...catalogo.canalesFavoritos(biblioteca),
+      ...catalogo.canales.where((c) => c.logo.isNotEmpty),
+      ...catalogo.canales,
+    ].firstOrNull;
+    final pelicula = canal != null ? null : catalogo.peliculas.where((p) => p.logo.isNotEmpty).firstOrNull;
+    final serie = canal != null || pelicula != null
+        ? null
+        : catalogo.series.where((s) => s.imagen.isNotEmpty).firstOrNull;
     if (pelicula == null && serie == null && canal == null) return const SizedBox.shrink();
 
     final String titulo;
@@ -129,7 +150,19 @@ class _Portada extends StatelessWidget {
     final VoidCallback reproducir;
     final VoidCallback? info;
     final bool esCanal;
-    if (pelicula != null) {
+    if (canal != null) {
+      titulo = canal.nombre;
+      imagen = canal.logo;
+      insignia = 'EN VIVO';
+      etiqueta = categoriaLegible(canal.categoria);
+      anio = null;
+      final numero = catalogo.numeroDe(canal);
+      bajada = [if (numero.isNotEmpty) 'Canal $numero', 'Señal en vivo', if (etiqueta.isNotEmpty) etiqueta].join(' · ');
+      clave = Biblioteca.claveDe(canal);
+      reproducir = () => NavegacionMovil.of(context).irA(Seccion.enVivo, canal: canal.id);
+      info = null;
+      esCanal = true;
+    } else if (pelicula != null) {
       titulo = sinAnio(pelicula.nombre);
       imagen = pelicula.logo;
       insignia = 'DESTACADA';
@@ -140,29 +173,19 @@ class _Portada extends StatelessWidget {
       reproducir = () => reproducirPelicula(context, pelicula);
       info = () => abrirPantalla<void>(context, PantallaDetalle.pelicula(pelicula));
       esCanal = false;
-    } else if (serie != null) {
-      titulo = serie.nombre;
-      imagen = serie.imagen;
-      insignia = 'SERIE';
-      etiqueta = categoriaLegible(serie.categoria);
-      anio = null;
-      final temporadas = serie.temporadas.length;
-      bajada = '$temporadas temporada${temporadas == 1 ? '' : 's'} · ${serie.episodios.length} capítulos';
-      clave = serie.clave;
-      reproducir = () => reproducirSerie(context, serie);
-      info = () => abrirPantalla<void>(context, PantallaDetalle.serie(serie));
-      esCanal = false;
     } else {
-      titulo = canal!.nombre;
-      imagen = canal.logo;
-      insignia = 'EN VIVO';
-      etiqueta = categoriaLegible(canal.categoria);
+      final laSerie = serie!;
+      titulo = laSerie.nombre;
+      imagen = laSerie.imagen;
+      insignia = 'SERIE';
+      etiqueta = categoriaLegible(laSerie.categoria);
       anio = null;
-      bajada = 'Señal en vivo${etiqueta.isEmpty ? '' : ' · $etiqueta'}';
-      clave = Biblioteca.claveDe(canal);
-      reproducir = () => NavegacionMovil.of(context).irA(Seccion.enVivo, canal: canal.id);
-      info = null;
-      esCanal = true;
+      final temporadas = laSerie.temporadas.length;
+      bajada = '$temporadas temporada${temporadas == 1 ? '' : 's'} · ${laSerie.episodios.length} capítulos';
+      clave = laSerie.clave;
+      reproducir = () => reproducirSerie(context, laSerie);
+      info = () => abrirPantalla<void>(context, PantallaDetalle.serie(laSerie));
+      esCanal = false;
     }
 
     // "CYBERPUNK: PROTOCOLO 2099": lo que va después de ":" en celeste
@@ -286,8 +309,11 @@ class _Portada extends StatelessWidget {
                       ),
                       const SizedBox(width: Espacio.xs),
                       BotonRedondo(
-                        icono: datos.biblioteca.estaEnMiLista(clave) ? Icons.check_rounded : Icons.add_rounded,
-                        ayuda: 'Mi lista',
+                        icono: datos.biblioteca.estaEnMiLista(clave)
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        color: datos.biblioteca.estaEnMiLista(clave) ? Tono.rubiClaro : Tono.texto,
+                        ayuda: datos.biblioteca.estaEnMiLista(clave) ? 'Quitar de favoritos' : 'Agregar a favoritos',
                         alTocar: () => datos.biblioteca.alternarMiLista(clave),
                       ),
                       if (info != null) ...[
@@ -400,6 +426,49 @@ class _ContinuarViendo extends StatelessWidget {
   }
 }
 
+/// Una fila de canales en vivo (favoritos, últimos vistos). Si no hay ninguno, no se muestra.
+class _FilaCanales extends StatelessWidget {
+  const _FilaCanales({required this.titulo, required this.icono, required this.canales});
+
+  final String titulo;
+  final Widget icono;
+  final List<Canal> canales;
+
+  @override
+  Widget build(BuildContext context) {
+    if (canales.isEmpty) return const SizedBox.shrink();
+    final catalogo = DatosScope.of(context).catalogo;
+    final irA = NavegacionMovil.of(context).irA;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          EncabezadoSeccion(titulo: titulo, icono: icono),
+          SizedBox(
+            height: 210,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: Espacio.margen),
+              itemCount: canales.length,
+              separatorBuilder: (_, _) => const SizedBox(width: Espacio.sm),
+              itemBuilder: (_, i) => Align(
+                alignment: Alignment.topCenter,
+                child: TarjetaEnVivo(
+                  canal: canales[i],
+                  ancho: 240,
+                  numero: catalogo.numeroDe(canales[i]),
+                  alTocar: () => irA(Seccion.enVivo, canal: canales[i].id),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// "Directos Destacados Ahora": canales en vivo (tarjetas 16:9).
 class _DirectosDestacados extends StatelessWidget {
   const _DirectosDestacados();
@@ -440,6 +509,7 @@ class _DirectosDestacados extends StatelessWidget {
                 alignment: Alignment.topCenter,
                 child: TarjetaEnVivo(
                   canal: destacados[i],
+                  numero: catalogo.numeroDe(destacados[i]),
                   alTocar: () => irA(Seccion.enVivo, canal: destacados[i].id),
                 ),
               ),
