@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'actualizacion.dart';
 import 'aparato.dart';
 import 'config.dart';
 import 'movil/estructura.dart';
@@ -25,7 +26,13 @@ Future<void> main() async {
   final sesion = Sesion();
   sesion.alSalir = () => claveNavegador.currentState?.popUntil((ruta) => ruta.isFirst);
   sesion.iniciar();
-  runApp(SesionScope(sesion: sesion, child: const App()));
+  runApp(
+    SesionScope(
+      sesion: sesion,
+      // El aviso "Hay una versión nueva" (lib/actualizacion.dart)
+      child: VigilarActualizacion(sesion: sesion, navegador: claveNavegador, child: const App()),
+    ),
+  );
 }
 
 class App extends StatelessWidget {

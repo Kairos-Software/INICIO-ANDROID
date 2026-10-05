@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from . import auth, canales, cliente, notificaciones, perfil, usuarios
+from . import app, auth, canales, cliente, notificaciones, perfil, usuarios
 
 app_name = 'api_v1'
 
@@ -30,6 +30,7 @@ def indice(request):
             'cliente_login': url('cliente_login'),
             'cliente': url('cliente'),
             'cliente_logout': url('cliente_logout'),
+            'app': url('app'),
         },
     })
 
@@ -53,6 +54,9 @@ urlpatterns = [
     path('canales/', canales.lista, name='canales'),
     path('canales/fuentes/<int:pk>/falla/', canales.avisar_falla, name='fuente_falla'),
     path('canales/fuentes/<int:pk>/resolver/', canales.resolver, name='fuente_resolver'),
+
+    # La última versión de la app (para avisar que hay una nueva)
+    path('app/', app.ultima_version, name='app'),
 
     # La app de los clientes (login con código)
     path('cliente/login/', cliente.login, name='cliente_login'),

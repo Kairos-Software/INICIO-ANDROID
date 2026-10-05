@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Para hablar con la API (sin esto, la APK final no tiene internet) -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Para instalar la versión nueva de la propia app (el aviso "Hay una
+         versión nueva", ver lib/actualizacion.dart). La primera vez Android
+         le pide a la persona que autorice "instalar apps de este origen". -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <!-- Android TV: la app también se instala en televisores. "required=false"
          = sirve en TV pero NO es obligatorio (sigue andando en celulares).
@@ -43,6 +47,17 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Le presta al instalador de Android la APK nueva que bajó la app
+             (está en la carpeta privada de la app; ver res/xml/archivos_compartidos.xml) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.archivos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/archivos_compartidos" />
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

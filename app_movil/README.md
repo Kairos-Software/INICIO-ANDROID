@@ -129,12 +129,19 @@ Cada versión nueva: subir `version:` en `pubspec.yaml` (ej. `1.0.1+2`).
    & "$env:LOCALAPPDATA\Android\Sdk\build-tools\36.0.0\apksigner.bat" verify --print-certs build\app\outputs\flutter-apk\app-release.apk
    ```
 4. Panel de producción → **App Android** → subir `build\app\outputs\flutter-apk\app-release.apk`
-   con la misma versión del paso 1 (ej. `1.0.1`).
+   con la misma versión del paso 1 (ej. `1.0.1`). **Tiene que ser exactamente la
+   misma** (sin el `+2`): la app compara ese número con el suyo para avisar que hay
+   una nueva. Lo que escribas en "qué cambió" aparece en el cartel.
 5. Commit y push del cambio de `pubspec.yaml`, para que el repo sepa qué versión está publicada.
 
-La app todavía no avisa sola que hay versión nueva: cada aparato la tiene que
-bajar otra vez desde `/descargar/` e instalarla encima (no hace falta desinstalar,
-se conservan el login y los datos).
+Desde la 1.1.0 la app **avisa sola**: al abrirse (y al volver a ella, cada 6 horas)
+le pregunta al servidor la última versión (`/api/v1/app/`). Si la suya es más vieja,
+muestra "Hay una versión nueva" → **Actualizar**: la baja y abre el instalador de
+Android. Se instala encima, sin perder el login (`lib/actualizacion.dart`). La
+primera vez Android pide permiso para "instalar apps de este origen".
+
+Las que tienen la 1.0.0 no traen el aviso: esas se actualizan a mano, bajándola
+desde `/descargar/` e instalándola encima.
 
 ## Comandos útiles
 

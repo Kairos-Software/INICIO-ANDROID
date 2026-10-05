@@ -71,3 +71,20 @@ class DescargasTests(TestCase):
 
     def test_la_pagina_pide_sesion(self):
         self.assertEqual(self.client.get(reverse('descargas:pagina')).status_code, 302)
+
+    def test_la_api_dice_cual_es_la_ultima_version(self):
+        """GET /api/v1/app/: lo que consulta la app para avisar que hay una nueva (sin sesión)."""
+        self.assertEqual(self.client.get('/api/v1/app/').json(), {'version': None})
+        self.client.force_login(self.admin)
+        self.subir()
+        self.subir('1.1.0')
+        nueva = VersionApp.objects.get(version='1.1.0')
+        self.client.logout()
+        datos = self.client.get('/api/v1/app/').json()
+        self.assertEqual(datos['version'], '1.1.0')
+        self.assertEqual(datos['notas'], 'Primera')
+        self.assertTrue(datos['descarga'].endswith(f'/descargar/{nueva.pk}/'))
+        # Si se oculta, vuelve a anunciar la anterior
+        nueva.publicada = False
+        nueva.save()
+        self.assertEqual(self.client.get('/api/v1/app/').json()['version'], '1.0.0')

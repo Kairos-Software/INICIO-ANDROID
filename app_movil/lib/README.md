@@ -7,7 +7,8 @@ El código de la app. Flutter arranca por `main.dart`.
 | `main.dart` | Arranque, tema, idioma, y `Raiz`: decide si mostrar el login o el sistema según la sesión. | `urls.py` + `@login_required` |
 | `config.dart` | Nombre de la app ("Kairos TV") y dirección del servidor por defecto. | `.env` |
 | `sesion.dart` | Quién está logueado (un **cliente** con código o un **usuario** del panel), el token guardado, entrar y salir, y la "señal" del cliente cada 5 min. | `request.user` + sesiones |
-| `aparato.dart` | Nombre del aparato y si es una TV (lo da `MainActivity.kt`). | — |
+| `aparato.dart` | Nombre del aparato, si es una TV y la versión instalada (lo da `MainActivity.kt`). | — |
+| `actualizacion.dart` | El aviso "Hay una versión nueva": pregunta a `/api/v1/app/` al abrir, baja la APK y abre el instalador de Android. | — |
 | `tema.dart` | El diseño: el mismo del panel en versión oscura (azul noche del menú, celeste/azul en lo activo, naranja en el foco del control remoto), letras Sora y Manrope, radios y `FondoMarca`. Si cambian los colores del panel, se cambian acá. | `static/css/sistema.css` |
 | `campos.dart` | Los campos del usuario agrupados por sección, como en `usuarios/forms.py`. | `SECCIONES_USUARIO` |
 | `senales.dart` | De una fuente a la dirección que abre el reproductor: YouTube se resuelve en el aparato (con Cronet), las páginas de video (Twitch...) se le piden al servidor, y le dice al reproductor el formato (HLS, DASH, video directo). | `canales/paginas.py` |

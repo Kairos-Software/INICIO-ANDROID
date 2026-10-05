@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Las carpetas que el FileProvider puede prestar a otras apps (AndroidManifest.xml).
+     Solo la de las actualizaciones: ahí la app deja la APK nueva que baja. -->
+<paths>
+    <cache-path name="actualizaciones" path="actualizaciones/" />
+</paths>

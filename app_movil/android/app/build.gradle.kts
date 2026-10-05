@@ -76,6 +76,11 @@ flutter {
     source = "../.."
 }
 
+dependencies {
+    // FileProvider: para pasarle al instalador la APK nueva (MainActivity.kt)
+    implementation("androidx.core:core-ktx:1.13.1")
+}
+
 // cronet_http (la app le habla a YouTube con Cronet, ver lib/senales.dart)
 // trae cronet-api 141, que viene partida en dos módulos con el mismo
 // "namespace" y el Android Gradle de este proyecto no compila ("Namespace
