@@ -9,3 +9,10 @@ se vea igual aunque no haya buena conexión:
 Están registradas en `pubspec.yaml` (sección `fonts`) y se usan desde
 `lib/tema.dart` (clase `Letras`). Son libres (SIL Open Font License, ver
 `OFL-Sora.txt` y `OFL-Manrope.txt`).
+
+Las de la **app de celular** (diseño de Stitch, `lib/movil/`):
+
+- **Plus Jakarta Sans** (pesos 600, 700 y 800): títulos.
+- **Inter** (pesos 400 a 700): textos, botones y números.
+
+Bajadas de Google Fonts. También libres (`OFL-PlusJakartaSans.txt`, `OFL-Inter.txt`).

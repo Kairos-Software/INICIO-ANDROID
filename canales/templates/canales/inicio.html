@@ -15,9 +15,16 @@
         <h1 class="pagina-titulo">Canales</h1>
         <p class="pagina-bajada">Importá listas M3U: se verifican de a tandas y solo pasan las que funcionan. En el catálogo ves todos los canales como en la app y quitás los que no te sirven.</p>
     </div>
-    <a href="{% url 'canales:catalogo' %}" class="btn btn-acento">
-        <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Ver catálogo
-    </a>
+    <div class="d-flex flex-wrap gap-2">
+        {% if puede_importar %}
+        <a href="{% url 'canales:probar' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-plug" aria-hidden="true"></i> Probar un link
+        </a>
+        {% endif %}
+        <a href="{% url 'canales:catalogo' %}" class="btn btn-acento">
+            <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Ver catálogo
+        </a>
+    </div>
 </div>
 {% endblock %}
 
@@ -49,6 +56,14 @@
             </button>
             <span class="texto-suave small">Se prueban de a 50 y se ve el avance. Las caídas que volvieron se reactivan solas, y las que antes no se reconocían (video directo, como en VLC) ahora se detectan.</span>
         </div>
+        <form method="post" action="{% url 'canales:limpiar_nombres' %}" class="d-flex flex-wrap align-items-center gap-3"
+              onsubmit="return confirm('¿Limpiar los nombres de todos los canales? Ej: «ES: (FHD) DAZN 1» pasa a «DAZN 1». Si dos quedan iguales, se juntan en uno (con las fuentes de los dos).');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-secondary">
+                <i class="bi bi-magic" aria-hidden="true"></i> Limpiar nombres
+            </button>
+            <span class="texto-suave small">Saca prefijos de país y calidades ("ES:", "(FHD)", "REPUESTO") de los canales cargados antes, y junta los que quedan repetidos.</span>
+        </form>
         <div class="avance" hidden>
             <div class="avance-barra" role="progressbar" aria-label="Avance de la verificación" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                 <div class="avance-relleno"></div>

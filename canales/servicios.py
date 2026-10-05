@@ -486,6 +486,75 @@ def agregar_fuente(canal, url, verificar_url=None, usuario=None):
     return fuente
 
 
+def crear_canal_a_mano(form, url, resultado, user_agent='', referer='', usuario=None):
+    """
+    Crea un canal con una dirección ya probada en "Probar un link": los
+    datos vienen del formulario (CanalNuevoForm) y el estado y formato, de la prueba.
+    """
+    with transaction.atomic():
+        canal = form.save(commit=False)
+        canal.marcar_autor(usuario)
+        canal.save()
+        fuente = Fuente(canal=canal, url=url[:1000], prioridad=1, origen='Agregada a mano',
+                        user_agent=user_agent[:300], referer=referer[:500],
+                        tipo=clasificar.formato(url) or Fuente.Tipo.HLS)
+        aplicar_resultado(fuente, resultado, timezone.now())
+        fuente.save()
+    registrar(usuario, Accion.CREAR, f'Agregó a mano el canal "{canal.nombre}".', modulo='canales')
+    return canal
+
+
+# ── Limpiar los nombres de los canales que ya estaban ────────────────
+
+def limpiar_nombres(usuario=None):
+    """
+    Pasa los nombres viejos al formato limpio ("ES: (FHD) DAZN 1" -> "DAZN 1"),
+    como se hace al importar. Si al limpiarlo queda igual a otro canal (mismo
+    contenido y país compatible), se juntan: las fuentes pasan al que ya
+    estaba (quedan como alternativas) y el repetido se da de baja.
+    Devuelve (renombrados, juntados).
+    """
+    renombrados = juntados = 0
+    with transaction.atomic():
+        indice = _IndiceDeCanales()
+        indice.por_nombre = {}
+        for canal in Canal.objects.order_by('pk'):
+            limpio = clasificar.limpiar_nombre(canal.nombre)[:120]
+            igual = indice.buscar(limpio, canal.pais, canal.contenido)
+            if igual is not None and igual.pk != canal.pk:
+                _juntar(canal, igual, usuario)
+                juntados += 1
+                continue
+            if limpio != canal.nombre:
+                canal.nombre = limpio
+                canal.marcar_autor(usuario)
+                canal.save()
+                renombrados += 1
+            indice.agregar(canal)
+    if renombrados or juntados:
+        registrar(usuario, Accion.EDITAR,
+                  f'Limpió los nombres de los canales: {renombrados} renombrado(s), {juntados} juntado(s).',
+                  modulo='canales')
+    return renombrados, juntados
+
+
+def _juntar(repetido, destino, usuario):
+    """Las fuentes de `repetido` pasan a `destino` (al final) y `repetido` se da de baja."""
+    ya_tiene = set(destino.fuentes.values_list('url', flat=True))
+    prioridad = destino.fuentes.aggregate(maximo=Max('prioridad'))['maximo'] or 0
+    for fuente in repetido.fuentes.order_by('prioridad', 'pk'):
+        if fuente.url in ya_tiene:
+            fuente.delete()
+            continue
+        prioridad += 1
+        fuente.canal, fuente.prioridad = destino, prioridad
+        fuente.save(update_fields=['canal', 'prioridad'])
+    if not destino.logo and repetido.logo:
+        destino.logo = repetido.logo
+        destino.save(update_fields=['logo', 'modificado'])
+    repetido.eliminar(usuario)
+
+
 # ── Avisos de la app ─────────────────────────────────────────────────
 
 # Una misma fuente se re-prueba como máximo una vez en este tiempo, aunque

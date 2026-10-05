@@ -1,0 +1,324 @@
+/// La app en el celular (diseño de Stitch): la barra de arriba con el logo y
+/// la sección, las cinco secciones y la barra de abajo
+/// (Inicio · En Vivo · Series · Películas · Mi Espacio).
+///
+/// Acá se crean el catálogo y la biblioteca, y se vuelve a pedir el catálogo
+/// al volver a la app y cada 15 minutos.
+library;
+
+import 'dart:async';
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../sesion.dart';
+import 'buscar.dart';
+import 'datos.dart';
+import 'en_vivo.dart';
+import 'estilo.dart';
+import 'grilla.dart';
+import 'inicio.dart';
+import 'mi_espacio.dart';
+
+/// Las secciones de la barra de abajo.
+enum Seccion { inicio, enVivo, series, peliculas, miEspacio }
+
+/// Para que cualquier pantalla pueda cambiar de sección (ej: un chip de
+/// Inicio que lleva a En Vivo con una categoría elegida).
+class NavegacionMovil extends InheritedWidget {
+  const NavegacionMovil({super.key, required this.irA, required super.child});
+
+  final void Function(Seccion seccion, {String? categoria, int? canal}) irA;
+
+  static NavegacionMovil of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<NavegacionMovil>()!;
+
+  @override
+  bool updateShouldNotify(NavegacionMovil oldWidget) => false;
+}
+
+class PantallaMovil extends StatefulWidget {
+  const PantallaMovil({super.key, this.catalogo, this.biblioteca, this.seccionInicial = Seccion.inicio});
+
+  /// Solo para las pruebas: un catálogo y una biblioteca ya armados (no se pide nada a la API).
+  final Catalogo? catalogo;
+  final Biblioteca? biblioteca;
+  final Seccion seccionInicial;
+
+  @override
+  State<PantallaMovil> createState() => _PantallaMovilState();
+}
+
+class _PantallaMovilState extends State<PantallaMovil> {
+  static const _cadaCuanto = Duration(minutes: 15);
+
+  late final Catalogo _catalogo = widget.catalogo ?? Catalogo(SesionScope.leer(context).api);
+  late final Biblioteca _biblioteca = widget.biblioteca ?? Biblioteca();
+  late Seccion _seccion = widget.seccionInicial;
+
+  /// Lo que se pidió al saltar a En Vivo (ej: un chip o una tarjeta de Inicio).
+  PedidoEnVivo? _pedidoEnVivo;
+  AppLifecycleListener? _ciclo;
+  Timer? _refresco;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.biblioteca == null) _biblioteca.cargar();
+    if (widget.catalogo != null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _catalogo.cargar());
+    _ciclo = AppLifecycleListener(onResume: _catalogo.cargar);
+    _refresco = Timer.periodic(_cadaCuanto, (_) => _catalogo.cargar());
+  }
+
+  @override
+  void dispose() {
+    _ciclo?.dispose();
+    _refresco?.cancel();
+    if (widget.catalogo == null) _catalogo.dispose();
+    if (widget.biblioteca == null) _biblioteca.dispose();
+    super.dispose();
+  }
+
+  void _irA(Seccion seccion, {String? categoria, int? canal}) {
+    setState(() {
+      _seccion = seccion;
+      if (seccion == Seccion.enVivo && (categoria != null || canal != null)) {
+        _pedidoEnVivo = PedidoEnVivo(categoria: categoria, canal: canal);
+      }
+    });
+  }
+
+  static const _titulos = {
+    Seccion.inicio: 'Inicio',
+    Seccion.enVivo: 'En Vivo',
+    Seccion.series: 'Series',
+    Seccion.peliculas: 'Películas',
+    Seccion.miEspacio: 'Mi Espacio',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: temaMovil(),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light.copyWith(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Tono.capaMinima,
+        ),
+        child: DatosScope(
+          catalogo: _catalogo,
+          biblioteca: _biblioteca,
+          child: NavegacionMovil(
+            irA: _irA,
+            child: PopScope(
+              // "Atrás" en otra sección vuelve a Inicio antes de salir de la app
+              canPop: _seccion == Seccion.inicio,
+              onPopInvokedWithResult: (salio, _) {
+                if (!salio) _irA(Seccion.inicio);
+              },
+              child: Scaffold(
+                backgroundColor: Tono.fondo,
+                extendBody: true,
+                extendBodyBehindAppBar: true,
+                appBar: _BarraSuperior(
+                  titulo: _titulos[_seccion]!,
+                  alBuscar: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => DatosScope(
+                        catalogo: _catalogo,
+                        biblioteca: _biblioteca,
+                        child: Theme(
+                          data: temaMovil(),
+                          child: PantallaBuscar(irA: _irA),
+                        ),
+                      ),
+                    ),
+                  ),
+                  alPerfil: () => _irA(Seccion.miEspacio),
+                ),
+                body: IndexedStack(
+                  index: _seccion.index,
+                  children: [
+                    const SeccionInicio(),
+                    SeccionEnVivo(visible: _seccion == Seccion.enVivo, pedido: _pedidoEnVivo),
+                    const SeccionGrilla(contenido: 'serie'),
+                    const SeccionGrilla(contenido: 'pelicula'),
+                    const SeccionMiEspacio(),
+                  ],
+                ),
+                bottomNavigationBar: _BarraInferior(seccion: _seccion, alElegir: _irA),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Lo que ocupan las barras de arriba y de abajo, para dejarle lugar al
+/// contenido de las secciones (que pasa por detrás de las barras de vidrio).
+/// Como el Scaffold tiene extendBody y extendBodyBehindAppBar, Flutter ya
+/// suma el alto de cada barra al "padding" de las secciones.
+double altoBarraSuperior(BuildContext context) => MediaQuery.paddingOf(context).top;
+
+double altoBarraInferior(BuildContext context) => MediaQuery.paddingOf(context).bottom;
+
+/// "header": vidrio oscuro (capa mínima al 80 % con desenfoque), el logo y la
+/// sección en celeste; a la derecha buscar y el avatar.
+class _BarraSuperior extends StatelessWidget implements PreferredSizeWidget {
+  const _BarraSuperior({required this.titulo, required this.alBuscar, required this.alPerfil});
+
+  final String titulo;
+  final VoidCallback alBuscar;
+  final VoidCallback alPerfil;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(56);
+
+  @override
+  Widget build(BuildContext context) {
+    final sesion = SesionScope.of(context);
+    final nombre = sesion.cliente?.nombre ?? sesion.perfil?.nombreCompleto ?? '';
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Tono.capaMinima.withValues(alpha: .8),
+            boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 8, offset: Offset(0, 1))],
+          ),
+          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+          child: SizedBox(
+            height: 56,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Espacio.margen),
+              child: Row(
+                children: [
+                  Image.asset('assets/logo/simbolo.png', height: 26),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      titulo.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Letra.etiqueta.copyWith(
+                        color: Tono.celesteClaro,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Buscar',
+                    onPressed: alBuscar,
+                    icon: const Icon(Icons.search_rounded, size: 22, color: Tono.textoSuave),
+                  ),
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: 'Mi Espacio',
+                    child: InkWell(
+                      onTap: alPerfil,
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [Tono.celeste, Color(0xFF006970)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          border: Border.all(color: Tono.capaMaxima, width: 2),
+                        ),
+                        child: Text(
+                          _iniciales(nombre),
+                          style: Letra.mini.copyWith(fontSize: 12, color: Tono.sobreCelesteOscuro),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _iniciales(String nombre) {
+    final letras = nombre.split(' ').where((p) => p.isNotEmpty).take(2).map((p) => p[0]).join().toUpperCase();
+    return letras.isEmpty ? 'TV' : letras;
+  }
+}
+
+/// "nav": vidrio oscuro (capa mínima al 90 %), cinco botones; el activo en celeste.
+class _BarraInferior extends StatelessWidget {
+  const _BarraInferior({required this.seccion, required this.alElegir});
+
+  final Seccion seccion;
+  final void Function(Seccion) alElegir;
+
+  static const _items = [
+    (Seccion.inicio, Icons.home_outlined, Icons.home_rounded, 'Inicio'),
+    (Seccion.enVivo, Icons.live_tv_outlined, Icons.live_tv_rounded, 'En Vivo'),
+    (Seccion.series, Icons.video_library_outlined, Icons.video_library_rounded, 'Series'),
+    (Seccion.peliculas, Icons.movie_outlined, Icons.movie_rounded, 'Películas'),
+    (Seccion.miEspacio, Icons.bookmark_outline_rounded, Icons.bookmark_rounded, 'Mi Espacio'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Tono.capaMinima.withValues(alpha: .9),
+            boxShadow: const [BoxShadow(color: Color(0x80000000), blurRadius: 12, offset: Offset(0, -1))],
+          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+          child: SizedBox(
+            height: 64,
+            child: Row(
+              children: [
+                for (final (valor, icono, iconoActivo, texto) in _items)
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => alElegir(valor),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            valor == seccion ? iconoActivo : icono,
+                            size: 24,
+                            color: valor == seccion ? Tono.celeste : Tono.textoSuave,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            texto,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Letra.mini.copyWith(
+                              color: valor == seccion ? Tono.celeste : Tono.textoSuave,
+                              fontWeight: valor == seccion ? FontWeight.w700 : FontWeight.w600,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

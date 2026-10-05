@@ -5,6 +5,7 @@ Pantallas de canales del panel:
   /canales/importaciones/<id>/      el avance y el detalle de una lista: qué se agregó, qué no y por qué
   /canales/catalogo/                todos los canales como los ve la app, con filtros para quitar los que no sirven
   /canales/canal/<id>/editar/       nombre, logo, categoría... de un canal, y sus fuentes
+  /canales/probar/                  probar una dirección suelta y, si anda, agregarla como canal
 
 Lo que tarda (verificar) se hace de a tandas: la página llama una y otra
 vez a las direcciones ".../lote/" (responden JSON) y va mostrando el avance.
@@ -24,9 +25,10 @@ from usuarios.decoradores import requiere_permiso
 from usuarios.permisos import chequear_permiso
 
 from . import consultas, servicios
-from .forms import CanalForm, FuentesFormSet, ImportarListaForm, QuitarCanalesForm
-from .models import Canal, Contenido, EntradaImportada, Idioma, Importacion
-from .verificacion import verificar_url, verificar_varias
+from .clasificar import formato, idioma_y_pais, limpiar_nombre
+from .forms import CanalForm, CanalNuevoForm, FuentesFormSet, ImportarListaForm, ProbarLinkForm, QuitarCanalesForm
+from .models import Canal, Contenido, EntradaImportada, Fuente, Idioma, Importacion
+from .verificacion import Resultado, verificar_url, verificar_varias
 
 CANALES_POR_PAGINA = 120
 ENTRADAS_POR_PAGINA = 100
@@ -247,3 +249,61 @@ def canal_editar(request, pk):
         'fuentes': fuentes,
         'volver': _volver(request),
     })
+
+
+# ── Probar un link y agregarlo a mano ────────────────────────────────
+
+@requiere_permiso('importar_canales')
+def probar(request):
+    """
+    Paso 1: se pega una dirección y se prueba (igual que al importar: formato
+    real, como la app y como VLC, YouTube y páginas con yt-dlp).
+    Paso 2: si anda (o si se quiere agregar igual), se completan nombre,
+    logo, categoría... y se crea el canal.
+    """
+    prueba = ProbarLinkForm(request.POST if request.POST.get('paso') == 'probar' else None)
+    resultado = canal_form = None
+    ya_cargada = None
+
+    if request.POST.get('paso') == 'agregar':
+        prueba = ProbarLinkForm(request.POST)
+        if prueba.is_valid():
+            datos = prueba.cleaned_data
+            resultado = Resultado(estado=request.POST.get('estado', Fuente.Estado.SIN_VERIFICAR),
+                                  error=request.POST.get('error', '')[:200], tipo=request.POST.get('tipo', ''),
+                                  user_agent=request.POST.get('ua_que_anduvo', '')[:300])
+            canal_form = CanalNuevoForm(request.POST)
+            if canal_form.is_valid():
+                canal = servicios.crear_canal_a_mano(canal_form, datos['url'], resultado, datos['user_agent'],
+                                                     datos['referer'], request.user)
+                messages.success(request, f'Se agregó "{canal.nombre}".')
+                return redirect(reverse('canales:canal_editar', args=[canal.pk]))
+    elif prueba.is_bound and prueba.is_valid():
+        datos = prueba.cleaned_data
+        ya_cargada = Fuente.objects.filter(url=datos['url'], canal__eliminado_en__isnull=True).select_related('canal').first()
+        resultado = verificar_url(datos['url'], formato(datos['url']) or 'hls', datos['user_agent'], datos['referer'])
+        # Sugerencias para el canal: lo que dijo YouTube / la página, o lo que se deduce de la dirección
+        nombre = limpiar_nombre(resultado.titulo) if resultado.titulo else ''
+        idioma, pais = idioma_y_pais(nombre)
+        canal_form = CanalNuevoForm(initial={'nombre': nombre, 'logo': resultado.imagen, 'idioma': idioma,
+                                             'pais': pais, 'contenido': Contenido.VIVO})
+
+    return render(request, 'canales/probar.html', {
+        'prueba': prueba,
+        'resultado': resultado,
+        'canal_form': canal_form,
+        'ya_cargada': ya_cargada,
+        'tipo_texto': dict(Fuente.Tipo.choices).get(resultado.tipo, resultado.tipo) if resultado else '',
+    })
+
+
+@require_POST
+@requiere_permiso('importar_canales')
+def limpiar_nombres(request):
+    renombrados, juntados = servicios.limpiar_nombres(request.user)
+    if renombrados or juntados:
+        messages.success(request, f'Listo: {renombrados} canal(es) renombrado(s) y {juntados} repetido(s) '
+                                  f'juntado(s) con su canal (sus fuentes quedaron como alternativas).')
+    else:
+        messages.info(request, 'Los nombres ya estaban limpios.')
+    return redirect('canales:inicio')

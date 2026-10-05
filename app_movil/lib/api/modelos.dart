@@ -157,7 +157,7 @@ class FuenteCanal {
 
 /// Un canal de TV en vivo (GET /canales/).
 class Canal {
-  Canal(Map<String, dynamic> json)
+  Canal(Map<String, dynamic> json, {this.categoria = '', this.contenido = 'vivo'})
     : id = json['id'] as int,
       nombre = '${json['nombre'] ?? ''}',
       numero = '${json['numero'] ?? ''}',
@@ -170,15 +170,24 @@ class Canal {
   final String logo;
   final List<FuenteCanal> fuentes;
 
+  /// El nombre de su categoría (la API los manda agrupados por categoría).
+  final String categoria;
+
+  /// "vivo", "pelicula" o "serie" (cada lista se pide aparte: ?contenido=).
+  final String contenido;
+
   /// Las fuentes que la app sabe reproducir, en orden de prioridad.
   List<FuenteCanal> get fuentesReproducibles => fuentes.where((f) => f.esReproducible).toList();
 }
 
 /// Una categoría con sus canales.
 class CategoriaCanales {
-  CategoriaCanales(Map<String, dynamic> json)
+  CategoriaCanales(Map<String, dynamic> json, {String contenido = 'vivo'})
     : nombre = '${json['nombre'] ?? ''}',
-      canales = [for (final c in json['canales'] as List? ?? []) Canal(c as Map<String, dynamic>)];
+      canales = [
+        for (final c in json['canales'] as List? ?? [])
+          Canal(c as Map<String, dynamic>, categoria: '${json['nombre'] ?? ''}', contenido: contenido),
+      ];
 
   final String nombre;
   final List<Canal> canales;

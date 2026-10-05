@@ -36,7 +36,7 @@ siguiente. Si una fuente se cae, el canal sigue andando.
 | `management/commands/importar_m3u.py` | Técnica | `python manage.py importar_m3u <archivo> [--sin-verificar] [--solo-espanol] [--descartar-sin-logo] [--con-peliculas] [--con-adultos]` |
 | `management/commands/verificar_fuentes.py` | Técnica | `python manage.py verificar_fuentes` (para programarlo con cron en producción). |
 | `datos/canales_prueba.m3u8` | Datos | 3 canales públicos para probar (Canal 26, Telemax, TV Universidad). |
-| `tests/` | Técnica | Pruebas del lector, el clasificador, la verificación, las tandas, las pantallas y la API. |
+| `tests/` | Técnica | Pruebas de las herramientas (probar un link, limpiar nombres), del lector, el clasificador, la verificación, las tandas, las pantallas y la API. |
 
 La API para la app está en `api/v1/canales.py` (`GET /api/v1/canales/?formatos=...`).
 
@@ -88,6 +88,23 @@ una importación): nombre, logo (con vista previa de cómo queda en la app),
 número, categoría (elegir una o escribir una nueva), contenido, idioma, país,
 orden y si se muestra. Abajo, sus fuentes: cambiar el orden en que la app las
 prueba, apagarlas, borrarlas o agregar una dirección nueva (se prueba al guardar).
+
+## Probar un link y agregarlo a mano
+
+`/canales/probar/` (botón **Probar un link** en Canales): se pega una
+dirección y se prueba igual que al importar (formato real, como la app y como
+VLC; YouTube y páginas con yt-dlp). Dice si funciona, de qué tipo es y por
+qué no anda. Si es YouTube o una página, sugiere el nombre y la imagen. Con
+el resultado se completa nombre, logo, categoría... y se crea el canal (si
+no anda, se puede agregar igual: aparece en la app cuando una verificación lo
+encuentre funcionando). Si la dirección ya estaba cargada, avisa en qué canal.
+
+## Limpiar nombres
+
+Botón **Limpiar nombres** en Canales: pasa los nombres cargados antes al
+formato limpio ("ES: (FHD) DAZN 1" -> "DAZN 1"). Si dos canales quedan
+iguales (mismo contenido y país compatible), se juntan en uno: sus fuentes
+quedan como alternativas y el repetido se da de baja.
 
 ## Formatos que reproduce la app
 

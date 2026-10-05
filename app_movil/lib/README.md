@@ -12,6 +12,7 @@ El código de la app. Flutter arranca por `main.dart`.
 | `campos.dart` | Los campos del usuario agrupados por sección, como en `usuarios/forms.py`. | `SECCIONES_USUARIO` |
 | `senales.dart` | De una fuente a la dirección que abre el reproductor: YouTube se resuelve en el aparato (con Cronet), las páginas de video (Twitch...) se le piden al servidor, y le dice al reproductor el formato (HLS, DASH, video directo). | `canales/paginas.py` |
 | `utiles.dart` | Funciones chicas: fechas legibles, mensajes, "¿seguro?". | `herramientas/` |
+| `movil/` | La app en el **celular** con el diseño de Stitch (inicio, en vivo, películas, series, detalle, reproductores, mi espacio). Ver su README. En la TV todavía se usa `pantallas/`. | templates |
 | `api/` | Cómo se habla con la API y las clases de los datos. Ver su README. | — |
 | `pantallas/` | Cada pantalla de la app. Ver su README. | `views.py` + templates |
 | `widgets/` | Piezas de pantalla reutilizables. Ver su README. | `templates/parciales/` |

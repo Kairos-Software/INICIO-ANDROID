@@ -122,7 +122,9 @@ def verificar(url, youtube=None):
         return Resultado(CAIDA, 'El vivo todavía no empezó o ya terminó.', tipo=tipo)
     if not youtube and not informacion.get('url'):
         return Resultado(CAIDA, 'La página no entrega una dirección de video.', tipo=tipo)
-    return Resultado(FUNCIONA, tipo=tipo)
+    return Resultado(FUNCIONA, tipo=tipo, titulo=(informacion.get('uploader') or informacion.get('channel')
+                                                  or informacion.get('title') or '')[:120],
+                     imagen=informacion.get('thumbnail') or '')
 
 
 def resolver(url):

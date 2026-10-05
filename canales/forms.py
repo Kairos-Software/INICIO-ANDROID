@@ -121,3 +121,43 @@ FuentesFormSet = forms.modelformset_factory(
                                                    'min': 0}),
              'activa': forms.CheckboxInput(attrs={'class': 'form-check-input'})},
 )
+
+
+class ProbarLinkForm(EstiloBootstrapMixin, forms.Form):
+    """Una dirección para ver si anda (y, opcionalmente, cómo pedirla)."""
+    url = forms.CharField(
+        label='Dirección', max_length=1000,
+        validators=[URLValidator(schemes=['http', 'https', 'rtsp', 'rtsps'])],
+        widget=forms.URLInput(attrs={'placeholder': 'https://.../playlist.m3u8, http://servidor:8080/..., youtube.com/...',
+                                     'autofocus': True}),
+    )
+    user_agent = forms.CharField(label='User-Agent (opcional)', max_length=300, required=False,
+                                 help_text='Solo si el canal lo exige. Si no, se prueba como la app y como VLC.')
+    referer = forms.CharField(label='Referer (opcional)', max_length=500, required=False)
+
+
+class CanalNuevoForm(EstiloBootstrapMixin, forms.ModelForm):
+    """Los datos del canal que se crea a mano con una dirección ya probada."""
+    nueva_categoria = forms.CharField(label='O una categoría nueva', max_length=80, required=False)
+
+    class Meta:
+        model = Canal
+        fields = ['nombre', 'logo', 'numero', 'categoria', 'contenido', 'idioma', 'pais']
+        widgets = {'logo': forms.URLInput(attrs={'placeholder': 'https://.../logo.png'})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['categoria'].queryset = Categoria.objects.order_by('nombre')
+        self.fields['categoria'].required = False
+        self.fields['pais'].widget.attrs.update({'maxlength': 2, 'style': 'text-transform:uppercase'})
+
+    def clean_pais(self):
+        return self.cleaned_data['pais'].strip().upper()
+
+    def clean(self):
+        datos = super().clean()
+        nueva = (datos.get('nueva_categoria') or '').strip()
+        if nueva:
+            datos['categoria'], _ = Categoria.objects.get_or_create(nombre=nueva)
+            self.instance.categoria = datos['categoria']
+        return datos

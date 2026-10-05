@@ -42,6 +42,7 @@ dependencies:
   wakelock_plus: ^1.8.1
   youtube_explode_dart: ^3.1.0
   cronet_http: ^1.10.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
@@ -84,6 +85,25 @@ flutter:
           weight: 700
         - asset: assets/fuentes/Manrope-ExtraBold.ttf
           weight: 800
+    # Las del diseño de la app de celular (Stitch, ver lib/movil/): Plus Jakarta
+    # Sans para títulos e Inter para textos y números
+    - family: PlusJakartaSans
+      fonts:
+        - asset: assets/fuentes/PlusJakartaSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fuentes/PlusJakartaSans-Bold.ttf
+          weight: 700
+        - asset: assets/fuentes/PlusJakartaSans-ExtraBold.ttf
+          weight: 800
+    - family: Inter
+      fonts:
+        - asset: assets/fuentes/Inter-Regular.ttf
+        - asset: assets/fuentes/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fuentes/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fuentes/Inter-Bold.ttf
+          weight: 700
     - family: Sora
       fonts:
         - asset: assets/fuentes/Sora-Medium.ttf

@@ -71,6 +71,8 @@ class Resultado:
     user_agent: str = ''  # si anduvo con otro User-Agent (ej: el de VLC), cuál
     rechazo: bool = False  # el servidor respondió pero no entregó la señal (vale la pena probar como VLC)
     es_pagina: bool = False  # respondió una página web (puede tener un video adentro)
+    titulo: str = ''      # YouTube / páginas: el título del video o canal (para sugerir el nombre)
+    imagen: str = ''      # ...y su miniatura (para sugerir el logo)
 
 
 def cabeceras_para(user_agent='', referer=''):

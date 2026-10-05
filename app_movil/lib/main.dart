@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'aparato.dart';
 import 'config.dart';
+import 'movil/estructura.dart';
 import 'pantallas/canales.dart';
 import 'pantallas/cliente.dart';
 import 'pantallas/login.dart';
@@ -75,14 +76,14 @@ class Raiz extends StatelessWidget {
       case EstadoSesion.sinServicio:
         return const PantallaSinServicio();
       case EstadoSesion.conSesion:
-        // Un cliente (entró con código) solo ve la TV
-        if (sesion.esCliente) {
-          return const PantallaCanales(esCliente: true);
-        }
         // Un administrador le asignó una contraseña temporal: primero tiene que cambiarla
-        if (sesion.perfil!.debeCambiarPassword) {
+        if (!sesion.esCliente && sesion.perfil!.debeCambiarPassword) {
           return const PantallaCambiarPassword(obligatorio: true);
         }
+        // En el celular: el diseño nuevo (lib/movil/), para clientes y usuarios del panel
+        if (!Aparato.esTv) return const PantallaMovil();
+        // En la TV, por ahora, el de siempre. Un cliente (entró con código) solo ve los canales
+        if (sesion.esCliente) return const PantallaCanales(esCliente: true);
         return const PantallaPrincipal();
     }
   }
