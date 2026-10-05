@@ -1,5 +1,5 @@
 """
-Settings del PROYECTO BASE.
+Settings de Kairos TV.
 
 Toda la configuración sensible o que cambia según dónde corre el sistema
 (clave secreta, base de datos, mail, dominios) se lee de archivos .env:
@@ -105,7 +105,7 @@ NOTIFICACIONES_DIAS_CONSERVAR = int(os.environ.get('NOTIFICACIONES_DIAS_CONSERVA
 API_TOKEN_DIAS = int(os.environ.get('API_TOKEN_DIAS', '30'))
 
 # Marca del sistema (se muestra en el login, el menú y los mails)
-NOMBRE_SISTEMA = os.environ.get('NOMBRE_SISTEMA', 'Proyecto Base')
+NOMBRE_SISTEMA = os.environ.get('NOMBRE_SISTEMA', 'Kairos TV')
 NOMBRE_EMPRESA = os.environ.get('NOMBRE_EMPRESA', 'Kairos Software')
 
 MIDDLEWARE = [

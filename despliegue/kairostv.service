@@ -1,0 +1,18 @@
+[Unit]
+Description=Gunicorn instance for Kairos TV
+After=network.target
+
+[Service]
+User=root
+Group=www-data
+WorkingDirectory=/proyectos-ks/kairosTV/kairos-tv
+Environment="PATH=/proyectos-ks/kairosTV/venv/bin"
+Environment="DJANGO_SETTINGS_MODULE=proyecto.settings"
+Environment="DJANGO_ENV=production"
+# --timeout 300: importar una lista M3U desde el panel verifica cada fuente y
+# puede tardar varios minutos; con el valor por defecto (30 s) gunicorn la corta.
+ExecStart=/proyectos-ks/kairosTV/venv/bin/gunicorn --workers 3 --timeout 300 --bind 127.0.0.1:8017 proyecto.wsgi:application
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

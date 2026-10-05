@@ -27,7 +27,9 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.kairossoftware.app_movil"
+        // El identificador de la app en Android (y en Play Store). NO cambiarlo una vez
+        // publicada: Android la tomaría como otra app y habría que reinstalar.
+        applicationId = "com.kairossoftware.kairostv"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

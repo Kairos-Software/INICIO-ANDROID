@@ -7,10 +7,13 @@ venv/
 env/
 entorno/
 
-# Entornos: solo .env.example va al repo
+# Entornos: .env.example va al repo. .env.production también, POR AHORA, para
+# que el servidor lo baje con git pull (decisión temporal: el repo es público
+# y tiene contraseñas; sacarlo al terminar y cambiar esas contraseñas).
 .env
 .env.*
 !.env.example
+!.env.production
 
 *.log
 *.sqlite3

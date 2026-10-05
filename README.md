@@ -1,9 +1,20 @@
-# PROYECTO BASE
+# Kairos TV
 
-Proyecto Django que sirve de punto de partida para los sistemas de Kairos Software.
-Trae resuelto lo que todo sistema necesita (login, usuarios, roles y permisos,
-perfil, recuperación de contraseña) para que cada proyecto nuevo arranque
-directamente con lo propio de su negocio.
+Servicio de TV en vivo de Kairos Software:
+
+- **Panel web (Django):** canales (importar listas M3U y verificarlas),
+  reventa (revendedores, créditos, paquetes, clientes y estadísticas) y la
+  descarga de la app.
+- **App Android (Flutter, `app_movil/`):** para celulares y Android TV. Los
+  clientes entran con su código y miran los canales.
+
+Nació del "Proyecto Base" de Kairos Software, por eso trae resuelto lo que
+todo sistema necesita (login, usuarios, roles y permisos, perfil,
+recuperación de contraseña).
+
+Nombres internos que quedaron del origen y NO hace falta cambiar: la base
+de datos `proyecto_base` en la PC (en producción se llama `kairosTV`), la
+carpeta de configuración `proyecto/` y el paquete Dart `app_movil`. Nadie los ve.
 
 ## Tecnologías
 
@@ -30,6 +41,7 @@ Cada carpeta tiene su propio `README.md` que explica qué contiene y para qué s
 | `static/` | CSS, JavaScript e imágenes generales |
 | `media/` | Archivos que suben los usuarios (no va al repo) |
 | `scripts/` | Scripts sueltos de mantenimiento o utilidades de desarrollo |
+| `despliegue/` | Servicio de gunicorn, nginx y los pasos para subir el sistema al servidor |
 | `.env*` | Configuración por entorno (ver abajo) |
 | `requirements.txt` | Librerías de Python que usa el proyecto |
 | `.flake8` | Reglas de estilo que revisa el editor (largo de línea: 120) |
@@ -42,7 +54,7 @@ Cada carpeta tiene su propio `README.md` que explica qué contiene y para qué s
 | `.env` | Solo indica qué entorno usar: `DJANGO_ENV=local` / `production` / `test` | No |
 | `.env.local` | Datos para trabajar en la PC | No |
 | `.env.test` | Datos para pruebas (base de datos aparte) | No |
-| `.env.production` | Datos del servidor | No |
+| `.env.production` | Datos del servidor | **Sí, por ahora** (temporal: sacarlo del repo al terminar y cambiar las contraseñas) |
 | `.env.example` | Plantilla sin datos secretos | **Sí** |
 
 ## Puesta en marcha (PC nueva)
@@ -87,7 +99,7 @@ DEFAULT_FROM_EMAIL=Nombre del sistema <cuenta@gmail.com>
 `ACTIVIDAD_DIAS_CONSERVAR` y las notificaciones leídas más viejas que
 `NOTIFICACIONES_DIAS_CONSERVAR`, y las sesiones de la app vencidas
 (`API_TOKEN_DIAS`). Conviene correrlo una vez por día (cron o
-systemd timer).
+systemd timer). Las líneas de cron listas están en `despliegue/README.md`.
 
 ## Cómo se organiza una app
 

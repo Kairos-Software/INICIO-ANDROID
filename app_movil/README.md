@@ -100,8 +100,16 @@ cambiar desde la app (login → "Servidor").
 3. Pasarla al celular (WhatsApp, Drive, cable) e instalarla aceptando
    "instalar apps de origen desconocido".
 
-Para producción es lo mismo, cambiando la dirección por la del dominio con
-`https` (y quitando `usesCleartextTraffic` del `AndroidManifest.xml`).
+Para producción es lo mismo, cambiando la dirección por la del dominio:
+```
+flutter build apk --release --dart-define=API_URL=https://kairostv.grupokairosarg.com/api/v1/
+```
+Antes de repartirla a clientes tiene que existir `android/key.properties` con la
+clave propia (ver `android/key.properties.ejemplo`): sin ella sale firmada con la
+clave de desarrollo y después no se puede actualizar sin desinstalar.
+`usesCleartextTraffic` del `AndroidManifest.xml` se deja en `true` también en
+producción: muchas fuentes de canales son `http://` y sin eso no reproducen.
+Después se sube desde el panel (App Android) y se descarga en `/descargar/`.
 Cada versión nueva: subir `version:` en `pubspec.yaml` (ej. `1.0.1+2`).
 
 ## Comandos útiles
