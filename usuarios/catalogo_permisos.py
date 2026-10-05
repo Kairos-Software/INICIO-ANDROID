@@ -32,7 +32,7 @@ MODULOS_PERMISOS = [
     ]),
     ('Canales', [
         ('ver_canales', 'Ver los canales y el estado de sus fuentes'),
-        ('importar_canales', 'Importar listas de canales (M3U) y verificar las fuentes'),
+        ('importar_canales', 'Importar listas de canales (M3U), verificar las fuentes y editar o quitar canales'),
     ]),
     ('Reventa', [
         ('administrar_reventa', 'Ver y gestionar a todos los revendedores y sus clientes; regalar y ajustar créditos'),

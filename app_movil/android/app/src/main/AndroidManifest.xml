@@ -9,8 +9,10 @@
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
 
-    <!-- usesCleartextTraffic: permite http (sin "s"), para probar contra la PC en la red local.
-         IMPORTANTE: en producción la API tiene que ser https y esto se quita. -->
+    <!-- usesCleartextTraffic: permite http (sin "s"). Hace falta SIEMPRE, también en
+         producción: la API va por https, pero muchísimos canales (las listas IPTV
+         tipo http://servidor:8080/...) solo se entregan por http. Sin esto, Android
+         los bloquea y no se ven aunque en VLC anden. -->
     <application
         android:label="Kairos TV"
         android:name="${applicationName}"

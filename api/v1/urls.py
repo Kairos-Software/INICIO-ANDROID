@@ -52,6 +52,7 @@ urlpatterns = [
 
     path('canales/', canales.lista, name='canales'),
     path('canales/fuentes/<int:pk>/falla/', canales.avisar_falla, name='fuente_falla'),
+    path('canales/fuentes/<int:pk>/resolver/', canales.resolver, name='fuente_resolver'),
 
     # La app de los clientes (login con código)
     path('cliente/login/', cliente.login, name='cliente_login'),

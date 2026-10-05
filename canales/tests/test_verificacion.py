@@ -1,21 +1,25 @@
 """
-Verificación de fuentes e importación desde el panel. Nunca sale a
-internet: se reemplaza la descarga (o el verificador entero) por uno de mentira.
+Verificación de fuentes, importación de a tandas y pantallas del panel.
+Nunca sale a internet: se reemplaza la descarga (o el verificador entero)
+por uno de mentira.
 """
 
+import time
 import urllib.error
 from unittest import mock
 
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
 from api import tokens
-from canales import verificacion
-from canales.models import Canal, Fuente
-from canales.servicios import importar_m3u, verificar_fuentes_guardadas
-from canales.verificacion import CAIDA, FUNCIONA, SIN_VERIFICAR, Resultado
+from canales import paginas, verificacion
+from canales.models import Canal, EntradaImportada, Fuente, Importacion
+from canales.servicios import (crear_importacion, importar_m3u, procesar_lote, verificar_fuentes_guardadas,
+                               verificar_lote_de_fuentes)
+from canales.verificacion import CAIDA, FUNCIONA, SIN_VERIFICAR, USER_AGENT_VLC, Resultado
 from usuarios.models import Rol, Usuario
 
 LISTA = '''#EXTM3U
@@ -27,13 +31,15 @@ https://caida/telemax.m3u8
 https://www.youtube.com/user/encuentro/live
 '''
 
+TS = (b'\x47' + b'\x00' * 187) * 4   # cuatro paquetes MPEG-TS
 
-def verificador_falso(fuentes, cabeceras=None):
+
+def verificador_falso(fuentes, cabeceras=None, hasta=None):
     """Funciona todo lo de 'anda', se cae todo lo de 'caida', YouTube sin verificar."""
     def uno(url, tipo):
         if tipo == 'youtube':
-            return Resultado(SIN_VERIFICAR, 'YouTube')
-        return Resultado(FUNCIONA) if '//anda' in url else Resultado(CAIDA, 'No respondió a tiempo.')
+            return Resultado(SIN_VERIFICAR, 'YouTube', tipo='youtube')
+        return Resultado(FUNCIONA, tipo='hls') if '//anda' in url else Resultado(CAIDA, 'No respondió a tiempo.')
     return {url: uno(url, tipo) for url, tipo in fuentes.items()}
 
 
@@ -41,22 +47,25 @@ class VerificarUrlTests(TestCase):
 
     def respuestas(self, por_url):
         """
-        Reemplaza la descarga: devuelve el texto según la dirección (o lanza el
-        error). Anota qué se pidió y con qué cabeceras en self.pedidos.
+        Reemplaza la descarga: devuelve el contenido según la dirección (o
+        lanza el error). Anota qué se pidió y con qué cabeceras en self.pedidos.
         """
         self.pedidos = []
 
         def descargar(url, cabeceras, maximo=None):
             self.pedidos.append((url, cabeceras))
             valor = por_url[url]
+            if callable(valor):
+                valor = valor(cabeceras)
             if isinstance(valor, Exception):
                 raise valor
-            return valor, url
+            return (valor.encode() if isinstance(valor, str) else valor), url, ''
         return mock.patch.object(verificacion, '_descargar', side_effect=descargar)
 
     def test_lista_simple(self):
         with self.respuestas({'https://x/a.m3u8': '#EXTM3U\n#EXTINF:6,\nseg1.ts\n', 'https://x/seg1.ts': 'video'}):
-            self.assertEqual(verificacion.verificar_url('https://x/a.m3u8').estado, FUNCIONA)
+            resultado = verificacion.verificar_url('https://x/a.m3u8')
+        self.assertEqual((resultado.estado, resultado.tipo), (FUNCIONA, 'hls'))
         # Se presenta como el reproductor de la app
         self.assertEqual(self.pedidos[0][1]['User-Agent'], verificacion.USER_AGENT_REPRODUCTOR)
 
@@ -67,7 +76,7 @@ class VerificarUrlTests(TestCase):
         self.assertEqual(self.pedidos[-1][0], 'https://x/nuevo.ts')
 
     def test_lista_bien_pero_el_video_rechazado(self):
-        """El caso de América: entrega la lista, pero el video responde 403."""
+        """El caso de América: entrega la lista, pero el video responde 403 (también como VLC)."""
         rechazo = urllib.error.HTTPError('https://x/seg1.ts', 403, 'no', {}, None)
         with self.respuestas({'https://x/a.m3u8': '#EXTM3U\n#EXTINF:6,\nseg1.ts\n', 'https://x/seg1.ts': rechazo}):
             resultado = verificacion.verificar_url('https://x/a.m3u8')
@@ -90,60 +99,153 @@ class VerificarUrlTests(TestCase):
         self.assertEqual((resultado.estado, resultado.error),
                          (CAIDA, 'El servidor respondió con error 404 al pedir la lista.'))
 
-    def test_no_es_hls(self):
+    def test_video_directo_como_vlc(self):
+        """Las listas "Xtream" (sin extensión) mandan MPEG-TS directo: funciona, y se avisa el formato."""
+        with self.respuestas({'http://x:8080/u/p/57485': TS}):
+            resultado = verificacion.verificar_url('http://x:8080/u/p/57485')
+        self.assertEqual((resultado.estado, resultado.tipo), (FUNCIONA, 'directo'))
+
+    def test_detectar_formato(self):
+        self.assertEqual(verificacion.detectar_formato(b'\xef\xbb\xbf#EXTM3U\n'), 'hls')
+        self.assertEqual(verificacion.detectar_formato(b'<?xml?><MPD xmlns="x">'), 'dash')
+        self.assertEqual(verificacion.detectar_formato(b'\x00' * 5 + TS), 'directo')
+        self.assertEqual(verificacion.detectar_formato(b'\x00\x00\x00\x18ftypmp42'), 'directo')
+        self.assertEqual(verificacion.detectar_formato(b'cualquier cosa', 'video/mp2t'), 'directo')
+        self.assertEqual(verificacion.detectar_formato(b'<html>Hola</html>', 'text/html'), '')
+
+    def test_si_rechaza_al_navegador_prueba_como_vlc(self):
+        def segun_quien(cabeceras):
+            if cabeceras['User-Agent'] == USER_AGENT_VLC:
+                return TS
+            return urllib.error.HTTPError('http://x/1', 403, 'no', {}, None)
+        with self.respuestas({'http://x/1': segun_quien}):
+            resultado = verificacion.verificar_url('http://x/1')
+        self.assertEqual((resultado.estado, resultado.user_agent), (FUNCIONA, USER_AGENT_VLC))
+
+    def test_pagina_web_en_vez_de_video(self):
         with self.respuestas({'https://x/a.m3u8': '<html>Not found</html>'}):
-            self.assertEqual(verificacion.verificar_url('https://x/a.m3u8').estado, CAIDA)
+            resultado = verificacion.verificar_url('https://x/a.m3u8')
+        self.assertEqual((resultado.estado, resultado.error), (CAIDA, 'Responde, pero con una página web, no con video.'))
 
     def test_tiempo_agotado(self):
         with self.respuestas({'https://x/a.m3u8': urllib.error.URLError(TimeoutError())}):
             self.assertEqual(verificacion.verificar_url('https://x/a.m3u8').error, 'No respondió a tiempo.')
+        self.assertEqual(len(self.pedidos), 1)   # un tiempo agotado no se reintenta como VLC
 
-    def test_youtube_queda_sin_verificar(self):
-        self.assertEqual(verificacion.verificar_url('https://youtube.com/x', 'youtube').estado, SIN_VERIFICAR)
+    def test_rtmp_no_sirve(self):
+        self.assertEqual(verificacion.verificar_url('rtmp://x/vivo').estado, CAIDA)
+
+    def test_youtube_y_paginas_se_verifican_con_yt_dlp(self):
+        with mock.patch.object(paginas, '_extraer', return_value={'id': 'abc', 'live_status': 'is_live'}):
+            resultado = verificacion.verificar_url('https://www.youtube.com/@tn/live', 'youtube')
+        self.assertEqual((resultado.estado, resultado.tipo), (FUNCIONA, 'youtube'))
+        no_vivo = Exception('ERROR: [youtube] xyz: The channel is not currently live')
+        with mock.patch.object(paginas, '_extraer', side_effect=no_vivo):
+            resultado = verificacion.verificar_url('https://www.youtube.com/@tn/live', 'youtube')
+        self.assertEqual((resultado.estado, resultado.error), (CAIDA, 'El canal no está transmitiendo en vivo ahora.'))
+        robot = Exception("ERROR: Sign in to confirm you are not a bot")
+        with mock.patch.object(paginas, '_extraer', side_effect=robot):
+            self.assertEqual(verificacion.verificar_url('https://youtu.be/x', 'youtube').estado, SIN_VERIFICAR)
+
+    def test_una_pagina_web_con_video_adentro(self):
+        con_video = {'url': 'https://cdn/x.m3u8', 'protocol': 'm3u8'}
+        with self.respuestas({'https://sitio.com/vivo': '<!DOCTYPE html><html>...'}), \
+                mock.patch.object(paginas, '_extraer', return_value=con_video):
+            resultado = verificacion.verificar_url('https://sitio.com/vivo')
+        self.assertEqual((resultado.estado, resultado.tipo), (FUNCIONA, 'pagina'))
+
+    def test_resolver_una_pagina(self):
+        informacion = {'url': 'https://cdn/x.m3u8', 'protocol': 'm3u8_native',
+                       'http_headers': {'User-Agent': 'UA', 'Accept': '*/*', 'Referer': 'https://twitch.tv/'}}
+        with mock.patch.object(paginas, '_extraer', return_value=informacion):
+            resuelto = paginas.resolver('https://www.twitch.tv/canal')
+        self.assertEqual((resuelto.url, resuelto.tipo), ('https://cdn/x.m3u8', 'hls'))
+        self.assertEqual(resuelto.cabeceras, {'User-Agent': 'UA', 'Referer': 'https://twitch.tv/'})
 
     def test_varias_a_la_vez(self):
         with mock.patch.object(verificacion, 'verificar_url', side_effect=lambda url, tipo, *cabeceras: Resultado(FUNCIONA)):
             resultados = verificacion.verificar_varias({'https://a': 'hls', 'https://b': 'hls'})
         self.assertEqual(set(resultados), {'https://a', 'https://b'})
 
+    def test_pasado_el_tiempo_no_empieza_mas(self):
+        with mock.patch.object(verificacion, 'verificar_url', return_value=Resultado(FUNCIONA)) as verificar_url:
+            resultados = verificacion.verificar_varias({'https://a': 'hls'}, hasta=time.monotonic() - 1)
+        self.assertEqual(resultados, {})
+        verificar_url.assert_not_called()
 
-class ImportarConVerificacionTests(TestCase):
 
-    def test_guarda_las_caidas_como_caidas(self):
+class ImportarDeATandasTests(TestCase):
+
+    def test_solo_agrega_las_que_funcionan(self):
         resultado = importar_m3u(LISTA, verificar=verificador_falso)
         self.assertEqual((resultado.funcionan, resultado.caidas, resultado.sin_verificar), (1, 1, 1))
-        self.assertEqual(resultado.detalle_caidas,
-                         [('Telemax', 'https://caida/telemax.m3u8', 'No respondió a tiempo.')])
-        telemax = Fuente.objects.get(canal__nombre='Telemax')
-        self.assertEqual(telemax.estado, Fuente.Estado.CAIDA)
-        self.assertTrue(telemax.activa)          # el interruptor manual no se toca
-        self.assertIsNotNone(telemax.verificada)
+        self.assertFalse(Canal.objects.filter(nombre='Telemax').exists())
+        telemax = EntradaImportada.objects.get(nombre='Telemax')
+        self.assertEqual((telemax.estado, telemax.motivo), (EntradaImportada.Estado.CAIDA, 'No respondió a tiempo.'))
 
-    def test_la_app_no_muestra_canales_con_todas_las_fuentes_caidas(self):
-        importar_m3u(LISTA, verificar=verificador_falso)
-        cliente = APIClient()
-        clave, _ = tokens.crear_token(Usuario.objects.create_user('cliente', None, 'x'))
-        cliente.credentials(HTTP_AUTHORIZATION=f'Bearer {clave}')
-        datos = cliente.get(reverse('api_v1:canales')).json()
-        nombres = {c['nombre'] for cat in datos['categorias'] for c in cat['canales']}
-        # Telemax: su única fuente está caída. Encuentro: solo YouTube (la app no lo reproduce)
-        self.assertEqual(nombres, {'Canal 26'})
+    def test_de_a_tandas_con_avance(self):
+        importacion = crear_importacion(LISTA, 'lista.m3u8')
+        self.assertEqual(importacion.para_verificar, 3)
+        avance = procesar_lote(importacion, verificador_falso, tamanio=2)
+        self.assertEqual((avance['verificadas'], avance['pendientes'], avance['porcentaje'], avance['terminada']),
+                         (2, 1, 67, False))
+        avance = procesar_lote(importacion, verificador_falso, tamanio=2)
+        self.assertEqual((avance['porcentaje'], avance['terminada'], avance['agregadas'], avance['caidas']),
+                         (100, True, 2, 1))
+        importacion.refresh_from_db()
+        self.assertIsNotNone(importacion.terminada)
+
+    def test_lo_que_no_llego_a_probarse_queda_para_la_proxima(self):
+        importacion = crear_importacion(LISTA, 'lista.m3u8')
+        avance = procesar_lote(importacion, lambda fuentes, cabeceras=None, hasta=None: {})
+        self.assertEqual(avance['pendientes'], 3)
+        self.assertEqual(Fuente.objects.count(), 0)
+
+    def test_guarda_el_formato_real_y_el_user_agent_que_anduvo(self):
+        def como_vlc(fuentes, cabeceras=None, hasta=None):
+            return {url: Resultado(FUNCIONA, tipo='directo', user_agent=USER_AGENT_VLC) for url in fuentes}
+        importar_m3u('#EXTM3U\n#EXTINF:-1,Xtream\nhttp://x:8080/u/p/1\n', verificar=como_vlc)
+        fuente = Fuente.objects.get()
+        self.assertEqual((fuente.tipo, fuente.user_agent), (Fuente.Tipo.DIRECTO, USER_AGENT_VLC))
 
     def test_no_vuelve_a_verificar_lo_que_ya_estaba(self):
         importar_m3u(LISTA, verificar=verificador_falso)
         pedidas = []
-        importar_m3u(LISTA, verificar=lambda fuentes, cabeceras=None: pedidas.append(fuentes) or {})
-        self.assertEqual(pedidas, [{}])
+        importar_m3u(LISTA, verificar=lambda fuentes, cabeceras=None, hasta=None: pedidas.append(fuentes) or {})
+        # Solo pide la que no se había agregado (y como no responde nada, deja de insistir)
+        self.assertEqual({url for pedido in pedidas for url in pedido}, {'https://caida/telemax.m3u8'})
 
-    def test_verificar_todas_revive_las_que_volvieron(self):
+    def test_la_app_no_muestra_canales_con_todas_las_fuentes_caidas(self):
         importar_m3u(LISTA, verificar=verificador_falso)
+        Fuente.objects.filter(canal__nombre='Canal 26').update(estado=Fuente.Estado.CAIDA)
+        cliente = APIClient()
+        clave, _ = tokens.crear_token(Usuario.objects.create_user('cliente', None, 'x'))
+        cliente.credentials(HTTP_AUTHORIZATION=f'Bearer {clave}')
+        self.assertEqual(cliente.get(reverse('api_v1:canales')).json()['cantidad'], 0)
 
-        def ahora_anda_todo(fuentes, cabeceras=None):
-            return {url: Resultado(FUNCIONA if tipo == 'hls' else SIN_VERIFICAR) for url, tipo in fuentes.items()}
+
+class VerificarGuardadasTests(TestCase):
+
+    def setUp(self):
+        importar_m3u(LISTA)   # sin verificar: quedan las 3
+
+    def test_verificar_todas_revive_y_corrige_el_formato(self):
+        Fuente.objects.filter(url='https://caida/telemax.m3u8').update(estado=Fuente.Estado.CAIDA)
+
+        def ahora_anda_todo(fuentes, cabeceras=None, hasta=None):
+            return {url: Resultado(FUNCIONA, tipo='directo') if tipo != 'youtube' else Resultado(SIN_VERIFICAR)
+                    for url, tipo in fuentes.items()}
 
         resultado = verificar_fuentes_guardadas(ahora_anda_todo)
         self.assertEqual((resultado.revividas, resultado.funcionan), (1, 2))
-        self.assertEqual(Fuente.objects.get(canal__nombre='Telemax').estado, Fuente.Estado.FUNCIONA)
+        telemax = Fuente.objects.get(canal__nombre='Telemax')
+        self.assertEqual((telemax.estado, telemax.tipo), (Fuente.Estado.FUNCIONA, Fuente.Tipo.DIRECTO))
+
+    def test_de_a_tandas(self):
+        primera = verificar_lote_de_fuentes(verificador_falso, tamanio=2)
+        self.assertEqual((primera['verificadas'], primera['total'], primera['terminado']), (2, 3, False))
+        segunda = verificar_lote_de_fuentes(verificador_falso, desde=primera['siguiente'], tamanio=2)
+        self.assertEqual((segunda['porcentaje'], segunda['terminado']), (100, True))
 
 
 @mock.patch('canales.views.verificar_varias', verificador_falso)
@@ -157,36 +259,107 @@ class PantallaCanalesTests(TestCase):
             'mira', None, 'x', rol=Rol.objects.create(nombre='Mira', permisos=['ver_canales']))
         self.client.force_login(self.admin)
 
-    def subir(self, nombre='lista.m3u8', contenido=LISTA):
-        return self.client.post(self.URL, {'archivo': SimpleUploadedFile(nombre, contenido.encode())})
+    def subir(self, nombre='lista.m3u8', contenido=LISTA, **opciones):
+        return self.client.post(self.URL, {'archivo': SimpleUploadedFile(nombre, contenido.encode()), **opciones})
 
-    def test_importa_y_muestra_el_resultado(self):
+    def test_subir_analiza_y_lleva_al_avance(self):
         respuesta = self.subir()
-        self.assertContains(respuesta, 'Resultado de la importación')
-        self.assertContains(respuesta, 'No respondió a tiempo.')
-        self.assertEqual(Canal.objects.count(), 3)
+        importacion = Importacion.objects.get()
+        self.assertRedirects(respuesta, reverse('canales:importacion', args=[importacion.pk]) + '?empezar=1')
+        self.assertEqual(Canal.objects.count(), 0)   # todavía no verificó nada
+        pagina = self.client.get(reverse('canales:importacion', args=[importacion.pk]))
+        self.assertContains(pagina, 'Empezar a verificar')
+        self.assertContains(pagina, 'Telemax')
+
+    def test_las_tandas_responden_el_avance(self):
+        self.subir()
+        importacion = Importacion.objects.get()
+        datos = self.client.post(reverse('canales:importacion_lote', args=[importacion.pk])).json()
+        self.assertEqual((datos['porcentaje'], datos['terminada'], datos['agregadas']), (100, True, 2))
+        pagina = self.client.get(reverse('canales:importacion', args=[importacion.pk]), {'estado': 'caida'})
+        self.assertContains(pagina, 'No respondió a tiempo.')
+        self.assertContains(pagina, 'Reintentar los 1 que no funcionaron')
+
+    def test_acepta_un_zip(self):
+        import io
+        import zipfile
+        archivo = io.BytesIO()
+        with zipfile.ZipFile(archivo, 'w') as comprimido:
+            comprimido.writestr('adentro/lista.m3u', LISTA)
+        respuesta = self.client.post(self.URL, {'archivo': SimpleUploadedFile('lista.zip', archivo.getvalue())})
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertEqual(Importacion.objects.get().total, 3)
 
     def test_rechaza_otros_archivos(self):
-        self.assertContains(self.subir('foto.png'), 'Tiene que ser un archivo .m3u o .m3u8.')
+        self.assertContains(self.subir('foto.png'), 'Tiene que ser un archivo .m3u, .m3u8 o .zip.')
         self.assertContains(self.subir(contenido='hola'), 'No se encontró ningún canal')
-        self.assertEqual(Canal.objects.count(), 0)
+        self.assertEqual(Importacion.objects.count(), 0)
 
-    def test_verificar_todas(self):
-        self.subir()
-        respuesta = self.client.post(reverse('canales:verificar'), follow=True)
-        self.assertContains(respuesta, 'Verificación terminada.')
+    def test_verificar_todas_de_a_tandas(self):
+        importar_m3u(LISTA)
+        datos = self.client.post(reverse('canales:verificar_lote'), {'desde': 0}).json()
+        self.assertEqual((datos['terminado'], datos['caidas']), (True, 1))
 
     def test_sin_permiso_de_importar_solo_ve(self):
+        self.subir()
+        importacion = Importacion.objects.get()
         self.client.force_login(self.solo_ve)
         respuesta = self.client.get(self.URL)
         self.assertEqual(respuesta.status_code, 200)
-        self.assertNotContains(respuesta, 'Importar y verificar')
+        self.assertNotContains(respuesta, 'Subir y analizar')
         self.assertEqual(self.subir().status_code, 403)
-        self.assertEqual(self.client.post(reverse('canales:verificar')).status_code, 403)
+        self.assertEqual(self.client.post(reverse('canales:verificar_lote')).status_code, 403)
+        self.assertEqual(self.client.post(reverse('canales:importacion_lote', args=[importacion.pk])).status_code, 403)
+        self.assertEqual(self.client.get(reverse('canales:catalogo')).status_code, 200)
+        self.assertEqual(self.client.post(reverse('canales:catalogo_quitar')).status_code, 403)
 
     def test_sin_permiso_de_ver(self):
         self.client.force_login(Usuario.objects.create_user('otro', None, 'x'))
         self.assertEqual(self.client.get(self.URL).status_code, 403)
+        self.assertEqual(self.client.get(reverse('canales:catalogo')).status_code, 403)
+
+
+class CatalogoTests(TestCase):
+    URL = reverse('canales:catalogo')
+
+    def setUp(self):
+        importar_m3u(LISTA + '#EXTINF:-1 group-title="USA | VIP-A",USA: NBC\nhttps://anda/nbc.m3u8\n',
+                     verificar=verificador_falso)
+        admin = Usuario.objects.create_user(
+            'admin', None, 'x', rol=Rol.objects.create(nombre='Canales', permisos=['ver_canales', 'importar_canales']))
+        self.client.force_login(admin)
+
+    def test_muestra_los_canales_y_por_que_no_se_ven(self):
+        Fuente.objects.filter(canal__nombre='Canal 26').update(estado=Fuente.Estado.CAIDA)
+        respuesta = self.client.get(self.URL)
+        self.assertContains(respuesta, 'Canal 26')
+        self.assertContains(respuesta, 'Encuentro')
+        self.assertContains(respuesta, 'Todas sus fuentes están caídas.')
+
+    def test_filtrar_por_idioma(self):
+        respuesta = self.client.get(self.URL, {'idioma': 'otro'})
+        self.assertContains(respuesta, 'NBC')
+        self.assertNotContains(respuesta, 'Canal 26')
+
+    def test_quitar_y_volver_a_mostrar(self):
+        canal = Canal.objects.get(nombre='Canal 26')
+        self.client.post(reverse('canales:catalogo_quitar'), {'canal': canal.pk, 'motivo': 'No interesa'})
+        canal.refresh_from_db()
+        self.assertEqual((canal.activo, canal.motivo_quitado), (False, 'No interesa'))
+        self.client.post(reverse('canales:catalogo_mostrar'), {'canal': canal.pk})
+        canal.refresh_from_db()
+        self.assertTrue(canal.activo)
+
+    def test_quitar_todos_los_del_filtro(self):
+        respuesta = self.client.post(reverse('canales:catalogo_quitar'),
+                                     {'todos_del_filtro': '1', 'idioma': 'otro', 'motivo': 'No está en español',
+                                      'volver': '/canales/catalogo/?idioma=otro'})
+        self.assertRedirects(respuesta, '/canales/catalogo/?idioma=otro', fetch_redirect_response=False)
+        self.assertEqual(list(Canal.objects.filter(activo=False).values_list('nombre', flat=True)), ['NBC'])
+
+    def test_volver_solo_a_este_sitio(self):
+        respuesta = self.client.post(reverse('canales:catalogo_mostrar'), {'volver': 'https://otro-sitio.com/'})
+        self.assertRedirects(respuesta, self.URL, fetch_redirect_response=False)
 
 
 @mock.patch('api.v1.canales.verificar_url')
@@ -194,7 +367,6 @@ class AvisoDeFallaTests(TestCase):
     """La app avisa que una fuente no anda; el servidor la vuelve a probar."""
 
     def setUp(self):
-        from django.core.cache import cache
         cache.clear()
         importar_m3u(LISTA, verificar=verificador_falso)
         self.fuente = Fuente.objects.get(canal__nombre='Canal 26')
@@ -222,6 +394,94 @@ class AvisoDeFallaTests(TestCase):
         self.assertEqual(verificar_url.call_count, 1)
 
     def test_solo_fuentes_que_la_app_recibe(self, verificar_url):
-        youtube = Fuente.objects.get(canal__nombre='Encuentro')
-        self.assertEqual(self.avisar(youtube).status_code, 404)
+        apagada = Fuente.objects.get(canal__nombre='Encuentro')
+        apagada.activa = False
+        apagada.save()
+        self.assertEqual(self.avisar(apagada).status_code, 404)
         verificar_url.assert_not_called()
+
+
+class ResolverPaginaTests(TestCase):
+    """La app pide la dirección real de una fuente de Twitch, Dailymotion..."""
+
+    def setUp(self):
+        cache.clear()
+        importar_m3u('#EXTM3U\n#EXTINF:-1,Twitch\nhttps://www.twitch.tv/canal\n#EXTINF:-1,HLS\nhttps://x/a.m3u8\n')
+        self.app = APIClient()
+        clave, _ = tokens.crear_token(Usuario.objects.create_user('cliente', None, 'x'))
+        self.app.credentials(HTTP_AUTHORIZATION=f'Bearer {clave}')
+
+    def resolver(self, url):
+        return self.app.get(reverse('api_v1:fuente_resolver', args=[Fuente.objects.get(url=url).pk]))
+
+    def test_devuelve_la_direccion_real(self):
+        resuelto = paginas.Resuelto('https://cdn/x.m3u8', 'hls', {'Referer': 'https://twitch.tv/'})
+        with mock.patch.object(paginas, 'resolver', return_value=resuelto) as resolver:
+            datos = self.resolver('https://www.twitch.tv/canal').json()
+            self.resolver('https://www.twitch.tv/canal')   # la segunda vez usa la guardada
+        self.assertEqual(datos, {'url': 'https://cdn/x.m3u8', 'tipo': 'hls',
+                                 'cabeceras': {'Referer': 'https://twitch.tv/'}})
+        self.assertEqual(resolver.call_count, 1)
+
+    def test_si_no_se_puede_dice_por_que(self):
+        error = paginas.NoSePudo('El canal no está transmitiendo en vivo ahora.')
+        with mock.patch.object(paginas, 'resolver', side_effect=error):
+            respuesta = self.resolver('https://www.twitch.tv/canal')
+        self.assertEqual((respuesta.status_code, respuesta.json()['detalle']),
+                         (422, 'El canal no está transmitiendo en vivo ahora.'))
+
+    def test_solo_paginas(self):
+        self.assertEqual(self.resolver('https://x/a.m3u8').status_code, 404)
+
+
+class EditarCanalTests(TestCase):
+
+    def setUp(self):
+        importar_m3u(LISTA, verificar=verificador_falso)
+        self.canal = Canal.objects.get(nombre='Canal 26')
+        self.url = reverse('canales:canal_editar', args=[self.canal.pk])
+        admin = Usuario.objects.create_user(
+            'admin', None, 'x', rol=Rol.objects.create(nombre='Canales', permisos=['ver_canales', 'importar_canales']))
+        self.client.force_login(admin)
+
+    def datos(self, **cambios):
+        fuente = self.canal.fuentes.get()
+        datos = {
+            'nombre': 'Canal 26', 'logo': '', 'numero': '26', 'categoria': self.canal.categoria_id or '',
+            'nueva_categoria': '', 'contenido': 'vivo', 'idioma': 'es', 'pais': 'ar', 'orden': 0, 'activo': 'on',
+            'motivo_quitado': '', 'nueva_fuente': '',
+            'fuentes-TOTAL_FORMS': 1, 'fuentes-INITIAL_FORMS': 1, 'fuentes-MIN_NUM_FORMS': 0,
+            'fuentes-MAX_NUM_FORMS': 1000,
+            'fuentes-0-id': fuente.pk, 'fuentes-0-prioridad': 1, 'fuentes-0-activa': 'on',
+        }
+        datos.update(cambios)
+        return datos
+
+    def test_se_ve(self):
+        respuesta = self.client.get(self.url)
+        self.assertContains(respuesta, 'Así se ve en la app')
+        self.assertContains(respuesta, 'https://anda/c26.m3u8')
+
+    def test_cambiar_nombre_logo_y_categoria_nueva(self):
+        respuesta = self.client.post(self.url, self.datos(nombre='Canal 26 Noticias', logo='https://logos.ejemplo.com/nuevo.png',
+                                                          nueva_categoria='Argentina'))
+        self.assertRedirects(respuesta, reverse('canales:catalogo'), fetch_redirect_response=False)
+        self.canal.refresh_from_db()
+        self.assertEqual((self.canal.nombre, self.canal.logo, self.canal.categoria.nombre, self.canal.pais),
+                         ('Canal 26 Noticias', 'https://logos.ejemplo.com/nuevo.png', 'Argentina', 'AR'))
+
+    @mock.patch('canales.views.verificar_url', return_value=Resultado(FUNCIONA, tipo='directo'))
+    def test_agregar_una_fuente_y_borrar_otra(self, verificar_url):
+        self.client.post(self.url, self.datos(**{'nueva_fuente': 'http://iptv.ejemplo.com:8080/u/p/9', 'fuentes-0-DELETE': 'on'}))
+        fuente = self.canal.fuentes.get()
+        self.assertEqual((fuente.url, fuente.tipo, fuente.estado), ('http://iptv.ejemplo.com:8080/u/p/9', 'directo', 'funciona'))
+
+    def test_logo_invalido(self):
+        respuesta = self.client.post(self.url, self.datos(logo='no es una direccion'))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(Canal.objects.get(pk=self.canal.pk).logo, '')
+
+    def test_sin_permiso(self):
+        self.client.force_login(Usuario.objects.create_user(
+            'mira', None, 'x', rol=Rol.objects.create(nombre='Mira', permisos=['ver_canales'])))
+        self.assertEqual(self.client.get(self.url).status_code, 403)

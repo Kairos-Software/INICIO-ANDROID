@@ -55,7 +55,12 @@ class _PantallaCanalesState extends State<PantallaCanales> {
       _cargando = true;
     });
     try {
-      final datos = await SesionScope.leer(context).api.get('canales/') as Map<String, dynamic>;
+      // Se le dice al servidor qué formatos sabe reproducir esta versión: así
+      // no manda canales que no podría abrir (y a la 1.0.0 le sigue mandando solo HLS).
+      final datos = await SesionScope.leer(context).api.get(
+        'canales/',
+        parametros: {'formatos': FuenteCanal.formatosQueReproduce.join(',')},
+      ) as Map<String, dynamic>;
       if (!mounted) return;
       setState(
         () => _categorias = [for (final c in datos['categorias'] as List) CategoriaCanales(c as Map<String, dynamic>)],

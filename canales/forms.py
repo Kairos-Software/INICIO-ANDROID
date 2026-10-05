@@ -1,27 +1,123 @@
+import zipfile
+
 from django import forms
+from django.core.validators import URLValidator
 
 from herramientas.formularios import EstiloBootstrapMixin
 
 from .m3u import leer_m3u
+from .models import Canal, Categoria, Fuente
 
-TAMANIO_MAXIMO = 5 * 1024 * 1024   # 5 MB: una lista de miles de canales pesa menos de 1 MB
+# Una lista con películas y series (miles de entradas) puede pesar varios MB.
+# OJO: nginx también tiene que aceptarlo (client_max_body_size en despliegue/nginx).
+TAMANIO_MAXIMO = 20 * 1024 * 1024
+
+
+def _texto_del_archivo(archivo):
+    """El texto de la lista. Si es un .zip, el de la primera lista .m3u/.m3u8 que tenga adentro."""
+    if archivo.name.lower().endswith('.zip'):
+        try:
+            with zipfile.ZipFile(archivo) as comprimido:
+                for nombre in comprimido.namelist():
+                    if nombre.lower().endswith(('.m3u', '.m3u8')):
+                        with comprimido.open(nombre) as adentro:
+                            return adentro.read(TAMANIO_MAXIMO * 3).decode('utf-8', errors='replace')
+        except zipfile.BadZipFile:
+            raise forms.ValidationError('El .zip está dañado.')
+        raise forms.ValidationError('El .zip no tiene ninguna lista .m3u o .m3u8 adentro.')
+    return archivo.read().decode('utf-8', errors='replace')
 
 
 class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
     archivo = forms.FileField(
         label='Lista de canales',
-        help_text='Archivo .m3u o .m3u8 (máximo 5 MB).',
-        widget=forms.FileInput(attrs={'accept': '.m3u,.m3u8'}),
+        help_text='Archivo .m3u, .m3u8 o un .zip que la contenga (máximo 20 MB).',
+        widget=forms.FileInput(attrs={'accept': '.m3u,.m3u8,.zip'}),
     )
+    descartar_vod = forms.BooleanField(
+        label='Descartar películas y series', required=False, initial=False,
+        help_text='Sin marcar se importa todo. Ojo: hay listas con miles y verificarlas tarda horas.',
+    )
+    solo_espanol = forms.BooleanField(
+        label='Solo canales en español', required=False, initial=True,
+        help_text='Descarta los que se sabe que son de otro idioma (por país, categoría o prefijo). '
+                  'Los que no se puede saber, se verifican igual.',
+    )
+    descartar_adultos = forms.BooleanField(label='Descartar contenido para adultos', required=False, initial=True,
+                                           help_text='XXX / +18, por el nombre o la categoría.')
+    descartar_sin_logo = forms.BooleanField(label='Descartar los que no tienen logo', required=False)
 
     def clean_archivo(self):
         archivo = self.cleaned_data['archivo']
-        if not archivo.name.lower().endswith(('.m3u', '.m3u8')):
-            raise forms.ValidationError('Tiene que ser un archivo .m3u o .m3u8.')
+        if not archivo.name.lower().endswith(('.m3u', '.m3u8', '.zip')):
+            raise forms.ValidationError('Tiene que ser un archivo .m3u, .m3u8 o .zip.')
         if archivo.size > TAMANIO_MAXIMO:
-            raise forms.ValidationError('El archivo pesa más de 5 MB.')
-        texto = archivo.read().decode('utf-8', errors='replace')
+            raise forms.ValidationError('El archivo pesa más de 20 MB.')
+        texto = _texto_del_archivo(archivo)
         if not leer_m3u(texto):
             raise forms.ValidationError('No se encontró ningún canal en el archivo. ¿Es una lista M3U?')
         self.texto = texto
         return archivo
+
+    def opciones(self):
+        return {campo: self.cleaned_data[campo] for campo in ('descartar_vod', 'solo_espanol', 'descartar_adultos',
+                                                              'descartar_sin_logo')}
+
+
+class QuitarCanalesForm(forms.Form):
+    """Quitar de la app los canales elegidos (o todos los del filtro)."""
+    motivo = forms.CharField(max_length=200, required=False)
+
+
+class CanalForm(EstiloBootstrapMixin, forms.ModelForm):
+    """Editar un canal desde el panel. La categoría se elige o se crea escribiéndola."""
+    nueva_categoria = forms.CharField(
+        label='O una categoría nueva', max_length=80, required=False,
+        help_text='Si escribís acá, se crea (o se usa la que ya se llame así) en vez de la de arriba.',
+    )
+    nueva_fuente = forms.CharField(
+        label='Agregar una fuente', max_length=1000, required=False,
+        validators=[URLValidator(schemes=['http', 'https', 'rtsp', 'rtsps'])],
+        help_text='Una dirección más para este canal (.m3u8, video directo, YouTube, Twitch...). '
+                  'Se prueba al guardar.',
+    )
+
+    class Meta:
+        model = Canal
+        fields = ['nombre', 'logo', 'numero', 'categoria', 'contenido', 'idioma', 'pais', 'orden',
+                  'activo', 'motivo_quitado']
+        labels = {'activo': 'Se muestra en la app', 'motivo_quitado': 'Si no se muestra, por qué'}
+        widgets = {'logo': forms.URLInput(attrs={'placeholder': 'https://.../logo.png'})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['categoria'].queryset = Categoria.objects.order_by('nombre')
+        self.fields['categoria'].required = False
+        self.fields['pais'].widget.attrs.update({'maxlength': 2, 'style': 'text-transform:uppercase'})
+
+    def clean_pais(self):
+        return self.cleaned_data['pais'].strip().upper()
+
+    def clean_nueva_fuente(self):
+        url = self.cleaned_data['nueva_fuente'].strip()
+        if url and Fuente.objects.filter(canal=self.instance, url=url).exists():
+            raise forms.ValidationError('Este canal ya tiene esa dirección.')
+        return url
+
+    def clean(self):
+        datos = super().clean()
+        if datos.get('activo'):
+            datos['motivo_quitado'] = ''
+        nueva = (datos.get('nueva_categoria') or '').strip()
+        if nueva:
+            datos['categoria'], _ = Categoria.objects.get_or_create(nombre=nueva)
+            self.instance.categoria = datos['categoria']
+        return datos
+
+
+FuentesFormSet = forms.modelformset_factory(
+    Fuente, fields=['prioridad', 'activa'], extra=0, can_delete=True,
+    widgets={'prioridad': forms.NumberInput(attrs={'class': 'form-control form-control-sm', 'style': 'width:5rem',
+                                                   'min': 0}),
+             'activa': forms.CheckboxInput(attrs={'class': 'form-check-input'})},
+)

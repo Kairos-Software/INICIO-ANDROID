@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% load canales_extras %}
+{% comment %}
+    Editar un canal: nombre, logo, categoría (o una nueva), contenido,
+    idioma, país, orden, si se muestra; sus fuentes (orden, apagar, borrar)
+    y agregar una fuente a mano. A la derecha, cómo se ve en la app.
+{% endcomment %}
+
+{% block titulo %}Editar {{ canal.nombre }}{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{{ volver }}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Catálogo</a>
+    <h1 class="pagina-titulo">Editar canal</h1>
+    <p class="pagina-bajada">Los cambios llegan solos a la app la próxima vez que actualice la lista (como mucho en 15 minutos).</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<form method="post" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="volver" value="{{ volver }}">
+    {{ fuentes.management_form }}
+
+    <div class="row g-4 mb-4">
+        <div class="col-lg-8">
+            <section class="tarjeta h-100">
+                <h2 class="tarjeta-titulo">Datos</h2>
+                {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+                <div class="row g-3">
+                    {% include "parciales/_campo.html" with campo=form.nombre ancho="col-md-8" %}
+                    {% include "parciales/_campo.html" with campo=form.numero ancho="col-md-4" %}
+                    {% include "parciales/_campo.html" with campo=form.logo ancho="col-12" %}
+                    {% include "parciales/_campo.html" with campo=form.categoria %}
+                    {% include "parciales/_campo.html" with campo=form.nueva_categoria %}
+                    {% include "parciales/_campo.html" with campo=form.contenido ancho="col-md-4" %}
+                    {% include "parciales/_campo.html" with campo=form.idioma ancho="col-md-4" %}
+                    {% include "parciales/_campo.html" with campo=form.pais ancho="col-md-2" %}
+                    {% include "parciales/_campo.html" with campo=form.orden ancho="col-md-2" %}
+                    {% include "parciales/_campo.html" with campo=form.activo ancho="col-md-4" %}
+                    {% include "parciales/_campo.html" with campo=form.motivo_quitado ancho="col-md-8" %}
+                </div>
+            </section>
+        </div>
+        <div class="col-lg-4">
+            <section class="vista-app h-100">
+                <h2 class="h6 mb-3" style="color:#8FA9C9">Así se ve en la app</h2>
+                <div class="grilla-canales" style="grid-template-columns: minmax(0, 220px)">
+                    <article class="canal-tarjeta">
+                        <div class="canal-logo" id="vista-logo" data-iniciales="{{ canal.nombre|iniciales }}">{% if canal.logo %}<img src="{{ canal.logo }}" alt="" referrerpolicy="no-referrer">{% else %}{{ canal.nombre|iniciales }}{% endif %}</div>
+                        <div class="canal-nombre" id="vista-nombre">{{ canal.nombre }}</div>
+                        <div class="canal-meta"><span id="vista-numero" {% if not canal.numero %}hidden{% endif %}>{{ canal.numero }}</span></div>
+                    </article>
+                </div>
+                <p class="small mt-3 mb-0" style="color:#8FA9C9">Para el logo sirve cualquier dirección de imagen (PNG, JPG, SVG). Si no carga, la app muestra las iniciales.</p>
+            </section>
+        </div>
+    </div>
+
+    <section class="tarjeta p-0 mb-4">
+        <h2 class="tarjeta-titulo px-4 pt-4">Fuentes</h2>
+        <p class="texto-suave small px-4">La app prueba primero la de número más chico y, si falla, pasa a la siguiente. "Activa" sin marcar = la app no la usa aunque funcione.</p>
+        {% if fuentes.forms %}
+        <div class="table-responsive">
+            <table class="table tabla mb-0">
+                <thead><tr><th scope="col">Orden</th><th scope="col">Activa</th><th scope="col">Formato y estado</th><th scope="col">Dirección</th><th scope="col">Borrar</th></tr></thead>
+                <tbody>
+                {% for f in fuentes %}
+                    {% with fuente=f.instance %}
+                    <tr>
+                        <td>{{ f.id }}{{ f.prioridad }}</td>
+                        <td>{{ f.activa }}</td>
+                        <td class="small">
+                            {{ fuente.get_tipo_display }}<br>
+                            <span class="chip {% if fuente.estado == 'funciona' %}chip-agregada{% elif fuente.estado == 'caida' %}chip-caida{% else %}chip-pendiente{% endif %}">{{ fuente.get_estado_display }}</span>
+                            {% if fuente.error %}<div class="texto-suave mt-1">{{ fuente.error }}</div>{% endif %}
+                        </td>
+                        <td class="small">{{ fuente.origen|default:"—" }}<div class="direccion">{{ fuente.url }}</div></td>
+                        <td>{{ f.DELETE }}</td>
+                    </tr>
+                    {% endwith %}
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="texto-suave px-4">Este canal no tiene fuentes.</p>
+        {% endif %}
+        <div class="row g-3 p-4">
+            {% include "parciales/_campo.html" with campo=form.nueva_fuente ancho="col-12" %}
+        </div>
+    </section>
+
+    <div class="formulario-acciones d-flex flex-wrap gap-2">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg" aria-hidden="true"></i> Guardar</button>
+        <a href="{{ volver }}" class="btn btn-link">Cancelar</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // La vista previa cambia mientras se escribe
+    var nombre = document.getElementById('{{ form.nombre.id_for_label }}');
+    var logo = document.getElementById('{{ form.logo.id_for_label }}');
+    var numero = document.getElementById('{{ form.numero.id_for_label }}');
+    var vistaLogo = document.getElementById('vista-logo');
+    var vistaNombre = document.getElementById('vista-nombre');
+    var vistaNumero = document.getElementById('vista-numero');
+
+    function iniciales(texto) {
+        return texto.split(/\s+/).filter(Boolean).slice(0, 2).map(function (p) { return p[0]; }).join('').toUpperCase() || '?';
+    }
+    function pintarLogo() {
+        vistaLogo.dataset.iniciales = iniciales(nombre.value);
+        vistaLogo.textContent = vistaLogo.dataset.iniciales;
+        if (logo.value.trim()) {
+            var imagen = document.createElement('img');
+            imagen.alt = '';
+            imagen.referrerPolicy = 'no-referrer';
+            imagen.src = logo.value.trim();
+            vistaLogo.replaceChildren(imagen);
+        }
+    }
+    nombre.addEventListener('input', function () { vistaNombre.textContent = nombre.value; pintarLogo(); });
+    logo.addEventListener('change', pintarLogo);
+    numero.addEventListener('input', function () { vistaNumero.textContent = numero.value; vistaNumero.hidden = !numero.value; });
+
+    // Probar la fuente nueva tarda unos segundos
+    document.querySelector('form').addEventListener('submit', function (evento) {
+        var nueva = document.getElementById('{{ form.nueva_fuente.id_for_label }}');
+        if (nueva.value.trim()) {
+            var boton = evento.target.querySelector('button[type=submit]');
+            boton.disabled = true;
+            boton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Guardando y probando la fuente…';
+        }
+    });
+})();
+</script>
+{% endblock %}

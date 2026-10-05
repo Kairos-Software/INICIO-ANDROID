@@ -61,7 +61,9 @@ Depuración por red).
 | `http` | Hacer los pedidos a la API. |
 | `flutter_secure_storage` | Guardar el token cifrado en el celular (Keystore de Android). |
 | `flutter_localizations` | Textos de Flutter (calendario, copiar/pegar) en español. |
-| `video_player` | El reproductor de video (en Android usa ExoPlayer; reproduce HLS). |
+| `video_player` | El reproductor de video (en Android usa ExoPlayer): HLS, DASH, video directo (MPEG-TS/MP4, el de las listas IPTV) y RTSP. Desde la 1.1.0; la 1.0.0 solo HLS. |
+| `youtube_explode_dart` | Saca la dirección del video de YouTube en el aparato (ver `lib/senales.dart`). |
+| `cronet_http` | El motor de red de Chrome: con él se le habla a YouTube, que rechaza (error 429) al cliente de red de Dart. `android/app/build.gradle.kts` fija `cronet-api` en la 119 (la 141 no compila con este Android Gradle). |
 | `wakelock_plus` | Que la pantalla no se apague mientras se mira un canal. |
 | `flutter_launcher_icons` (solo desarrollo) | Genera los íconos de Android desde el logo: `dart run flutter_launcher_icons`. |
 
@@ -111,6 +113,28 @@ clave de desarrollo y después no se puede actualizar sin desinstalar.
 producción: muchas fuentes de canales son `http://` y sin eso no reproducen.
 Después se sube desde el panel (App Android) y se descarga en `/descargar/`.
 Cada versión nueva: subir `version:` en `pubspec.yaml` (ej. `1.0.1+2`).
+
+## Publicar una versión nueva
+
+1. En `pubspec.yaml` subir `version:`. Ej: de `1.0.0+1` a `1.0.1+2`.
+   - `1.0.1` es lo que ve la gente.
+   - `+2` es el número interno: **tiene que ser mayor que el anterior** o
+     Android no instala la actualización ("App no instalada").
+2. Compilar (en `app_movil/`):
+   ```
+   flutter build apk --release --dart-define=API_URL=https://kairostv.grupokairosarg.com/api/v1/
+   ```
+3. Verificar que salió firmada con la clave propia (tiene que decir `CN=marcos andres lopez`):
+   ```
+   & "$env:LOCALAPPDATA\Android\Sdk\build-tools\36.0.0\apksigner.bat" verify --print-certs build\app\outputs\flutter-apk\app-release.apk
+   ```
+4. Panel de producción → **App Android** → subir `build\app\outputs\flutter-apk\app-release.apk`
+   con la misma versión del paso 1 (ej. `1.0.1`).
+5. Commit y push del cambio de `pubspec.yaml`, para que el repo sepa qué versión está publicada.
+
+La app todavía no avisa sola que hay versión nueva: cada aparato la tiene que
+bajar otra vez desde `/descargar/` e instalarla encima (no hace falta desinstalar,
+se conservan el login y los datos).
 
 ## Comandos útiles
 

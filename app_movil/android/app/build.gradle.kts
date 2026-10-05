@@ -75,3 +75,14 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// cronet_http (la app le habla a YouTube con Cronet, ver lib/senales.dart)
+// trae cronet-api 141, que viene partida en dos módulos con el mismo
+// "namespace" y el Android Gradle de este proyecto no compila ("Namespace
+// 'org.chromium.net' is used in multiple modules"). La 119 es un solo módulo
+// y tiene todo lo que usa cronet_http.
+configurations.all {
+    resolutionStrategy {
+        force("org.chromium.net:cronet-api:119.6045.31")
+    }
+}

@@ -10,6 +10,7 @@ El código de la app. Flutter arranca por `main.dart`.
 | `aparato.dart` | Nombre del aparato y si es una TV (lo da `MainActivity.kt`). | — |
 | `tema.dart` | El diseño: el mismo del panel en versión oscura (azul noche del menú, celeste/azul en lo activo, naranja en el foco del control remoto), letras Sora y Manrope, radios y `FondoMarca`. Si cambian los colores del panel, se cambian acá. | `static/css/sistema.css` |
 | `campos.dart` | Los campos del usuario agrupados por sección, como en `usuarios/forms.py`. | `SECCIONES_USUARIO` |
+| `senales.dart` | De una fuente a la dirección que abre el reproductor: YouTube se resuelve en el aparato (con Cronet), las páginas de video (Twitch...) se le piden al servidor, y le dice al reproductor el formato (HLS, DASH, video directo). | `canales/paginas.py` |
 | `utiles.dart` | Funciones chicas: fechas legibles, mensajes, "¿seguro?". | `herramientas/` |
 | `api/` | Cómo se habla con la API y las clases de los datos. Ver su README. | — |
 | `pantallas/` | Cada pantalla de la app. Ver su README. | `views.py` + templates |

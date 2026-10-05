@@ -3,7 +3,8 @@ Vuelve a probar todas las fuentes y actualiza su estado.
 
     python manage.py verificar_fuentes
 
-Lo mismo que el botón "Volver a verificar todas" del panel. En producción
+Lo mismo que el botón "Volver a verificar todas" del panel (de a tandas de 50,
+hasta terminar). También averigua el formato real de cada una. En producción
 se puede programar (cron) para que corra solo, por ejemplo cada hora.
 """
 

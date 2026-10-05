@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../api/modelos.dart';
+import '../senales.dart';
 import '../sesion.dart';
 import '../tema.dart';
 import 'canales.dart';
@@ -74,6 +75,7 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
 
   Future<void> _probarFuente(int indice) async {
     final intento = ++_intento;
+    final api = SesionScope.leer(context).api;
     _vigiaTrabado?.cancel();
     final anterior = _video;
     setState(() {
@@ -94,10 +96,23 @@ class _PantallaReproductorState extends State<PantallaReproductor> {
     }
 
     final fuente = _fuentes[indice];
+    // YouTube, Twitch...: primero hay que averiguar dónde está el video (ver senales.dart)
+    final Senal senal;
+    try {
+      senal = await resolverSenal(fuente, api).timeout(_esperaInicio);
+    } catch (_) {
+      if (mounted && intento == _intento) {
+        _avisarFalla(fuente);
+        _probarFuente(indice + 1);
+      }
+      return;
+    }
+    if (!mounted || intento != _intento) return;
+
     final video = VideoPlayerController.networkUrl(
-      Uri.parse(fuente.url),
-      formatHint: VideoFormat.hls,
-      httpHeaders: fuente.cabeceras, // como un navegador: algunos canales rechazan a ExoPlayer
+      Uri.parse(senal.url),
+      formatHint: senal.formato,
+      httpHeaders: senal.cabeceras, // como un navegador (o VLC): algunos canales rechazan a ExoPlayer
     );
     try {
       await video.initialize().timeout(_esperaInicio);

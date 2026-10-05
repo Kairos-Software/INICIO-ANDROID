@@ -1,9 +1,11 @@
 import 'package:app_movil/api/cliente.dart';
 import 'package:app_movil/api/modelos.dart';
 import 'package:app_movil/campos.dart';
+import 'package:app_movil/senales.dart';
 import 'package:app_movil/utiles.dart';
 import 'package:app_movil/widgets/formulario.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:video_player/video_player.dart';
 
 void main() {
   group('ApiError', () {
@@ -133,13 +135,21 @@ void main() {
             {'id': 1, 'url': 'https://www.youtube.com/x/live', 'tipo': 'youtube'},
             {'id': 2, 'url': 'https://a/main.m3u8', 'tipo': 'hls'},
             {'id': 3, 'url': 'https://b/main.m3u8', 'tipo': 'hls'},
+            {'id': 4, 'url': 'http://c:8080/u/p/1', 'tipo': 'directo'},
+            {'id': 5, 'url': 'rtmp://d/vivo', 'tipo': 'rtmp'},
           ],
         },
       ],
     });
     final canal = categoria.canales.single;
     expect(canal.numero, '26');
-    expect(canal.fuentesReproducibles.map((f) => f.url), ['https://a/main.m3u8', 'https://b/main.m3u8']);
+    // RTMP no: la app no lo reproduce. YouTube y el video directo (IPTV) sí.
+    expect(canal.fuentesReproducibles.map((f) => f.url), [
+      'https://www.youtube.com/x/live',
+      'https://a/main.m3u8',
+      'https://b/main.m3u8',
+      'http://c:8080/u/p/1',
+    ]);
   });
 
   test('fechaLegible', () {
@@ -168,6 +178,23 @@ void main() {
       expect(cliente.pantallas, 2);
       expect(cliente.diasRestantes, 10);
       expect(DatosCliente({'nombre': 'Beto'}).vence, isNull);
+    });
+  });
+
+  group('Señales', () {
+    test('cada formato con su pista para el reproductor', () {
+      expect(const Senal(url: 'https://x/a.m3u8', tipo: 'hls').formato, VideoFormat.hls);
+      expect(const Senal(url: 'https://x/a.mpd', tipo: 'dash').formato, VideoFormat.dash);
+      // Video directo (IPTV) y RTSP: sin pista, el reproductor lo detecta como VLC
+      expect(const Senal(url: 'http://x:8080/u/p/1', tipo: 'directo').formato, isNull);
+      expect(const Senal(url: 'rtsp://x/vivo', tipo: 'rtsp').formato, isNull);
+    });
+
+    test('las fuentes comunes no se resuelven: van tal cual', () async {
+      final fuente = FuenteCanal({'id': 1, 'url': 'http://x:8080/u/p/1', 'tipo': 'directo', 'user_agent': 'VLC'});
+      final senal = await resolverSenal(fuente, ApiCliente(urlBase: 'http://servidor/api/v1/'));
+      expect((senal.url, senal.tipo), ('http://x:8080/u/p/1', 'directo'));
+      expect(senal.cabeceras, {'User-Agent': 'VLC'});
     });
   });
 

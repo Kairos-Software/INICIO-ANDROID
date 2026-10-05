@@ -181,4 +181,13 @@
             contenedor.setAttribute('aria-label', 'Tabla desplazable horizontalmente');
         }
     });
+
+    // Logos de canales que no cargan (dirección vieja, o http dentro de https):
+    // en su lugar quedan las iniciales del canal, como en la app.
+    // Uso: <span data-iniciales="TN"><img src="..." alt=""></span>
+    document.addEventListener('error', function (evento) {
+        const imagen = evento.target;
+        if (imagen.tagName !== 'IMG' || !imagen.parentElement || !imagen.parentElement.dataset.iniciales) return;
+        imagen.parentElement.textContent = imagen.parentElement.dataset.iniciales;
+    }, true);
 })();

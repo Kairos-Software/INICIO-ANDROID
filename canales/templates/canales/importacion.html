@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% load static canales_extras %}
+{% comment %}
+    Una lista importada: la barra de avance mientras se verifica de a tandas
+    y, abajo, cada canal de la lista con lo que pasó y por qué (agregado, no
+    funciona, descartado, ya estaba), su idioma, país, formato y categoría.
+{% endcomment %}
+
+{% block titulo %}{{ importacion.archivo }} · Canales{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Canales</a>
+        <h1 class="pagina-titulo">{{ importacion.archivo }}</h1>
+        <p class="pagina-bajada">
+            Subida el {{ importacion.creada|date:"j/m/Y H:i" }}{% if importacion.usuario %} por {{ importacion.usuario }}{% endif %} ·
+            {{ importacion.total }} canal{{ importacion.total|pluralize:"es" }} en la lista ·
+            {% if importacion.descartar_vod %}sin películas ni series{% else %}con películas y series{% endif %}
+            {% if importacion.solo_espanol %}· solo español{% endif %}
+            {% if importacion.descartar_adultos %}· sin contenido para adultos{% endif %}
+            {% if importacion.descartar_sin_logo %}· sin los que no tienen logo{% endif %}
+        </p>
+    </div>
+    <a href="{% url 'canales:catalogo' %}?origen={{ importacion.archivo|urlencode }}" class="btn btn-outline-secondary">
+        <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Ver sus canales en el catálogo
+    </a>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<section class="tarjeta mb-4" id="progreso">
+    {% csrf_token %}
+    <h2 class="tarjeta-titulo">Verificación</h2>
+    <div class="avance mb-3">
+        <div class="avance-barra" role="progressbar" aria-label="Avance de la verificación" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ avance.porcentaje }}">
+            <div class="avance-relleno" style="width: {{ avance.porcentaje }}%"></div>
+        </div>
+        <div class="avance-texto">
+            <strong data-texto="porcentaje">{{ avance.porcentaje }} % completado</strong>
+            <span data-texto="detalle">{{ avance.verificadas }} de {{ avance.para_verificar }} verificados{% if avance.pendientes %} · faltan {{ avance.pendientes }}{% endif %}</span>
+        </div>
+    </div>
+    <ul class="contadores mb-3" aria-live="polite">
+        <li><b data-contador="agregadas">{{ avance.agregadas }}</b> agregados</li>
+        <li><b data-contador="caidas">{{ avance.caidas }}</b> no funcionan</li>
+        <li><b data-contador="descartadas">{{ avance.descartadas }}</b> descartados</li>
+        <li><b data-contador="repetidas">{{ avance.repetidas }}</b> ya estaban</li>
+        <li><b data-contador="pendientes">{{ avance.pendientes }}</b> por verificar</li>
+    </ul>
+
+    {% if puede_importar %}
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        {% if avance.pendientes %}
+        <button type="button" class="btn btn-primary" data-accion="correr">
+            <i class="bi bi-play-fill" aria-hidden="true"></i> <span>{% if avance.verificadas %}Continuar{% else %}Empezar a verificar{% endif %}</span>
+        </button>
+        <span class="texto-suave small" data-texto="estado">Se verifican de a {{ tamanio_lote }}. Si cerrás la página se pausa, y después seguís desde acá.</span>
+        {% else %}
+            {% if avance.caidas %}
+            <form method="post" action="{% url 'canales:importacion_reintentar' importacion.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-repeat" aria-hidden="true"></i> Reintentar los {{ avance.caidas }} que no funcionaron
+                </button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'canales:importacion_borrar' importacion.pk %}" class="ms-auto"
+                  onsubmit="return confirm('¿Borrar este informe? Los canales que se agregaron siguen cargados.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-link text-danger">
+                    <i class="bi bi-trash" aria-hidden="true"></i> Borrar informe
+                </button>
+            </form>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+
+<form method="get" class="filtros" role="search">
+    <div class="filtros-buscar">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <label for="q" class="visually-hidden">Buscar</label>
+        <input type="search" id="q" name="q" value="{{ filtros.texto }}" class="form-control" placeholder="Nombre o categoría">
+    </div>
+    <div>
+        <label for="estado" class="visually-hidden">Qué pasó</label>
+        <select id="estado" name="estado" class="form-select">
+            <option value="">Todos los estados</option>
+            {% for valor, texto in estados %}
+            <option value="{{ valor }}" {% if filtros.estado == valor %}selected{% endif %}>{{ texto }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="idioma" class="visually-hidden">Idioma</label>
+        <select id="idioma" name="idioma" class="form-select">
+            <option value="">Todos los idiomas</option>
+            <option value="es" {% if filtros.idioma == 'es' %}selected{% endif %}>Español</option>
+            <option value="otro" {% if filtros.idioma == 'otro' %}selected{% endif %}>Otro idioma</option>
+            <option value="sin_dato" {% if filtros.idioma == 'sin_dato' %}selected{% endif %}>No se sabe</option>
+        </select>
+    </div>
+    <div>
+        <label for="contenido" class="visually-hidden">Contenido</label>
+        <select id="contenido" name="contenido" class="form-select">
+            <option value="">En vivo, películas y series</option>
+            {% for valor, texto in contenidos %}
+            <option value="{{ valor }}" {% if filtros.contenido == valor %}selected{% endif %}>{{ texto }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    {% if hay_filtros %}<a href="{% url 'canales:importacion' importacion.pk %}" class="btn btn-link">Limpiar</a>{% endif %}
+</form>
+
+<div class="tarjeta p-0">
+    {% if pagina.object_list %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr>
+                <th scope="col">Canal</th><th scope="col">Categoría</th><th scope="col">Idioma / país</th>
+                <th scope="col">Formato</th><th scope="col">Qué pasó</th><th scope="col">Por qué</th>
+            </tr></thead>
+            <tbody>
+            {% for e in pagina %}
+                <tr>
+                    <td>
+                        <div class="celda-canal">
+                            <span class="logo-mini" data-iniciales="{{ e.nombre|iniciales }}">{% if e.logo %}<img src="{{ e.logo }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% else %}{{ e.nombre|iniciales }}{% endif %}</span>
+                            <div>
+                                {% if e.canal and puede_importar %}<a href="{% url 'canales:canal_editar' e.canal.pk %}?volver={{ request.get_full_path|urlencode }}" title="Editar el canal">{{ e.nombre }}</a>{% else %}{{ e.nombre }}{% endif %}
+                                {% if e.nombre_original != e.nombre %}<small>{{ e.nombre_original }}</small>{% endif %}
+                                {% if not e.logo %}<small>Sin logo</small>{% endif %}
+                            </div>
+                        </div>
+                    </td>
+                    <td class="small">{{ e.categoria|default:"—" }}</td>
+                    <td class="small">
+                        {{ e.get_idioma_display }}{% if e.pais %} · {{ e.pais }}{% endif %}
+                        {% if e.contenido != 'vivo' %}<br><span class="texto-suave">{{ e.get_contenido_display }}</span>{% endif %}
+                    </td>
+                    <td class="small texto-suave">{{ e.get_tipo_display }}</td>
+                    <td><span class="chip chip-{{ e.estado }}">{{ e.get_estado_display }}</span></td>
+                    <td class="motivo">
+                        {{ e.motivo|default:"—" }}
+                        <div class="direccion">{{ e.url|truncatechars:90 }}</div>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="vacio">
+        <i class="bi bi-funnel" aria-hidden="true"></i>
+        <p>Ningún canal de esta lista coincide con los filtros.</p>
+    </div>
+    {% endif %}
+</div>
+
+{% include "parciales/_paginacion.html" with pagina=pagina parametros=parametros %}
+{% endblock %}
+
+{% block scripts %}
+{% if puede_importar and avance.pendientes %}
+<script src="{% static 'js/tandas.js' %}"></script>
+<script>
+(function () {
+    var caja = document.getElementById('progreso');
+    var boton = caja.querySelector('[data-accion=correr]');
+    var avance = caja.querySelector('.avance');
+    var barra = caja.querySelector('.avance-barra');
+    var relleno = caja.querySelector('.avance-relleno');
+    var porcentaje = caja.querySelector('[data-texto=porcentaje]');
+    var detalle = caja.querySelector('[data-texto=detalle]');
+    var estado = caja.querySelector('[data-texto=estado]');
+    var verificadas = {{ avance.verificadas }};
+    var inicio = null, verificadasAlEmpezar = verificadas;
+
+    function pintar(r) {
+        relleno.style.width = r.porcentaje + '%';
+        barra.setAttribute('aria-valuenow', r.porcentaje);
+        porcentaje.textContent = r.porcentaje + ' % completado';
+        var texto = Tandas.numero(r.verificadas) + ' de ' + Tandas.numero(r.para_verificar) + ' verificados';
+        // Cuánto falta, según lo que vienen tardando las tandas de ahora
+        var hechas = r.verificadas - verificadasAlEmpezar;
+        if (inicio && hechas > 0 && r.pendientes) {
+            var porCanal = (Date.now() - inicio) / 1000 / hechas;
+            texto += ' · faltan ' + Tandas.numero(r.pendientes) + ' (unos ' + Tandas.duracion(porCanal * r.pendientes) + ')';
+        }
+        detalle.textContent = texto;
+        ['agregadas', 'caidas', 'descartadas', 'repetidas', 'pendientes'].forEach(function (clave) {
+            caja.querySelector('[data-contador=' + clave + ']').textContent = Tandas.numero(r[clave]);
+        });
+    }
+
+    var tarea = Tandas({
+        url: '{% url "canales:importacion_lote" importacion.pk %}',
+        termino: function (r) { return r.terminada; },
+        alAvanzar: function (r) {
+            verificadas = r.verificadas;
+            pintar(r);
+            if (r.ocupada) estado.textContent = 'Esta lista ya se está verificando en otra pestaña: esperando…';
+        },
+        alTerminar: function () {
+            estado.textContent = 'Terminó. Actualizando…';
+            window.location.href = window.location.pathname;   // sin ?empezar=1
+        },
+        alCambiar: function (corriendo) {
+            if (corriendo) { inicio = Date.now(); verificadasAlEmpezar = verificadas; }
+            avance.classList.toggle('trabajando', corriendo);
+            boton.querySelector('span').textContent = corriendo ? 'Pausar' : 'Continuar';
+            boton.querySelector('i').className = corriendo ? 'bi bi-pause-fill' : 'bi bi-play-fill';
+            boton.classList.toggle('btn-primary', !corriendo);
+            boton.classList.toggle('btn-outline-secondary', corriendo);
+            if (corriendo) estado.textContent = 'Verificando… no hace falta quedarse mirando, pero no cierres esta página.';
+            else if (!estado.dataset.error) estado.textContent = 'En pausa. Lo que ya se verificó quedó guardado.';
+        },
+        alError: function (mensaje) { estado.dataset.error = '1'; estado.textContent = mensaje; },
+    });
+    boton.addEventListener('click', function () {
+        delete estado.dataset.error;
+        tarea.corriendo() ? tarea.pausar() : tarea.empezar();
+    });
+    {% if empezar %}tarea.empezar();{% endif %}
+})();
+</script>
+{% endif %}
+{% endblock %}

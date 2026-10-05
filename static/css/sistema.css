@@ -2509,3 +2509,129 @@ a, button, input, select, textarea { transition-duration: .18s; }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ── CANALES: importación por tandas, informe y catálogo ────────── */
+
+/* Barra de avance ("35 % completado") */
+.avance { display: grid; gap: .45rem; }
+.avance-barra {
+    height: 14px;
+    border-radius: 999px;
+    background: #E4ECF6;
+    overflow: hidden;
+}
+.avance-relleno {
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--azul), var(--cian));
+    transition: width .4s ease;
+}
+.avance.trabajando .avance-relleno {
+    background-image: linear-gradient(90deg, var(--azul), var(--cian)),
+        repeating-linear-gradient(45deg, rgba(255,255,255,.25) 0 10px, transparent 10px 20px);
+    background-blend-mode: overlay;
+    background-size: 100% 100%, 28px 28px;
+    animation: avance-rayas 1s linear infinite;
+}
+@keyframes avance-rayas { to { background-position: 0 0, 28px 0; } }
+.avance-texto { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; font-size: .88rem; }
+.avance-texto strong { font-family: var(--fuente-titulos); color: var(--tinta); }
+
+.contadores { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.contadores li {
+    display: flex; align-items: baseline; gap: .4rem;
+    padding: .4rem .7rem; border: 1px solid var(--borde); border-radius: 10px; background: #F8FAFD;
+    font-size: .8rem; color: var(--texto-suave);
+}
+.contadores li b { font-family: var(--fuente-datos); font-size: 1rem; color: var(--tinta); }
+
+/* Estado de cada canal de la lista importada */
+.chip-agregada { background: #E8F7F2; color: #0E5947; border-color: #BDE4D8; }
+.chip-caida { background: #FDEBED; color: #852638; border-color: #F3C8D0; }
+.chip-descartada { background: #FFF0DF; color: #8A4200; border-color: #F6D2AA; }
+.chip-repetida, .chip-pendiente { background: #EEF3F9; color: #4F627C; border-color: #D7E2EF; }
+
+/* Logo chiquito en las tablas (si la imagen no carga, quedan las iniciales) */
+.logo-mini {
+    width: 44px; height: 32px; flex-shrink: 0;
+    display: grid; place-items: center;
+    border-radius: 7px; background: var(--papel); border: 1px solid var(--borde);
+    font: 800 .7rem var(--fuente-texto); color: var(--tinta); overflow: hidden;
+}
+.logo-mini img, .canal-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.celda-canal { display: flex; align-items: center; gap: .65rem; min-width: 220px; }
+.celda-canal small { display: block; color: var(--texto-suave); font-size: .74rem; }
+.motivo { max-width: 340px; font-size: .82rem; }
+
+/* Catálogo: los canales como los ve la app (mismos colores que app_movil/lib/tema.dart) */
+.vista-app {
+    border-radius: var(--radio);
+    padding: 1.25rem;
+    background:
+        radial-gradient(circle at 95% 0%, rgba(0, 207, 244, .12), transparent 18rem),
+        linear-gradient(160deg, #071A37, #050D1D 60%);
+    color: #F2F7FF;
+}
+.vista-app-categoria + .vista-app-categoria { margin-top: 1.5rem; }
+.vista-app-categoria h2 {
+    display: flex; align-items: center; gap: .5rem;
+    margin: 0 0 .75rem; font-size: .95rem; color: #F2F7FF;
+}
+.vista-app-categoria h2 span { font: 600 .75rem var(--fuente-texto); color: #8FA9C9; }
+.grilla-canales { display: grid; grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: .75rem; }
+.canal-tarjeta {
+    position: relative;
+    display: flex; flex-direction: column; gap: .45rem;
+    padding: .55rem;
+    border: 1px solid #1E3A63; border-radius: 14px;
+    background: #0B1F3E;
+    transition: border-color .15s, transform .15s;
+}
+.canal-tarjeta:hover, .canal-tarjeta:focus-within { border-color: var(--ambar); }
+.canal-tarjeta.elegida { border-color: var(--cian); box-shadow: 0 0 0 2px rgba(0, 207, 244, .35); }
+.canal-tarjeta.fuera { border-style: dashed; }
+.canal-tarjeta.fuera .canal-logo, .canal-tarjeta.quitado .canal-logo { opacity: .45; filter: grayscale(.7); }
+.canal-tarjeta.quitado { border-color: #6B2737; background: #1A1428; }
+.canal-logo {
+    aspect-ratio: 16 / 10;
+    display: grid; place-items: center;
+    padding: .5rem; border-radius: 11px; background: #F3F7FC;
+    font: 800 1.25rem var(--fuente-texto); color: #050D1D;
+}
+.canal-nombre { font-weight: 700; font-size: .82rem; line-height: 1.2; color: #F2F7FF; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canal-meta { display: flex; flex-wrap: wrap; gap: .25rem; font-size: .68rem; color: #8FA9C9; }
+.canal-meta span { padding: .05rem .4rem; border-radius: 999px; background: rgba(143, 169, 201, .14); }
+.canal-aviso { font-size: .68rem; line-height: 1.25; color: #F0A5B2; }
+.canal-elegir { position: absolute; top: .4rem; left: .4rem; z-index: 1; width: 1.15rem; height: 1.15rem; }
+.canal-detalle-btn {
+    margin-top: auto; padding: .25rem .4rem;
+    border: 1px solid #1E3A63; border-radius: 8px; background: transparent;
+    color: #B7C9E1; font-size: .72rem; font-weight: 700;
+}
+.canal-detalle-btn:hover { border-color: var(--cian); color: #fff; }
+
+.acciones-catalogo {
+    position: sticky; bottom: .75rem; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .6rem;
+    margin-top: 1rem; padding: .75rem;
+    border: 1px solid var(--borde); border-radius: 14px;
+    background: rgba(255, 255, 255, .96); box-shadow: var(--sombra);
+}
+.acciones-catalogo .form-control { flex: 1 1 220px; max-width: 360px; }
+
+dialog.detalle-canal {
+    width: min(720px, calc(100vw - 2rem));
+    padding: 0; border: 0; border-radius: var(--radio);
+    box-shadow: 0 30px 80px rgba(6, 20, 44, .35);
+}
+dialog.detalle-canal::backdrop { background: rgba(5, 13, 29, .55); }
+.detalle-canal-cuerpo { padding: 1.4rem; }
+.detalle-canal-cuerpo .tabla { min-width: 0; }
+.direccion { font-family: var(--fuente-datos); font-size: .72rem; overflow-wrap: anywhere; color: var(--texto-suave); }
+
+@media (max-width: 575.98px) {
+    .vista-app { padding: .85rem; border-radius: 14px; }
+    .grilla-canales { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: .55rem; }
+    .acciones-catalogo .btn { flex: 1 1 calc(50% - .3rem); }
+}

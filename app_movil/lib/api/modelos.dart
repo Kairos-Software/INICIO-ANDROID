@@ -142,10 +142,17 @@ class FuenteCanal {
     if (referer.isNotEmpty) 'Referer': referer,
   };
 
-  /// "hls" o "youtube" (por ahora la app reproduce solo HLS).
+  /// El formato de la señal, que el servidor averigua mirando lo que responde
+  /// (como VLC): "hls", "dash", "directo" (MPEG-TS, MP4...: lo que mandan las
+  /// listas IPTV sin extensión), "rtsp", "youtube" o "pagina" (Twitch,
+  /// Dailymotion...). Los dos últimos se resuelven al reproducir (senales.dart).
   final String tipo;
 
-  bool get esHls => tipo == 'hls';
+  /// Los formatos que este reproductor sabe abrir. Se le mandan al servidor
+  /// al pedir los canales (?formatos=...) para que no mande otros.
+  static const formatosQueReproduce = ['hls', 'dash', 'directo', 'rtsp', 'youtube', 'pagina'];
+
+  bool get esReproducible => formatosQueReproduce.contains(tipo);
 }
 
 /// Un canal de TV en vivo (GET /canales/).
@@ -164,7 +171,7 @@ class Canal {
   final List<FuenteCanal> fuentes;
 
   /// Las fuentes que la app sabe reproducir, en orden de prioridad.
-  List<FuenteCanal> get fuentesReproducibles => fuentes.where((f) => f.esHls).toList();
+  List<FuenteCanal> get fuentesReproducibles => fuentes.where((f) => f.esReproducible).toList();
 }
 
 /// Una categoría con sus canales.

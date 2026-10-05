@@ -1,16 +1,23 @@
 {% extends "base.html" %}
+{% load static %}
 {% comment %}
-    Canales: resumen, importar una lista M3U (con verificación de las
-    fuentes) y volver a verificar todo. Diseño provisorio: el diseño nuevo
-    del panel viene al final.
+    Canales: resumen, volver a verificar todas las fuentes (de a tandas, con
+    barra de avance), subir una lista y las importaciones anteriores.
+    El detalle de cada lista está en importacion.html y los canales "como
+    los ve la app" en catalogo.html.
 {% endcomment %}
 
 {% block titulo %}Canales{% endblock %}
 
 {% block encabezado %}
-<div class="pagina-encabezado">
-    <h1 class="pagina-titulo">Canales</h1>
-    <p class="pagina-bajada">Importá listas M3U: cada fuente se prueba antes de guardarla. La app solo usa las que funcionan (o que todavía no se verificaron).</p>
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <h1 class="pagina-titulo">Canales</h1>
+        <p class="pagina-bajada">Importá listas M3U: se verifican de a tandas y solo pasan las que funcionan. En el catálogo ves todos los canales como en la app y quitás los que no te sirven.</p>
+    </div>
+    <a href="{% url 'canales:catalogo' %}" class="btn btn-acento">
+        <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Ver catálogo
+    </a>
 </div>
 {% endblock %}
 
@@ -19,76 +26,75 @@
     <h2 class="tarjeta-titulo">Resumen</h2>
     <dl class="ficha-datos">
         <div><dt>Canales cargados</dt><dd class="dato">{{ resumen.canales }}</dd></div>
-        <div><dt>Canales que ve la app</dt><dd class="dato">{{ resumen.canales_en_la_app }}</dd></div>
+        <div><dt>Canales que ve la app</dt><dd class="dato" title="Con la app 1.0.0 (solo HLS): {{ resumen.canales_en_la_app_vieja }}">{{ resumen.canales_en_la_app }}</dd></div>
+        <div><dt>Quitados a mano</dt><dd class="dato">{{ resumen.quitados }}</dd></div>
         <div><dt>Fuentes que funcionan</dt><dd class="dato">{{ resumen.funcionan }}</dd></div>
         <div><dt>Fuentes caídas</dt><dd class="dato">{{ resumen.caidas }}</dd></div>
         <div><dt>Fuentes sin verificar</dt><dd class="dato">{{ resumen.sin_verificar }}</dd></div>
     </dl>
+    {% if resumen.canales_en_la_app != resumen.canales_en_la_app_vieja %}
+    <p class="texto-suave small mt-2 mb-0">
+        <i class="bi bi-info-circle" aria-hidden="true"></i>
+        Con la app 1.0.0 (que solo reproduce HLS) se ven {{ resumen.canales_en_la_app_vieja }}. Los demás aparecen al actualizar la app.
+    </p>
+    {% endif %}
+
     {% if puede_importar %}
     <hr>
-    <form method="post" action="{% url 'canales:verificar' %}" class="d-flex flex-wrap align-items-center gap-3 js-tarda">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-repeat" aria-hidden="true"></i> Volver a verificar todas
-        </button>
-        <span class="texto-suave small">Las caídas que volvieron se reactivan solas. Puede tardar 1 o 2 minutos.</span>
-    </form>
+    <div id="verificar-todas" class="d-grid gap-3">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+            {% csrf_token %}
+            <button type="button" class="btn btn-outline-secondary" data-accion="verificar">
+                <i class="bi bi-arrow-repeat" aria-hidden="true"></i> <span>Volver a verificar todas</span>
+            </button>
+            <span class="texto-suave small">Se prueban de a 50 y se ve el avance. Las caídas que volvieron se reactivan solas, y las que antes no se reconocían (video directo, como en VLC) ahora se detectan.</span>
+        </div>
+        <div class="avance" hidden>
+            <div class="avance-barra" role="progressbar" aria-label="Avance de la verificación" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="avance-relleno"></div>
+            </div>
+            <div class="avance-texto"><strong data-texto="porcentaje">0 %</strong><span data-texto="detalle"></span></div>
+        </div>
+    </div>
     {% endif %}
 </section>
 
 {% if puede_importar %}
 <section class="tarjeta mb-4">
     <h2 class="tarjeta-titulo">Importar una lista</h2>
-    <p class="texto-suave">Los canales nuevos se crean. Si un canal ya existe (mismo tvg-id o mismo nombre), la dirección se suma como fuente alternativa. Lo repetido se ignora. Las fuentes que no responden se guardan como <strong>caídas</strong> y la app no las usa.</p>
-    <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end js-tarda" novalidate>
+    <p class="texto-suave">Al subirla se analiza toda (idioma, país, si es en vivo o película, formato) y después se verifica de a tandas, mostrando el avance. Los canales nuevos se crean; si un canal ya existe, la dirección se suma como fuente alternativa. Lo que no funciona no se agrega, pero queda en el informe con el motivo.</p>
+    <form method="post" enctype="multipart/form-data" class="row g-3 align-items-start" novalidate id="form-importar">
         {% csrf_token %}
-        {% include "parciales/_campo.html" with campo=form.archivo %}
-        <div class="col-md-6">
+        {% include "parciales/_campo.html" with campo=form.archivo ancho="col-12" %}
+        {% include "parciales/_campo.html" with campo=form.descartar_vod ancho="col-md-6 col-xl-3" %}
+        {% include "parciales/_campo.html" with campo=form.solo_espanol ancho="col-md-6 col-xl-3" %}
+        {% include "parciales/_campo.html" with campo=form.descartar_adultos ancho="col-md-6 col-xl-3" %}
+        {% include "parciales/_campo.html" with campo=form.descartar_sin_logo ancho="col-md-6 col-xl-3" %}
+        <div class="col-12">
             <button type="submit" class="btn btn-primary">
-                <i class="bi bi-upload" aria-hidden="true"></i> Importar y verificar
+                <i class="bi bi-upload" aria-hidden="true"></i> Subir y analizar
             </button>
         </div>
     </form>
 </section>
 {% endif %}
 
-{% if resultado %}
-<section class="tarjeta mb-4">
-    <h2 class="tarjeta-titulo">Resultado de la importación</h2>
-    <dl class="ficha-datos">
-        <div><dt>Canales nuevos</dt><dd class="dato">{{ resultado.canales_nuevos }}</dd></div>
-        <div><dt>Fuentes nuevas</dt><dd class="dato">{{ resultado.fuentes_nuevas }}</dd></div>
-        <div><dt>Ya existían</dt><dd class="dato">{{ resultado.repetidas }}</dd></div>
-        <div><dt>Funcionan</dt><dd class="dato">{{ resultado.funcionan }}</dd></div>
-        <div><dt>Caídas</dt><dd class="dato">{{ resultado.caidas }}</dd></div>
-        <div><dt>Sin verificar (YouTube)</dt><dd class="dato">{{ resultado.sin_verificar }}</dd></div>
-    </dl>
-    {% if resultado.detalle_caidas %}
-    <details class="mt-3">
-        <summary>Ver las {{ resultado.detalle_caidas|length }} fuente{{ resultado.detalle_caidas|length|pluralize }} caída{{ resultado.detalle_caidas|length|pluralize }} de esta lista</summary>
-        <ul class="small mt-2">
-            {% for nombre, url, motivo in resultado.detalle_caidas %}
-            <li><strong>{{ nombre }}</strong>: {{ motivo }} <span class="texto-suave">{{ url|truncatechars:80 }}</span></li>
-            {% endfor %}
-        </ul>
-    </details>
-    {% endif %}
-</section>
-{% endif %}
-
 <section class="tarjeta p-0">
-    <h2 class="tarjeta-titulo px-4 pt-4">Fuentes caídas</h2>
-    {% if caidas %}
+    <h2 class="tarjeta-titulo px-4 pt-4">Listas importadas</h2>
+    {% if importaciones %}
     <div class="table-responsive">
         <table class="table tabla mb-0">
-            <thead><tr><th scope="col">Canal</th><th scope="col">Motivo</th><th scope="col">Dirección</th><th scope="col">Verificada</th></tr></thead>
+            <thead><tr><th scope="col">Lista</th><th scope="col">Subida</th><th scope="col">Canales</th><th scope="col">Estado</th></tr></thead>
             <tbody>
-                {% for f in caidas %}
+                {% for i in importaciones %}
                 <tr>
-                    <td>{{ f.canal.nombre }}</td>
-                    <td>{{ f.error|default:"—" }}</td>
-                    <td class="texto-suave small" style="overflow-wrap:anywhere">{{ f.url|truncatechars:70 }}</td>
-                    <td class="texto-suave small">{{ f.verificada|date:"j/m H:i"|default:"—" }}</td>
+                    <td><a href="{% url 'canales:importacion' i.pk %}">{{ i.archivo }}</a></td>
+                    <td class="texto-suave small">{{ i.creada|date:"j/m/Y H:i" }}{% if i.usuario %} · {{ i.usuario }}{% endif %}</td>
+                    <td class="dato">{{ i.total }}</td>
+                    <td>
+                        {% if i.terminada %}<span class="chip chip-agregada">Terminada</span>
+                        {% else %}<span class="chip chip-pendiente">A medio verificar</span>{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -96,22 +102,62 @@
     </div>
     {% else %}
     <div class="vacio">
-        <i class="bi bi-broadcast" aria-hidden="true"></i>
-        <p>No hay fuentes caídas.</p>
+        <i class="bi bi-collection-play" aria-hidden="true"></i>
+        <p>Todavía no se importó ninguna lista desde el panel.</p>
     </div>
     {% endif %}
 </section>
 {% endblock %}
 
 {% block scripts %}
+<script src="{% static 'js/tandas.js' %}"></script>
 <script>
-    // Verificar tarda: mientras tanto se deshabilita el botón para que no se mande dos veces.
-    document.querySelectorAll('form.js-tarda').forEach(function (form) {
-        form.addEventListener('submit', function () {
-            var boton = form.querySelector('button[type=submit]');
+(function () {
+    // Con listas grandes, analizar puede tardar unos segundos
+    var formImportar = document.getElementById('form-importar');
+    if (formImportar) {
+        formImportar.addEventListener('submit', function () {
+            var boton = formImportar.querySelector('button[type=submit]');
             boton.disabled = true;
-            boton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Verificando fuentes…';
+            boton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Subiendo y analizando…';
         });
+    }
+
+    // Volver a verificar todas, de a tandas
+    var caja = document.getElementById('verificar-todas');
+    if (!caja) return;
+    var boton = caja.querySelector('[data-accion=verificar]');
+    var avance = caja.querySelector('.avance');
+    var barra = caja.querySelector('.avance-barra');
+    var relleno = caja.querySelector('.avance-relleno');
+    var porcentaje = caja.querySelector('[data-texto=porcentaje]');
+    var detalle = caja.querySelector('[data-texto=detalle]');
+    var desde = 0;
+    var suma = {funcionan: 0, caidas: 0, revividas: 0, nuevas_caidas: 0};
+
+    var tarea = Tandas({
+        url: '{% url "canales:verificar_lote" %}',
+        datos: function () { return {desde: desde}; },
+        termino: function (r) { return r.terminado; },
+        alAvanzar: function (r) {
+            desde = r.siguiente;
+            Object.keys(suma).forEach(function (clave) { suma[clave] += r[clave]; });
+            relleno.style.width = r.porcentaje + '%';
+            barra.setAttribute('aria-valuenow', r.porcentaje);
+            porcentaje.textContent = r.porcentaje + ' % completado';
+            detalle.textContent = Tandas.numero(r.verificadas) + ' de ' + Tandas.numero(r.total) + ' fuentes · funcionan '
+                + Tandas.numero(suma.funcionan) + ' · caídas ' + Tandas.numero(suma.caidas)
+                + ' · volvieron ' + Tandas.numero(suma.revividas);
+        },
+        alTerminar: function () { window.location.reload(); },
+        alCambiar: function (corriendo) {
+            avance.hidden = false;
+            avance.classList.toggle('trabajando', corriendo);
+            boton.querySelector('span').textContent = corriendo ? 'Pausar' : (desde ? 'Continuar' : 'Volver a verificar todas');
+        },
+        alError: function (mensaje) { detalle.textContent = mensaje; },
     });
+    boton.addEventListener('click', function () { tarea.corriendo() ? tarea.pausar() : tarea.empezar(); });
+})();
 </script>
 {% endblock %}

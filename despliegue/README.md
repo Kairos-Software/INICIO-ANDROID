@@ -115,6 +115,23 @@ systemctl restart kairostv
 ```
 `crear_roles_iniciales` se repite porque suma a los roles los permisos nuevos.
 
+**yt-dlp** (lee YouTube, Twitch y otras páginas de video, ver `canales/README.md`)
+se rompe cada vez que esos sitios cambian algo. Si los canales de YouTube
+empiezan a aparecer caídos todos juntos, actualizarlo y reiniciar:
+```
+../venv/bin/pip install -U yt-dlp
+systemctl restart kairostv
+```
+
+**Si cambió `despliegue/nginx/kairostv.conf`** (git pull no lo aplica solo:
+nginx lee su propia copia), copiarlo y recargar nginx:
+```
+cp despliegue/nginx/kairostv.conf /opt/nginx/conf/conf.d/kairostv.conf
+/opt/nginx/sbin/nginx -t && /opt/nginx/sbin/nginx -s reload
+```
+Ejemplo: en octubre 2026 se agregó `client_max_body_size 25m;` para poder subir
+listas M3U grandes desde el panel (sin eso nginx corta en 1 MB con error 413).
+
 ## Si algo falla
 - Errores de Django: `journalctl -u kairostv -f`
 - Errores de nginx: `tail -f /opt/nginx/logs/error.log`

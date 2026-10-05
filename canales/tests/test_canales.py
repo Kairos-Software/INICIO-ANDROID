@@ -7,8 +7,9 @@ from rest_framework.test import APIClient
 
 from actividad.models import RegistroActividad
 from api import tokens
+from canales import clasificar
 from canales.m3u import leer_m3u, normalizar
-from canales.models import Canal, Categoria, Fuente
+from canales.models import Canal, Categoria, EntradaImportada, Fuente
 from canales.servicios import importar_m3u
 from usuarios.models import Usuario
 
@@ -52,9 +53,56 @@ class LectorM3UTests(TestCase):
         importar_m3u(lista)
         self.assertEqual(Fuente.objects.get(url='https://a/uno.m3u8').user_agent, 'Navegador/1.0')
 
+    def test_lee_rtsp_y_el_idioma(self):
+        lista = '#EXTM3U\n#EXTINF:-1 tvg-language="Spanish",Cámara\nrtsp://camara:554/vivo\n'
+        entrada, = leer_m3u(lista)
+        self.assertEqual((entrada.tipo, entrada.idioma), ('rtsp', 'Spanish'))
+
     def test_normalizar(self):
         self.assertEqual(normalizar('Canal 26 HD Ⓨ'), 'canal 26')
         self.assertEqual(normalizar('Telefé (720p)'), 'telefe')
+        # Las variantes de una lista "Xtream" son el mismo canal
+        self.assertEqual(normalizar('ES: (HD REPUESTO) DAZN F1'), normalizar('ES: DAZN F1 FHD'))
+
+
+class ClasificarTests(TestCase):
+
+    def test_nombre_limpio(self):
+        self.assertEqual(clasificar.limpiar_nombre('ES: (HD REPUESTO) DAZN LALIGA'), 'DAZN LALIGA')
+        self.assertEqual(clasificar.limpiar_nombre('13Max Televisión (1080p)'), '13Max Televisión')
+        self.assertEqual(clasificar.limpiar_nombre('5TV (Corrientes) [Not 24/7]'), '5TV (Corrientes)')
+        self.assertEqual(clasificar.limpiar_nombre('M+ DEPORTES'), 'M+ DEPORTES')
+
+    def test_idioma_y_pais(self):
+        self.assertEqual(clasificar.idioma_y_pais('Canal 26', pais='AR'), ('es', 'AR'))
+        self.assertEqual(clasificar.idioma_y_pais('CO: RCN', 'LAME | COLOMBIA'), ('es', 'CO'))
+        self.assertEqual(clasificar.idioma_y_pais('ES: DAZN 1', 'ES | DEPORTES'), ('es', 'ES'))
+        self.assertEqual(clasificar.idioma_y_pais('Algo', 'LAME | LATINO'), ('es', ''))
+        self.assertEqual(clasificar.idioma_y_pais('USA: NBC', 'USA | VIP-A'), ('otro', 'US'))
+        # "AR:" en una categoría árabe NO es Argentina
+        self.assertEqual(clasificar.idioma_y_pais('AR: KUWAIT QURAIN', 'ARAB | KUWAIT')[0], 'otro')
+        self.assertEqual(clasificar.idioma_y_pais('Telefe', tvg_id='Telefe.ar@SD'), ('es', 'AR'))
+        self.assertEqual(clasificar.idioma_y_pais('Canal raro'), ('', ''))
+        self.assertEqual(clasificar.idioma_y_pais('X', idioma='English'), ('otro', ''))
+
+    def test_contenido_y_formato(self):
+        self.assertEqual(clasificar.contenido('http://x:8080/movie/u/p/1.mkv'), 'pelicula')
+        self.assertEqual(clasificar.contenido('http://x:8080/series/u/p/1.mp4'), 'serie')
+        self.assertEqual(clasificar.contenido('http://x:8080/u/p/57485'), 'vivo')
+        self.assertEqual(clasificar.formato('http://x:8080/u/p/57485'), '')   # lo averigua la verificación
+        self.assertEqual(clasificar.formato('https://x/a.m3u8?token=1'), 'hls')
+        self.assertEqual(clasificar.formato('https://x/manifest.mpd'), 'dash')
+        self.assertEqual(clasificar.formato('http://x/live/1.ts'), 'directo')
+        self.assertEqual(clasificar.formato('rtmp://x/live'), 'rtmp')
+        self.assertEqual(clasificar.formato('https://www.youtube.com/@tn/live'), 'youtube')
+        self.assertEqual(clasificar.formato('https://youtu.be/abc'), 'youtube')
+        self.assertEqual(clasificar.formato('https://www.twitch.tv/canal'), 'pagina')
+        self.assertEqual(clasificar.formato('https://noesyoutube.com/a.m3u8'), 'hls')
+
+    def test_para_adultos(self):
+        self.assertTrue(clasificar.para_adultos('XXX: Algo', ''))
+        self.assertTrue(clasificar.para_adultos('Canal', 'XXX-VIP [ 18+ ]'))
+        self.assertFalse(clasificar.para_adultos('TN', 'Noticias'))
 
 
 class ImportarTests(TestCase):
@@ -64,7 +112,8 @@ class ImportarTests(TestCase):
         self.assertEqual(resultado.canales_nuevos, 3)
         self.assertEqual(Canal.objects.count(), 3)
         self.assertEqual(set(Categoria.objects.values_list('nombre', flat=True)), {'Noticias', 'Cultura'})
-        self.assertEqual(Canal.objects.get(tvg_id='Canal26.ar').categoria.nombre, 'Noticias')
+        canal26 = Canal.objects.get(tvg_id='Canal26.ar')
+        self.assertEqual((canal26.categoria.nombre, canal26.idioma), ('Noticias', 'es'))
         self.assertTrue(RegistroActividad.objects.filter(modulo='canales').exists())
 
     def test_reimportar_no_duplica(self):
@@ -75,13 +124,59 @@ class ImportarTests(TestCase):
 
     def test_el_mismo_canal_en_otra_lista_suma_una_alternativa(self):
         importar_m3u(LISTA)
-        otra = ('#EXTM3U\n#EXTINF:-1 tvg-id="canal26.ar",Canal 26 HD\nhttps://servidor-c/c26.m3u8\n'
+        otra = ('#EXTM3U\n#EXTINF:-1 tvg-id="canal26.ar",AR: Canal 26 HD\nhttps://servidor-c/c26.m3u8\n'
                 '#EXTINF:-1,Sin Atributos\nhttps://servidor-d/otra.m3u8\n')
         resultado = importar_m3u(otra)
         self.assertEqual((resultado.canales_nuevos, resultado.fuentes_nuevas), (0, 2))
         canal26 = Canal.objects.get(tvg_id='Canal26.ar')
         self.assertEqual(list(canal26.fuentes.values_list('url', flat=True)),
                          ['https://servidor-a/canal26/main.m3u8', 'https://servidor-c/c26.m3u8'])
+
+    def test_mismo_tvg_id_pero_otro_canal_no_se_mezcla(self):
+        """Hay listas que le ponen el mismo tvg-id a canales distintos."""
+        lista = ('#EXTM3U\n#EXTINF:-1 tvg-id="IberaliaTV.es",ES: DAZN LALIGA\nhttp://x/1\n'
+                 '#EXTINF:-1 tvg-id="IberaliaTV.es",ES: M+ DEPORTES\nhttp://x/2\n')
+        importar_m3u(lista)
+        self.assertEqual(set(Canal.objects.values_list('nombre', flat=True)), {'DAZN LALIGA', 'M+ DEPORTES'})
+
+    def test_descarta_lo_que_no_sirve_con_el_motivo(self):
+        lista = ('#EXTM3U\n'
+                 '#EXTINF:-1 group-title="VOD | SPAIN",Una película\nhttp://x/movie/u/p/1.mkv\n'
+                 '#EXTINF:-1 group-title="USA | VIP-A",USA: NBC\nhttp://x/u/p/2\n'
+                 '#EXTINF:-1 group-title="LAME | ARGENTINA",AR: Telefe\nhttp://x/u/p/3\n'
+                 '#EXTINF:-1 group-title="XXX-VIP [ 18+ ]",XXX: Algo\nhttp://x/u/p/4\n'
+                 '#EXTINF:-1,\nhttp://x/u/p/5\n'
+                 '#EXTINF:-1,Repetido\nhttp://x/u/p/3\n'
+                 '#EXTINF:-1,Por RTMP\nrtmp://x/vivo\n')
+        importar_m3u(lista, solo_espanol=True, descartar_vod=True)
+        motivos = dict(EntradaImportada.objects.values_list('posicion', 'motivo'))
+        estados = dict(EntradaImportada.objects.values_list('posicion', 'estado'))
+        self.assertEqual(motivos[1], 'Es una película, no un canal en vivo.')
+        self.assertEqual(motivos[2], 'No está en español (país: US).')
+        self.assertEqual(estados[3], EntradaImportada.Estado.AGREGADA)
+        self.assertEqual(motivos[4], 'Es contenido para adultos.')
+        self.assertEqual(motivos[5], 'No tiene un nombre definido.')
+        self.assertEqual(estados[6], EntradaImportada.Estado.REPETIDA)
+        self.assertIn('RTMP', motivos[7])
+        self.assertEqual(list(Canal.objects.values_list('nombre', flat=True)), ['Telefe'])
+
+    def test_por_defecto_importa_peliculas_y_series(self):
+        lista = ('#EXTM3U\n#EXTINF:-1 group-title="VOD | SPAIN",6 Guns (2010)\nhttp://x/movie/u/p/1.mkv\n'
+                 '#EXTINF:-1 group-title="SERIES | HBO",Show S01 E01\nhttp://x/series/u/p/2.mkv\n'
+                 '#EXTINF:-1,6 Guns (2010)\nhttp://x/u/p/3\n')
+        importar_m3u(lista)
+        contenidos = dict(Canal.objects.values_list('nombre', 'contenido'))
+        # La película y el "en vivo" con el mismo nombre no se mezclan
+        self.assertEqual(Canal.objects.filter(nombre='6 Guns (2010)').count(), 2)
+        self.assertEqual(contenidos['Show S01 E01'], 'serie')
+
+    def test_no_vuelve_a_meter_un_canal_quitado(self):
+        importar_m3u(LISTA)
+        Canal.objects.filter(nombre='Canal 26').update(activo=False, motivo_quitado='No interesa')
+        importar_m3u('#EXTM3U\n#EXTINF:-1 tvg-country="AR",Canal 26\nhttps://otro/c26.m3u8\n')
+        entrada = EntradaImportada.objects.get(url='https://otro/c26.m3u8')
+        self.assertEqual(entrada.estado, EntradaImportada.Estado.DESCARTADA)
+        self.assertIn('quitado', entrada.motivo)
 
     def test_comando(self):
         archivo = Path(__file__).resolve().parent.parent / 'datos' / 'canales_prueba.m3u8'
@@ -111,6 +206,24 @@ class ApiCanalesTests(TestCase):
         canal26 = datos['categorias'][0]['canales'][0]
         self.assertEqual(canal26['fuentes'][0]['url'], 'https://servidor-a/canal26/main.m3u8')
         self.assertEqual(canal26['logo'], 'https://logo/26.png')
+
+    def test_la_app_vieja_solo_recibe_hls(self):
+        """La 1.0.0 no manda ?formatos= y solo sabe HLS: no recibe video directo."""
+        Fuente.objects.filter(canal__nombre='Sin atributos').update(tipo=Fuente.Tipo.DIRECTO)
+        self.assertEqual(self.client.get(self.URL).json()['cantidad'], 1)
+        datos = self.client.get(self.URL, {'formatos': 'hls,dash,directo,rtsp'}).json()
+        self.assertEqual(datos['cantidad'], 2)
+
+    def test_peliculas_aparte(self):
+        importar_m3u('#EXTM3U\n#EXTINF:-1,Una película\nhttp://x/movie/u/p/1.mp4\n')
+        formatos = {'formatos': 'hls,directo'}
+        self.assertEqual(self.client.get(self.URL, formatos).json()['cantidad'], 2)   # solo los en vivo
+        datos = self.client.get(self.URL, {**formatos, 'contenido': 'pelicula'}).json()
+        self.assertEqual([c['nombre'] for g in datos['categorias'] for c in g['canales']], ['Una película'])
+
+    def test_youtube_le_llega_a_la_app_nueva(self):
+        datos = self.client.get(self.URL, {'formatos': 'hls,youtube'}).json()
+        self.assertEqual(datos['cantidad'], 3)
 
     def test_no_muestra_inactivos_ni_sin_fuentes(self):
         Canal.objects.filter(nombre='Canal 26').update(activo=False)

@@ -23,8 +23,9 @@ indican de dos maneras, y las dos se leen:
 """
 
 import re
-import unicodedata
 from dataclasses import dataclass
+
+from .clasificar import formato, limpiar_nombre, sin_acentos
 
 _ATRIBUTO = re.compile(r'([\w-]+)\s*=\s*"([^"]*)"')
 # Marcas que algunas listas agregan al nombre (Ⓨ = YouTube, Ⓖ = geobloqueado...)
@@ -42,18 +43,21 @@ class EntradaM3U:
     pais: str = ''
     user_agent: str = ''
     referer: str = ''
+    idioma: str = ''   # el tvg-language tal cual viene ("Spanish", "es"...)
 
     @property
     def tipo(self):
-        return 'youtube' if re.search(r'youtube\.com|youtu\.be', self.url, re.I) else 'hls'
+        """
+        El formato que parece por la dirección. Si no se sabe (ej: las listas
+        "Xtream", sin extensión) queda HLS hasta que la verificación averigüe
+        el real. Puede ser 'rtmp', que la app no reproduce.
+        """
+        return formato(self.url) or 'hls'
 
 
 def normalizar(texto):
-    """'Canal 26 HD Ⓨ' -> 'canal 26': para reconocer el mismo canal escrito distinto."""
-    texto = unicodedata.normalize('NFD', _MARCAS.sub('', texto or ''))
-    texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn').lower()
-    texto = re.sub(r'\((\d+p|hd|sd|fhd|4k)\)|\b(hd|sd|fhd|4k)\b', ' ', texto)
-    return ' '.join(texto.split())
+    """'ES: Canal 26 HD Ⓨ' -> 'canal 26': para reconocer el mismo canal escrito distinto."""
+    return ' '.join(sin_acentos(limpiar_nombre(texto)).split())
 
 
 def leer_m3u(texto):
@@ -72,7 +76,7 @@ def leer_m3u(texto):
                 nombre = linea[fin_atributos + 2:].strip()
             else:
                 nombre = linea.split(',', 1)[1].strip() if ',' in linea else ''
-            nombre = _MARCAS.sub('', atributos.get('tvg-name') or nombre).strip() or 'Canal'
+            nombre = _MARCAS.sub('', atributos.get('tvg-name') or nombre).strip()   # '' = sin nombre
             pendiente = EntradaM3U(
                 nombre=nombre,
                 url='',
@@ -81,6 +85,7 @@ def leer_m3u(texto):
                 numero=atributos.get('tvg-chno', '').strip(),
                 tvg_id=atributos.get('tvg-id', '').strip(),
                 pais=atributos.get('tvg-country', '').strip().upper()[:2],
+                idioma=atributos.get('tvg-language', '').strip(),
             )
         elif linea.upper().startswith('#EXTVLCOPT:') and pendiente is not None:
             opcion, _, valor = linea[len('#EXTVLCOPT:'):].partition('=')
@@ -102,7 +107,7 @@ def leer_m3u(texto):
                     pendiente.user_agent = valor.strip()
                 elif clave in ('referer', 'referrer'):
                     pendiente.referer = valor.strip()
-            if pendiente.url.lower().startswith(('http://', 'https://')):
+            if pendiente.url.lower().startswith(('http://', 'https://', 'rtsp://', 'rtsps://', 'rtmp')):
                 entradas.append(pendiente)
             pendiente = None
     return entradas

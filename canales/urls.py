@@ -6,5 +6,13 @@ app_name = 'canales'
 
 urlpatterns = [
     path('', views.inicio, name='inicio'),
-    path('verificar/', views.verificar, name='verificar'),
+    path('verificar/lote/', views.verificar_lote, name='verificar_lote'),
+    path('importaciones/<int:pk>/', views.importacion, name='importacion'),
+    path('importaciones/<int:pk>/lote/', views.importacion_lote, name='importacion_lote'),
+    path('importaciones/<int:pk>/reintentar/', views.importacion_reintentar, name='importacion_reintentar'),
+    path('importaciones/<int:pk>/borrar/', views.importacion_borrar, name='importacion_borrar'),
+    path('catalogo/', views.catalogo, name='catalogo'),
+    path('canal/<int:pk>/editar/', views.canal_editar, name='canal_editar'),
+    path('catalogo/quitar/', views.catalogo_quitar, name='catalogo_quitar'),
+    path('catalogo/mostrar/', views.catalogo_mostrar, name='catalogo_mostrar'),
 ]
