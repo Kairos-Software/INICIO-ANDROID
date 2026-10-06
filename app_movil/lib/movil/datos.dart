@@ -48,6 +48,12 @@ class Serie {
 
   List<int> get numerosDeTemporada => temporadas.keys.toList()..sort();
 
+  /// Se puede seguir desde el principio: tiene el T1:E1 y al menos
+  /// [minimoDeCapitulos]. Las que no (sueltas o a medias) no se muestran.
+  bool get completa => episodios.length >= minimoDeCapitulos && (temporadas[1]?.any((e) => e.numero == 1) ?? false);
+
+  static const minimoDeCapitulos = 3;
+
   List<Episodio> get episodios => [for (final t in numerosDeTemporada) ...temporadas[t]!];
 
   /// Para "Mi lista": las series se guardan por nombre (sus capítulos tienen cada uno su id).
@@ -117,10 +123,42 @@ String categoriaLegible(String categoria) {
 
 /// Lo que hay para ver. Se pide al abrir la app, al volver a ella y cada 15
 /// minutos (una TV o un celular pueden quedar abiertos todo el día).
+///
+/// Solo trae lo que ESTE aparato puede ver ([_seVe]): saca lo que tiene un
+/// códec que el aparato no muestra, lo que ya falló acá ([NoAnda]) y las
+/// series a medias ([Serie.completa]).
 class Catalogo extends ChangeNotifier {
-  Catalogo(this.api);
+  Catalogo(this.api) {
+    NoAnda.cambios.addListener(_sacarLoQueNoAnda);
+  }
 
   final ApiCliente api;
+
+  static bool _seVe(Canal canal) => canal.fuentesReproducibles.isNotEmpty && !NoAnda.oculto(canal.id);
+
+  /// Algo acaba de fallar en este aparato: se saca ya, sin esperar a la próxima carga.
+  void _sacarLoQueNoAnda() {
+    for (final categoria in categoriasEnVivo) {
+      categoria.canales.removeWhere((c) => NoAnda.oculto(c.id));
+    }
+    categoriasEnVivo = categoriasEnVivo.where((c) => c.canales.isNotEmpty).toList();
+    peliculas = peliculas.where((c) => !NoAnda.oculto(c.id)).toList();
+    for (final serie in series) {
+      for (final capitulos in serie.temporadas.values) {
+        capitulos.removeWhere((e) => NoAnda.oculto(e.canal.id));
+      }
+      serie.temporadas.removeWhere((_, capitulos) => capitulos.isEmpty);
+    }
+    series = series.where((s) => s.completa).toList();
+    _numeros.clear();
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    NoAnda.cambios.removeListener(_sacarLoQueNoAnda);
+    super.dispose();
+  }
 
   List<CategoriaCanales> categoriasEnVivo = [];
   List<Canal> peliculas = [];
@@ -205,10 +243,16 @@ class Catalogo extends ChangeNotifier {
     }
 
     try {
-      final resultados = await Future.wait([pedir('vivo'), pedir('pelicula'), pedir('serie')]);
-      categoriasEnVivo = resultados[0];
-      peliculas = [for (final c in resultados[1]) ...c.canales];
-      series = agruparSeries([for (final c in resultados[2]) ...c.canales]);
+      final resultados = await Future.wait([pedir('vivo'), pedir('pelicula'), pedir('serie'), NoAnda.cargar()]);
+      final vivo = resultados[0] as List<CategoriaCanales>;
+      for (final categoria in vivo) {
+        categoria.canales.retainWhere(_seVe);
+      }
+      categoriasEnVivo = vivo.where((c) => c.canales.isNotEmpty).toList();
+      peliculas = [for (final c in resultados[1] as List<CategoriaCanales>) ...c.canales.where(_seVe)];
+      series = agruparSeries([for (final c in resultados[2] as List<CategoriaCanales>) ...c.canales.where(_seVe)])
+          .where((s) => s.completa)
+          .toList();
       _numerar();
       cargado = true;
     } catch (e) {
@@ -246,6 +290,81 @@ class Catalogo extends ChangeNotifier {
       if (serie.nombre == nombre) return serie;
     }
     return null;
+  }
+}
+
+// ── Lo que no anda en este aparato ─────────────────────────────────
+
+/// Lo que se probó en ESTE aparato y no se pudo ver con ninguna de sus
+/// fuentes (canal caído, bloqueado en la zona, formato que no muestra...).
+/// Se deja de mostrar un tiempo, según el motivo, sin esperar a que el
+/// servidor lo saque (eso pasa recién cuando falla en varios aparatos):
+///   - formato (el aparato no lo sabe mostrar): 30 días; no va a cambiar.
+///   - en vivo: 6 horas (los canales vuelven).
+///   - películas y capítulos: 3 días.
+/// Se guarda en el aparato.
+class NoAnda {
+  static const _clave = 'kairos.no_anda';
+  static const _maximo = 500;
+
+  static final Map<int, DateTime> _hasta = {};
+  static bool _cargado = false;
+
+  /// Avisa cuando se anota algo (el catálogo lo saca enseguida).
+  static final cambios = ValueNotifier<int>(0);
+
+  static bool oculto(int id) {
+    final hasta = _hasta[id];
+    return hasta != null && hasta.isAfter(DateTime.now());
+  }
+
+  static Duration cuantoTiempo({required bool enVivo, required bool deFormato}) {
+    if (deFormato) return const Duration(days: 30);
+    return enVivo ? const Duration(hours: 6) : const Duration(days: 3);
+  }
+
+  static Future<void> cargar() async {
+    if (_cargado) return;
+    _cargado = true;
+    try {
+      final preferencias = await SharedPreferences.getInstance();
+      final guardados = jsonDecode(preferencias.getString(_clave) ?? '{}') as Map<String, dynamic>;
+      for (final MapEntry(:key, :value) in guardados.entries) {
+        final id = int.tryParse(key);
+        if (id != null) _hasta[id] = DateTime.fromMillisecondsSinceEpoch(value as int);
+      }
+    } catch (_) {
+      // Si no se puede leer, se arranca sin nada
+    }
+  }
+
+  static void anotar(Canal canal, {required bool deFormato}) {
+    final ahora = DateTime.now();
+    _hasta
+      ..removeWhere((_, hasta) => hasta.isBefore(ahora))
+      ..[canal.id] = ahora.add(cuantoTiempo(enVivo: canal.contenido == 'vivo', deFormato: deFormato));
+    while (_hasta.length > _maximo) {
+      _hasta.remove(_hasta.keys.first);
+    }
+    cambios.value++;
+    unawaited(_guardar());
+  }
+
+  static Future<void> _guardar() async {
+    try {
+      final preferencias = await SharedPreferences.getInstance();
+      await preferencias.setString(
+        _clave,
+        jsonEncode({for (final MapEntry(:key, :value) in _hasta.entries) '$key': value.millisecondsSinceEpoch}),
+      );
+    } catch (_) {}
+  }
+
+  /// Solo para las pruebas.
+  @visibleForTesting
+  static void olvidarTodo() {
+    _hasta.clear();
+    _cargado = true;
   }
 }
 

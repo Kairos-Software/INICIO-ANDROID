@@ -123,6 +123,7 @@ class _EnfocableState extends State<Enfocable> {
       label: widget.etiqueta,
       child: Focus(
         focusNode: widget.nodo,
+        debugLabel: widget.etiqueta,
         autofocus: widget.autofocus,
         onFocusChange: _alCambiarFoco,
         onKeyEvent: _alTecla,

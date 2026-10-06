@@ -1,7 +1,8 @@
 /// Reproduce un canal, película o capítulo probando sus fuentes en orden:
 /// si una no arranca, da error o se queda trabada cargando, pasa sola a la
 /// siguiente (failover) y le avisa al servidor que esa falló y por qué (ver
-/// [Falla]). Si ninguna anda, queda con [error]: el motivo de la última.
+/// [Falla]). Si ninguna anda, queda con [error]: el motivo de la última, y
+/// se anota en [NoAnda] (deja de mostrarse en este aparato por un tiempo).
 ///
 /// Además:
 ///   - Sin imagen: si a los pocos segundos el video suena pero no tiene imagen
@@ -30,6 +31,8 @@ import 'package:video_player/video_player.dart';
 import '../api/cliente.dart';
 import '../api/modelos.dart';
 import '../senales.dart';
+import 'ajustes_video.dart';
+import 'datos.dart';
 
 class ControlSenal extends ChangeNotifier {
   ControlSenal(this.api);
@@ -55,6 +58,15 @@ class ControlSenal extends ChangeNotifier {
   /// Dibujar el video en una superficie de Android (ver arriba). Lo decide
   /// Biblioteca.videoEnSuperficie (Mi cuenta en la TV).
   static bool enSuperficie = false;
+
+  /// Cómo se acomoda la imagen en la pantalla (Ajustar / Llenar / Estirar).
+  /// Vale para todo lo que se vea mientras la app está abierta.
+  static AjusteImagen ajuste = AjusteImagen.ajustar;
+
+  /// La calidad y el idioma que se eligieron para lo que se está viendo
+  /// (null = automática / el del video). Se olvidan al cambiar de fuente.
+  String? calidadElegida;
+  String? idiomaElegido;
 
   final ApiCliente api;
 
@@ -134,6 +146,8 @@ class ControlSenal extends ChangeNotifier {
     fuente = indice;
     error = null;
     _andaba = false;
+    calidadElegida = null;
+    idiomaElegido = null;
     _avisar();
     await anterior?.dispose();
     if (intento != _intento || _cerrado) return;
@@ -151,6 +165,12 @@ class ControlSenal extends ChangeNotifier {
       error = fuentes.isEmpty
           ? 'Este canal no tiene una señal que la app pueda reproducir.'
           : (_ultimaFalla?.mensaje ?? Falla.conexion.mensaje);
+      // No anduvo ninguna: deja de mostrarse en este aparato por un tiempo
+      // (salvo que el problema sea la conexión del aparato)
+      final falla = _ultimaFalla;
+      if (fuentes.isNotEmpty && falla != null && falla.motivo != Falla.sinInternet.motivo) {
+        NoAnda.anotar(canal!, deFormato: falla.motivo == Falla.formato.motivo);
+      }
       _avisar();
       return;
     }
@@ -288,6 +308,56 @@ class ControlSenal extends ChangeNotifier {
   void alternarSonido() {
     _volumen = _volumen == 0 ? 1 : 0;
     video?.setVolume(_volumen);
+    _avisar();
+  }
+
+  // ── Ajustes (ajustes_video.dart) ──
+
+  /// Las calidades que ofrece la señal, de mayor a menor (vacía si no hay para elegir).
+  Future<List<Calidad>> calidades() async {
+    final actual = video;
+    if (actual == null || !actual.isVideoTrackSupportAvailable()) return const [];
+    try {
+      return Calidad.ordenadas((await actual.getVideoTracks()).where((p) => (p.height ?? 0) > 0));
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// null = automática (el reproductor la elige según la velocidad de internet).
+  Future<void> elegirCalidad(Calidad? calidad) async {
+    final actual = video;
+    if (actual == null) return;
+    calidadElegida = calidad?.pista.id;
+    _avisar();
+    try {
+      await actual.selectVideoTrack(calidad?.pista);
+    } catch (_) {}
+  }
+
+  /// Los audios del video (idiomas).
+  Future<List<VideoAudioTrack>> idiomas() async {
+    final actual = video;
+    if (actual == null || !actual.isAudioTrackSupportAvailable()) return const [];
+    try {
+      return await actual.getAudioTracks();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> elegirIdioma(String id) async {
+    final actual = video;
+    if (actual == null) return;
+    idiomaElegido = id;
+    _avisar();
+    try {
+      await actual.selectAudioTrack(id);
+    } catch (_) {}
+  }
+
+  void cambiarAjuste(AjusteImagen nuevo) {
+    ajuste = nuevo;
     _avisar();
   }
 

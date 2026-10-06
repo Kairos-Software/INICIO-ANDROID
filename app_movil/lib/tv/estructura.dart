@@ -60,7 +60,7 @@ class PantallaTv extends StatefulWidget {
     this.catalogo,
     this.biblioteca,
     this.seccionInicial = SeccionTv.inicio,
-    this.esperaReposo = const Duration(minutes: 3),
+    this.esperaReposo = const Duration(minutes: 1),
   });
 
   /// Solo para las pruebas: un catálogo y una biblioteca ya armados.
@@ -69,8 +69,8 @@ class PantallaTv extends StatefulWidget {
   final SeccionTv seccionInicial;
 
   /// Cuánto tiempo sin tocar el control (y sin nada reproduciéndose) hasta
-  /// que aparece el modo reposo (tv/reposo.dart). Menos que el protector de
-  /// pantalla de Android TV (5 minutos o más), para que se vea el nuestro.
+  /// que aparece el modo reposo (tv/reposo.dart): 1 minuto. Menos que el
+  /// protector de pantalla de Android TV (5 minutos o más), para que se vea el nuestro.
   final Duration esperaReposo;
 
   @override
@@ -179,7 +179,7 @@ class _PantallaTvState extends State<PantallaTv> {
     if (!mounted || _enReposo) return;
     if (!(ModalRoute.of(context)?.isCurrent ?? false) || !_catalogo.cargado) return _esperarReposo();
     _enReposo = true;
-    await abrirTv<void>(_contexto, PantallaReposoTv(diapositivas: Diapositiva.delCatalogo(_catalogo)));
+    await abrirTv<void>(_contexto, PantallaReposoTv(vidriera: Vidriera.delCatalogo(_catalogo)));
     _enReposo = false;
     if (mounted) _esperarReposo();
   }

@@ -18,6 +18,8 @@ class SeriesPanelTests(TestCase):
             codec='h265', error='No respondió a tiempo.',
         )
         self.lucifer = self.capitulo('Lucifer S02 E03 Sin City', estado=Fuente.Estado.CAIDA)
+        self.capitulo('Arrow S01 E03 Lone Gunmen')
+        self.capitulo('Arrow S02 E01 City of Heroes')
 
     def capitulo(self, nombre, estado=Fuente.Estado.FUNCIONA, codec='', error=''):
         canal = Canal.objects.create(nombre=nombre, contenido='serie', categoria=self.categoria)
@@ -75,6 +77,21 @@ class SeriesPanelTests(TestCase):
             self.client.get(reverse('canales:serie_detalle'), {'nombre': 'Arrow'}).status_code,
             403,
         )
+
+
+    def test_series_a_medias_no_estan_en_la_app(self):
+        # Se ven capítulos, pero no el primero: la app no la muestra (no se puede empezar)
+        self.capitulo('Dexter S03 E04')
+        self.capitulo('Dexter S03 E05')
+        self.capitulo('Dexter S03 E06')
+        respuesta = self.client.get(reverse('canales:series'), {'estado': 'incompleta'})
+        self.assertContains(respuesta, 'Dexter')
+        self.assertContains(respuesta, 'No está en la app')
+        self.assertNotContains(respuesta, 'Arrow')
+        respuesta = self.client.get(reverse('canales:series'), {'estado': 'en_app'})
+        self.assertNotContains(respuesta, 'Dexter')
+        respuesta = self.client.get(reverse('canales:serie_detalle'), {'nombre': 'Dexter'})
+        self.assertContains(respuesta, 'Falta el capítulo 1 de la temporada 1')
 
 
 class ContenidoEnCatalogoTests(TestCase):

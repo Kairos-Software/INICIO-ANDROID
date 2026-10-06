@@ -209,6 +209,25 @@ class CodecTests(TestCase):
         self.assertEqual(verificacion.codec_de_hls(texto), 'h265')
         self.assertEqual(verificacion.codec_de_hls('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\na.m3u8\n'), '')
 
+    def test_video_de_10_bits(self):
+        mp4 = b'\x00\x00\x00\x18ftypisom..avc1..'
+        # MP4: la caja avcC con el perfil 110 (0x6E, High 10 o "Hi10P") o 100 (0x64, High: 8 bits)
+        self.assertEqual(verificacion.detectar_codec(mp4 + b'avcC\x01\x6e\x00\x1e'), 'h264_10')
+        self.assertEqual(verificacion.detectar_codec(mp4 + b'avcC\x01\x64\x00\x1e'), 'h264')
+        # ...y la hvcC con Main 10 (2)
+        self.assertEqual(verificacion.detectar_codec(b'\x00\x00\x00\x18ftyp..hvc1..hvcC\x01\x02\x20'), 'h265_10')
+        # MKV: el CodecPrivate (63 A2 + tamaño) después del CodecID
+        mkv = b'\x1aE\xdf\xa3..V_MPEG4/ISO/AVC\x63\xa2\x90\x01\x6e\x00\x1e'
+        self.assertEqual(verificacion.detectar_codec(mkv), 'h264_10')
+        # MPEG-TS: el SPS del video (00 00 01 67 + perfil)
+        self.assertEqual(verificacion.detectar_codec(_video_ts(0x1B) + b'\x00\x00\x01\x67\x6e\x00\x1e\x00'), 'h264_10')
+        self.assertEqual(verificacion.detectar_codec(_video_ts(0x1B) + b'\x00\x00\x01\x67\x4d\x00\x1e\x00'), 'h264')
+        # HLS: el CODECS de la lista maestra
+        maestra = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,CODECS="{}"\na.m3u8\n'
+        self.assertEqual(verificacion.codec_de_hls(maestra.format('avc1.6E0028,mp4a.40.2')), 'h264_10')
+        self.assertEqual(verificacion.codec_de_hls(maestra.format('hvc1.2.4.L120.B0')), 'h265_10')
+        self.assertEqual(verificacion.codec_de_hls(maestra.format('avc1.64001f')), 'h264')
+
     def test_la_verificacion_lo_guarda(self):
         lista = '#EXTM3U\n#EXTINF:6,\nseg1.ts\n'
         datos = {'https://x/a.m3u8': lista.encode(), 'https://x/seg1.ts': _video_ts(0x02)}

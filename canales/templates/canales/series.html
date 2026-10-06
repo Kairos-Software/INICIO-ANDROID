@@ -30,7 +30,8 @@
         <label for="estado" class="visually-hidden">Disponibilidad</label>
         <select id="estado" name="estado" class="form-select">
             <option value="">Todas</option>
-            <option value="en_app" {% if filtros.estado == 'en_app' %}selected{% endif %}>Con capítulos que se ven</option>
+            <option value="en_app" {% if filtros.estado == 'en_app' %}selected{% endif %}>Las que muestra la app</option>
+            <option value="incompleta" {% if filtros.estado == 'incompleta' %}selected{% endif %}>A medias (la app no las muestra)</option>
             <option value="fuera" {% if filtros.estado == 'fuera' %}selected{% endif %}>Sin ninguno que se vea</option>
         </select>
     </div>
@@ -57,6 +58,7 @@
             <div>
                 <p class="serie-categoria">{{ serie.categoria|default:"Sin categoría" }}</p>
                 <h2><a href="{% url 'canales:serie_detalle' %}?nombre={{ serie.nombre|urlencode }}">{{ serie.nombre }}</a></h2>
+                {% if not serie.completa %}<span class="chip chip-caida" title="{{ serie.por_que_no_se_ve }}">No está en la app</span>{% endif %}
             </div>
             <dl class="serie-metricas">
                 <div><dt>Temporadas</dt><dd class="dato">{{ serie.numeros_de_temporada|length }}</dd></div>

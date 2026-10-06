@@ -20,6 +20,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../api/modelos.dart';
 import '../sesion.dart';
 import '../marca.dart';
+import 'ajustes_video.dart';
 import 'componentes.dart';
 import 'control_senal.dart';
 import 'datos.dart';
@@ -181,33 +182,7 @@ class _PantallaReproductorVodState extends State<PantallaReproductorVod> {
     _control.video?.setPlaybackSpeed(_velocidades[_velocidad]);
   }
 
-  Future<void> _elegirFuente() async {
-    final fuentes = _control.fuentes;
-    final elegida = await showModalBottomSheet<int>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-              child: Text('Fuente de la señal', style: Letra.titulo.copyWith(fontSize: 16)),
-            ),
-            for (final (i, fuente) in fuentes.indexed)
-              ListTile(
-                leading: Icon(Icons.dns_rounded, color: i == _control.fuente ? Tono.celeste : Tono.textoSuave),
-                title: Text('Fuente ${i + 1}', style: Letra.etiqueta.copyWith(fontSize: 14)),
-                subtitle: Text(_nombreFormato(fuente.tipo), style: Letra.numeros),
-                trailing: i == _control.fuente ? const Icon(Icons.check_rounded, color: Tono.celeste) : null,
-                onTap: () => Navigator.pop(context, i),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (elegida != null) _control.usarFuente(elegida);
-  }
+  Future<void> _ajustes() => ajustesDeVideoMovil(context, _control);
 
   String get _titulo => widget.serie?.nombre ?? sinAnio(_canal.nombre);
 
@@ -233,7 +208,7 @@ class _PantallaReproductorVodState extends State<PantallaReproductorVod> {
             pantallaCompleta: true,
             alTocar: () => _controles ? setState(() => _controles = false) : _mostrarControles(),
             alVolver: _alternarPantallaCompleta,
-            alFuentes: _elegirFuente,
+            alAjustes: _ajustes,
             alMostrarControles: _mostrarControles,
             barra: _barra(compacta: true),
           ),
@@ -257,7 +232,7 @@ class _PantallaReproductorVodState extends State<PantallaReproductorVod> {
               pantallaCompleta: false,
               alTocar: () => _controles ? setState(() => _controles = false) : _mostrarControles(),
               alVolver: () => Navigator.maybePop(context),
-              alFuentes: _elegirFuente,
+              alAjustes: _ajustes,
               alMostrarControles: _mostrarControles,
             ),
           ),
@@ -276,14 +251,7 @@ class _PantallaReproductorVodState extends State<PantallaReproductorVod> {
                         alTocar: _cambiarVelocidad,
                       ),
                       const SizedBox(width: Espacio.xs),
-                      _Accion(
-                        icono: Icons.dns_rounded,
-                        color: Tono.doradoClaro,
-                        texto: _control.fuentes.length > 1
-                            ? 'Fuente ${_control.fuente + 1}/${_control.fuentes.length}'
-                            : 'Fuente',
-                        alTocar: _control.fuentes.length > 1 ? _elegirFuente : null,
-                      ),
+                      _Accion(icono: Icons.tune_rounded, color: Tono.doradoClaro, texto: 'Ajustes', alTocar: _ajustes),
                       const SizedBox(width: Espacio.xs),
                       _Accion(
                         icono: Icons.skip_next_rounded,
@@ -439,16 +407,6 @@ class _PantallaReproductorVodState extends State<PantallaReproductorVod> {
   }
 }
 
-String _nombreFormato(String tipo) => switch (tipo) {
-  'hls' => 'HLS',
-  'dash' => 'DASH',
-  'directo' => 'Video directo',
-  'rtsp' => 'RTSP',
-  'youtube' => 'YouTube',
-  'pagina' => 'Página de video',
-  _ => tipo,
-};
-
 class _BarraReproductor extends StatelessWidget implements PreferredSizeWidget {
   const _BarraReproductor({required this.titulo});
 
@@ -500,7 +458,7 @@ class _Video extends StatelessWidget {
     required this.pantallaCompleta,
     required this.alTocar,
     required this.alVolver,
-    required this.alFuentes,
+    required this.alAjustes,
     required this.alMostrarControles,
     this.barra,
   });
@@ -512,7 +470,7 @@ class _Video extends StatelessWidget {
   final bool pantallaCompleta;
   final VoidCallback alTocar;
   final VoidCallback alVolver;
-  final VoidCallback alFuentes;
+  final VoidCallback alAjustes;
   final VoidCallback alMostrarControles;
   final Widget? barra;
 
@@ -530,9 +488,11 @@ class _Video extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (video != null)
-              Center(
-                child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video)),
-              ),
+              pantallaCompleta
+                  ? VideoAjustado(video: video, ajuste: ControlSenal.ajuste)
+                  : Center(
+                      child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video)),
+                    ),
             if (control.cargando) const Center(child: CircularProgressIndicator()),
             AnimatedOpacity(
               opacity: visibles ? 1 : 0,
@@ -587,16 +547,15 @@ class _Video extends StatelessWidget {
                               ],
                             ),
                           ),
-                          if (control.fuentes.length > 1)
-                            BotonRedondo(
-                              icono: Icons.tune_rounded,
-                              tamanio: 36,
-                              tamanioIcono: 18,
-                              fondo: Tono.capaMaxima.withValues(alpha: .6),
-                              color: Tono.textoSuave,
-                              ayuda: 'Fuente',
-                              alTocar: alFuentes,
-                            ),
+                          BotonRedondo(
+                            icono: Icons.tune_rounded,
+                            tamanio: 36,
+                            tamanioIcono: 18,
+                            fondo: Tono.capaMaxima.withValues(alpha: .6),
+                            color: Tono.textoSuave,
+                            ayuda: 'Ajustes',
+                            alTocar: alAjustes,
+                          ),
                         ],
                       ),
                     ),

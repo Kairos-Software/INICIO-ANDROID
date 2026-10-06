@@ -192,7 +192,7 @@ def series(request):
     estado = request.GET.get('estado', '')
     filtros = {
         'texto': request.GET.get('q', '').strip(),
-        'estado': estado if estado in ('en_app', 'fuera') else '',
+        'estado': estado if estado in ('en_app', 'incompleta', 'fuera') else '',
     }
     pagina = Paginator(consultas.series(**filtros), SERIES_POR_PAGINA).get_page(request.GET.get('pagina'))
     return render(request, 'canales/series.html', {

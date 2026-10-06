@@ -10,14 +10,15 @@
 ///   OK (o la tecla Guía): la GUÍA encima del video, parada en el canal que
 ///       se ve. Arriba/Abajo la recorren, OK cambia de canal, Atrás la cierra.
 ///   Arriba/Abajo (o CH+/CH-): zapping.
-///   Izquierda/Derecha (o Info/Menú): las opciones (Guía, favoritos, fuente).
+///   Izquierda/Derecha (o Info/Menú): las opciones (Guía, canal anterior y
+///       siguiente, favoritos, Ajustes: calidad, idioma, imagen y fuente).
 ///   Números: se escribe el número del canal (hasta 3, 1,5 s) y cambia solo.
 ///   Atrás: cierra lo que esté abierto; si no hay nada, sale.
 ///
 /// PELÍCULAS Y CAPÍTULOS (ReproductorVodTv):
 ///   OK (o Play/Pausa): pausa / sigue y muestra la barra.
 ///   Izquierda/Derecha: -10 s / +10 s (y la barra queda en la línea de tiempo).
-///   Arriba/Abajo: la barra (pausa, siguiente episodio, favoritos, fuente).
+///   Arriba/Abajo: la barra (pausa, siguiente episodio, favoritos, Ajustes).
 ///   Atrás: esconde la barra; si no está, sale.
 ///   Guarda por dónde va cada 5 s y al terminar un capítulo sigue con el próximo.
 ///
@@ -32,6 +33,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../api/modelos.dart';
+import '../movil/ajustes_video.dart';
 import '../movil/componentes.dart';
 import '../movil/control_senal.dart';
 import '../movil/datos.dart';
@@ -103,7 +105,9 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
   late final ControlSenal _control = ControlSenal(SesionScope.leer(context).api)
     ..alVerCanal = ((canal) => DatosScope.of(context).biblioteca.registrarCanalVisto(canal.id))
     ..addListener(_alCambiar);
-  final _raiz = FocusNode(debugLabel: 'reproductor');
+  // No entra en el recorrido de las flechas: si no, desde un botón de la
+  // barra "Derecha" saltaba al video (que ocupa toda la pantalla)
+  final _raiz = FocusNode(debugLabel: 'reproductor', skipTraversal: true);
   final _primeraOpcion = FocusNode(debugLabel: 'opciones: guía');
   final _canalEnLaGuia = FocusNode(debugLabel: 'guía: canal actual');
   final _reintentar = FocusNode(debugLabel: 'probar de nuevo');
@@ -266,10 +270,9 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
     return KeyEventResult.ignored;
   }
 
-  Future<void> _elegirFuente() async {
+  Future<void> _ajustes() async {
     _cerrarCapa?.cancel();
-    final elegida = await elegirFuenteTv(context, _control);
-    if (elegida != null) _control.usarFuente(elegida);
+    await ajustesDeVideoTv(context, _control);
     if (mounted) _cerrar();
   }
 
@@ -366,6 +369,24 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
                         nodo: _primeraOpcion,
                         alOk: () => _abrir(_CapaVivo.guia),
                       ),
+                      const SizedBox(width: 14),
+                      _BotonCuadrado(
+                        icono: Icons.skip_previous_rounded,
+                        etiqueta: 'Canal anterior',
+                        alOk: () {
+                          _zapping(-1);
+                          _esperarParaCerrar();
+                        },
+                      ),
+                      const SizedBox(width: 14),
+                      _BotonCuadrado(
+                        icono: Icons.skip_next_rounded,
+                        etiqueta: 'Canal siguiente',
+                        alOk: () {
+                          _zapping(1);
+                          _esperarParaCerrar();
+                        },
+                      ),
                       const SizedBox(width: 20),
                       ...datosDelCanal,
                       _BotonCuadrado(
@@ -377,10 +398,8 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
                           _esperarParaCerrar();
                         },
                       ),
-                      if (_control.fuentes.length > 1) ...[
-                        const SizedBox(width: 18),
-                        _BotonCuadrado(icono: Icons.settings_rounded, etiqueta: 'Fuente', alOk: _elegirFuente),
-                      ],
+                      const SizedBox(width: 18),
+                      _BotonCuadrado(icono: Icons.settings_rounded, etiqueta: 'Ajustes', alOk: _ajustes),
                     ],
                   ),
                 ),
@@ -571,10 +590,10 @@ class FilaCanalTv extends StatelessWidget {
               ),
             ),
             Container(
-              width: 72,
-              height: 52,
+              width: 96,
+              height: 62,
               decoration: BoxDecoration(color: Tono.capaAlta, borderRadius: BorderRadius.circular(Curva.medio)),
-              child: LogoCanalTv(canal: canal, tamanioIniciales: 19, relleno: const EdgeInsets.all(6)),
+              child: LogoCanalTv(canal: canal, tamanioIniciales: 21, relleno: const EdgeInsets.all(6)),
             ),
             const SizedBox(width: 20),
             Expanded(
@@ -638,7 +657,9 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
 
   late final ControlSenal _control = ControlSenal(SesionScope.leer(context).api)..addListener(_alCambiar);
   late final Biblioteca _biblioteca = DatosScope.of(context).biblioteca;
-  final _raiz = FocusNode(debugLabel: 'reproductor');
+  // No entra en el recorrido de las flechas: si no, desde un botón de la
+  // barra "Derecha" saltaba al video (que ocupa toda la pantalla)
+  final _raiz = FocusNode(debugLabel: 'reproductor', skipTraversal: true);
   final _botonPausa = FocusNode(debugLabel: 'pausa');
   final _linea = FocusNode(debugLabel: 'línea de tiempo');
   final _reintentar = FocusNode(debugLabel: 'probar de nuevo');
@@ -829,10 +850,9 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
     return KeyEventResult.ignored;
   }
 
-  Future<void> _elegirFuente() async {
+  Future<void> _ajustes() async {
     _ocultar?.cancel();
-    final elegida = await elegirFuenteTv(context, _control);
-    if (elegida != null) _control.usarFuente(elegida);
+    await ajustesDeVideoTv(context, _control);
     if (mounted) _cerrarControles();
   }
 
@@ -951,10 +971,8 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
                           _reiniciarEspera();
                         },
                       ),
-                      if (_control.fuentes.length > 1) ...[
-                        const SizedBox(width: 18),
-                        _BotonCuadrado(icono: Icons.settings_rounded, etiqueta: 'Fuente', alOk: _elegirFuente),
-                      ],
+                      const SizedBox(width: 18),
+                      _BotonCuadrado(icono: Icons.settings_rounded, etiqueta: 'Ajustes', alOk: _ajustes),
                     ],
                     debajo: _LineaDeTiempo(
                       nodo: _linea,
@@ -1076,12 +1094,7 @@ class _Video extends StatelessWidget {
   Widget build(BuildContext context) {
     final video = control.video;
     if (video == null || !video.value.isInitialized) return const SizedBox.expand();
-    return Center(
-      child: AspectRatio(
-        aspectRatio: video.value.aspectRatio == 0 ? 16 / 9 : video.value.aspectRatio,
-        child: VideoPlayer(video),
-      ),
-    );
+    return VideoAjustado(video: video, ajuste: ControlSenal.ajuste);
   }
 }
 
@@ -1227,23 +1240,120 @@ class _BotonCuadrado extends StatelessWidget {
   }
 }
 
-/// Elegir otra fuente de la señal (si el canal tiene varias).
-Future<int?> elegirFuenteTv(BuildContext context, ControlSenal control) {
-  return showDialog<int>(
+/// Los ajustes del video (movil/ajustes_video.dart), con el control remoto:
+/// una fila por ajuste (Calidad, Idioma, Imagen, Fuente). Arriba/Abajo pasan
+/// de fila, Izquierda/Derecha recorren las opciones y OK elige (se aplica en
+/// el momento y el cuadro queda abierto). Atrás lo cierra.
+Future<void> ajustesDeVideoTv(BuildContext context, ControlSenal control) async {
+  final opciones = await OpcionesDeVideo.de(control);
+  if (!context.mounted) return;
+  await showDialog<void>(
     context: context,
-    builder: (contexto) => DialogoTv(
-      icono: Icons.settings_input_antenna_rounded,
-      titulo: 'Fuente de la señal',
-      texto: 'Si se corta o se ve mal, probá con otra.',
-      botones: [
-        for (final (i, _) in control.fuentes.indexed)
-          BotonTv(
-            texto: 'Fuente ${i + 1}${i == control.fuente ? ' (actual)' : ''}',
-            principal: i == control.fuente,
-            autofocus: i == control.fuente,
-            alOk: () => Navigator.pop(contexto, i),
-          ),
-      ],
+    builder: (contexto) => ListenableBuilder(
+      listenable: control,
+      builder: (contexto, _) => _AjustesTv(control: control, opciones: opciones),
     ),
   );
+}
+
+/// Una opción de los ajustes: el texto, si es la que está puesta y qué hace.
+typedef _Opcion = ({String texto, bool elegida, VoidCallback alOk});
+
+class _AjustesTv extends StatelessWidget {
+  const _AjustesTv({required this.control, required this.opciones});
+
+  final ControlSenal control;
+  final OpcionesDeVideo opciones;
+
+  @override
+  Widget build(BuildContext context) {
+    final idiomaActual = control.idiomaElegido;
+    final filas = <(String, List<_Opcion>)>[
+      if (opciones.calidades.length > 1)
+        (
+          'Calidad',
+          [
+            (texto: 'Automática', elegida: control.calidadElegida == null, alOk: () => control.elegirCalidad(null)),
+            for (final calidad in opciones.calidades)
+              (
+                texto: [calidad.nombre, if (calidad.detalle.isNotEmpty) calidad.detalle].join(' · '),
+                elegida: control.calidadElegida == calidad.pista.id,
+                alOk: () => control.elegirCalidad(calidad),
+              ),
+          ],
+        ),
+      if (opciones.idiomas.length > 1)
+        (
+          'Idioma',
+          [
+            for (final (idioma, nombre) in Idioma.conNombres(opciones.idiomas))
+              (
+                texto: nombre,
+                elegida: idiomaActual == idioma.pista.id || (idiomaActual == null && idioma.pista.isSelected),
+                alOk: () => control.elegirIdioma(idioma.pista.id),
+              ),
+          ],
+        ),
+      (
+        'Imagen',
+        [
+          for (final ajuste in AjusteImagen.values)
+            (texto: ajuste.nombre, elegida: ControlSenal.ajuste == ajuste, alOk: () => control.cambiarAjuste(ajuste)),
+        ],
+      ),
+      if (control.fuentes.length > 1)
+        (
+          'Fuente',
+          [
+            for (final (i, _) in control.fuentes.indexed)
+              (
+                texto: 'Fuente ${i + 1}',
+                elegida: i == control.fuente,
+                alOk: () {
+                  if (i != control.fuente) control.usarFuente(i);
+                  Navigator.pop(context);
+                },
+              ),
+          ],
+        ),
+    ];
+    return DialogoTv(
+      icono: Icons.settings_rounded,
+      titulo: 'Ajustes',
+      botones: const [],
+      hijo: FocusTraversalGroup(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final (i, (nombre, opciones)) in filas.indexed) ...[
+              if (i > 0) const SizedBox(height: 22),
+              Text(nombre.toUpperCase(), style: LetraTv.sobretitulo),
+              const SizedBox(height: 10),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                clipBehavior: Clip.none,
+                child: Row(
+                  children: [
+                    for (final (j, opcion) in opciones.indexed) ...[
+                      if (j > 0) const SizedBox(width: 12),
+                      BotonTv(
+                        texto: opcion.texto,
+                        icono: opcion.elegida ? Icons.check_rounded : null,
+                        principal: opcion.elegida,
+                        autofocus: i == 0 && opcion.elegida,
+                        alto: 52,
+                        tamanioTexto: 16,
+                        alOk: opcion.alOk,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

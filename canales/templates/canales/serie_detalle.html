@@ -19,6 +19,7 @@
                 <span class="chip chip-agregada">{{ serie.en_la_app }} se ven en la app</span>
                 {% if serie.fuera %}<span class="chip chip-caida">{{ serie.fuera }} no se ven</span>{% endif %}
             </div>
+            {% if not serie.completa %}<p class="estado-mal small mt-2 mb-0">{{ serie.por_que_no_se_ve }}</p>{% endif %}
         </div>
     </div>
 </div>

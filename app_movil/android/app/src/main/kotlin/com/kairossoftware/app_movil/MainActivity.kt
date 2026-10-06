@@ -4,6 +4,7 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.media.MediaCodecInfo.CodecProfileLevel
 import android.media.MediaCodecList
 import android.net.Uri
 import android.os.Build
@@ -21,8 +22,9 @@ import java.io.File
  *   - version: la versión de esta app instalada (la de pubspec.yaml).
  *   - carpetaTemporal: dónde dejar la APK nueva que se baja.
  *   - codecs: los códecs de video que este aparato sabe decodificar (h264,
- *     h265, mpeg2...). La app deja para el final las fuentes que no puede
- *     mostrar (las que dan "imagen verde o negra con sonido").
+ *     h265, mpeg2...), y si también los de 10 bits (h264_10, h265_10). La app
+ *     no muestra lo que el aparato no puede ver (lo que da "imagen verde o
+ *     negra con sonido", o franjas verdes y la imagen rota).
  * Y "instalar": abre el instalador de Android con esa APK (lib/actualizacion.dart);
  * "abrir": abre un enlace en otra app (ej: el WhatsApp del vendedor).
  */
@@ -74,7 +76,11 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /** Los códecs de video que tiene algún decodificador del aparato, con los nombres del servidor. */
+    /**
+     * Los códecs de video que tiene algún decodificador del aparato, con los
+     * nombres del servidor. Para H.264 y H.265 se fija además si alguno sabe
+     * el perfil de 10 bits ("High 10" / "Main 10"): muchos TV box no.
+     */
     private fun codecsDeVideo(): List<String> {
         val nombres = mapOf(
             "video/avc" to "h264",
@@ -86,12 +92,28 @@ class MainActivity : FlutterActivity() {
             "video/wvc1" to "vc1",
             "video/vc1" to "vc1",
         )
+        val perfiles10Bits = mapOf(
+            "video/avc" to setOf(CodecProfileLevel.AVCProfileHigh10, CodecProfileLevel.AVCProfileHigh422,
+                CodecProfileLevel.AVCProfileHigh444),
+            "video/hevc" to setOf(CodecProfileLevel.HEVCProfileMain10, CodecProfileLevel.HEVCProfileMain10HDR10),
+        )
         return try {
-            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
-                .filter { !it.isEncoder }
-                .flatMap { it.supportedTypes.toList() }
-                .mapNotNull { nombres[it.lowercase()] }
-                .distinct()
+            val codecs = mutableSetOf<String>()
+            for (info in MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos) {
+                if (info.isEncoder) continue
+                for (tipo in info.supportedTypes) {
+                    val nombre = nombres[tipo.lowercase()] ?: continue
+                    codecs.add(nombre)
+                    val de10 = perfiles10Bits[tipo.lowercase()] ?: continue
+                    val perfiles = try {
+                        info.getCapabilitiesForType(tipo).profileLevels.map { it.profile }
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                    if (perfiles.any { it in de10 }) codecs.add("${nombre}_10")
+                }
+            }
+            codecs.toList()
         } catch (e: Exception) {
             emptyList()   // no se sabe: la app prueba todas
         }

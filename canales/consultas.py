@@ -119,6 +119,11 @@ class Capitulo:
     titulo: str
 
 
+# Como la app (Serie.completa en lib/movil/datos.dart): una serie se muestra
+# solo si se puede empezar desde el principio
+MINIMO_DE_CAPITULOS = 3
+
+
 @dataclass
 class Serie:
     nombre: str
@@ -144,6 +149,23 @@ class Serie:
         return self.cantidad - self.en_la_app
 
     @property
+    def completa(self):
+        """La app la muestra: entre los capítulos que se ven está el T1:E1 y son al menos MINIMO_DE_CAPITULOS."""
+        return not self.por_que_no_se_ve
+
+    @property
+    def por_que_no_se_ve(self):
+        """Por qué la app no muestra la serie ('' = sí la muestra)."""
+        vistos = [c for c in self.capitulos if c.canal.activo and c.canal.tiene_usable]
+        if not vistos:
+            return 'No se ve ningún capítulo.'
+        if not any(c.temporada == 1 and c.numero == 1 for c in vistos):
+            return 'Falta el capítulo 1 de la temporada 1: la app no muestra series que no se pueden empezar.'
+        if len(vistos) < MINIMO_DE_CAPITULOS:
+            return f'Tiene menos de {MINIMO_DE_CAPITULOS} capítulos que se vean: la app no la muestra.'
+        return ''
+
+    @property
     def numeros_de_temporada(self):
         return sorted(self.temporadas)
 
@@ -153,7 +175,8 @@ def series(texto='', estado=''):
     Las series armadas a partir de los capítulos sueltos ("Show S01 E02"),
     con la misma regla que la app (clasificar.episodio). Cada capítulo trae
     los números del catálogo (fuentes, cuáles andan, si la app lo ve).
-      estado: 'en_app' (con algún capítulo que se ve) | 'fuera' (ninguno) | '' (todas)
+      estado: 'en_app' (la app la muestra: ver Serie.completa) | 'incompleta' (se ven
+              capítulos, pero la app no la muestra) | 'fuera' (no se ve ninguno) | '' (todas)
     """
     capitulos = catalogo(texto=texto, contenido=Contenido.SERIE).prefetch_related(None)
     por_nombre = {}
@@ -168,7 +191,9 @@ def series(texto='', estado=''):
         for lista in serie.temporadas.values():
             lista.sort(key=lambda c: (c.numero is None, c.numero or 0, c.canal.nombre))
     if estado == 'en_app':
-        resultado = [s for s in resultado if s.en_la_app]
+        resultado = [s for s in resultado if s.completa]
+    elif estado == 'incompleta':
+        resultado = [s for s in resultado if s.en_la_app and not s.completa]
     elif estado == 'fuera':
         resultado = [s for s in resultado if not s.en_la_app]
     return resultado

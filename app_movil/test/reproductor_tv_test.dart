@@ -70,6 +70,30 @@ class _VideoDeMentira extends VideoPlayerPlatform {
 
   @override
   Widget buildViewWithOptions(VideoViewOptions options) => const SizedBox.expand();
+
+  // Una señal con dos calidades y dos audios
+  String? calidadElegida;
+
+  @override
+  bool isVideoTrackSupportAvailable() => true;
+
+  @override
+  Future<List<VideoTrack>> getVideoTracks(int playerId) async => const [
+    VideoTrack(id: '0_0', isSelected: false, height: 720, bitrate: 2500000),
+    VideoTrack(id: '0_1', isSelected: true, height: 1080, bitrate: 5000000),
+  ];
+
+  @override
+  Future<void> selectVideoTrack(int playerId, VideoTrack? track) async => calidadElegida = track?.id ?? 'auto';
+
+  @override
+  bool isAudioTrackSupportAvailable() => true;
+
+  @override
+  Future<List<VideoAudioTrack>> getAudioTracks(int playerId) async => const [
+    VideoAudioTrack(id: 'a0', label: '', isSelected: true, language: 'es-419'),
+    VideoAudioTrack(id: 'a1', label: '', isSelected: false, language: 'en'),
+  ];
 }
 
 Canal _canal(int id, String nombre) => Canal({
@@ -82,11 +106,13 @@ Canal _canal(int id, String nombre) => Canal({
 
 final _canales = [_canal(1, 'Canal 26'), _canal(2, 'Telemax'), _canal(3, 'A24')];
 
+late _VideoDeMentira _video;
+
 Future<void> _abrir(WidgetTester tester, Widget reproductor) async {
   tester.view.physicalSize = const Size(1920, 1080);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  VideoPlayerPlatform.instance = _VideoDeMentira();
+  VideoPlayerPlatform.instance = _video = _VideoDeMentira();
   final catalogo = Catalogo(Sesion().api)
     ..categoriasEnVivo = [
       CategoriaCanales({
@@ -169,6 +195,37 @@ void main() {
 
     await _tecla(tester, LogicalKeyboardKey.arrowUp); // zapping
     expect(find.text('Telemax'), findsOneWidget);
+  });
+
+  testWidgets('en vivo: las opciones abren los ajustes (calidad, idioma, imagen) y cambian de canal', (tester) async {
+    await _abrir(tester, ReproductorVivoTv(canal: _canales[0], lista: _canales));
+    await _tecla(tester, LogicalKeyboardKey.arrowRight); // opciones, en "Guía"
+    for (final esperado in ['Canal anterior', 'Canal siguiente', 'Agregar a favoritos', 'Ajustes']) {
+      await _tecla(tester, LogicalKeyboardKey.arrowRight);
+      expect(_enfocado(), esperado); // Derecha recorre la barra (no salta al video)
+    }
+    await _tecla(tester, LogicalKeyboardKey.select);
+    expect(find.text('1080p · 5,0 Mbps'), findsOneWidget); // de mayor a menor
+    expect(find.text('720p · 2,5 Mbps'), findsOneWidget);
+    expect(find.text('Español latino'), findsOneWidget);
+    expect(find.text('Inglés'), findsOneWidget);
+    expect(find.text('Llenar'), findsOneWidget);
+
+    // El foco arranca en la calidad puesta (Automática): Derecha + OK elige 1080p
+    expect(_enfocado(), 'Automática');
+    await _tecla(tester, LogicalKeyboardKey.arrowRight);
+    await _tecla(tester, LogicalKeyboardKey.select);
+    expect(_video.calidadElegida, '0_1');
+    await _atras(tester);
+    expect(find.text('1080p · 5,0 Mbps'), findsNothing); // se cerró
+    expect(find.text('abrir'), findsNothing); // y sigue en el reproductor
+
+    // Canal siguiente desde la barra
+    await _tecla(tester, LogicalKeyboardKey.arrowRight);
+    await _tecla(tester, LogicalKeyboardKey.arrowRight);
+    await _tecla(tester, LogicalKeyboardKey.arrowRight);
+    await _tecla(tester, LogicalKeyboardKey.select);
+    expect(find.text('Telemax'), findsWidgets);
   });
 
   testWidgets('película: OK pausa y deja el foco en Pausa; Atrás esconde la barra y después sale', (tester) async {

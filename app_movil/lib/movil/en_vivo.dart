@@ -19,6 +19,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../api/modelos.dart';
 import '../sesion.dart';
+import 'ajustes_video.dart';
 import 'componentes.dart';
 import 'control_senal.dart';
 import 'datos.dart';
@@ -116,31 +117,7 @@ class _SeccionEnVivoState extends State<SeccionEnVivo> {
     if (mounted) _mostrarControles();
   }
 
-  Future<void> _elegirFuente() async {
-    final elegida = await showModalBottomSheet<int>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-              child: Text('Fuente de la señal', style: Letra.titulo.copyWith(fontSize: 16)),
-            ),
-            for (final (i, _) in _control.fuentes.indexed)
-              ListTile(
-                leading: Icon(Icons.dns_rounded, color: i == _control.fuente ? Tono.celeste : Tono.textoSuave),
-                title: Text('Fuente ${i + 1}', style: Letra.etiqueta.copyWith(fontSize: 14)),
-                trailing: i == _control.fuente ? const Icon(Icons.check_rounded, color: Tono.celeste) : null,
-                onTap: () => Navigator.pop(context, i),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (elegida != null) _control.usarFuente(elegida);
-  }
+  Future<void> _ajustes() => ajustesDeVideoMovil(context, _control);
 
   @override
   Widget build(BuildContext context) {
@@ -173,7 +150,7 @@ class _SeccionEnVivoState extends State<SeccionEnVivo> {
                 controles: _controles,
                 alTocar: () => _controles ? setState(() => _controles = false) : _mostrarControles(),
                 alExpandir: () => _expandir(todos),
-                alFuentes: _elegirFuente,
+                alAjustes: _ajustes,
                 alPrimerCanal: () => _ver(visibles.isNotEmpty ? visibles.first : todos.first),
               ),
               Expanded(
@@ -283,7 +260,7 @@ class _Reproductor extends StatelessWidget {
     required this.controles,
     required this.alTocar,
     required this.alExpandir,
-    required this.alFuentes,
+    required this.alAjustes,
     required this.alPrimerCanal,
   });
 
@@ -291,7 +268,7 @@ class _Reproductor extends StatelessWidget {
   final bool controles;
   final VoidCallback alTocar;
   final VoidCallback alExpandir;
-  final VoidCallback alFuentes;
+  final VoidCallback alAjustes;
   final VoidCallback alPrimerCanal;
 
   @override
@@ -400,16 +377,14 @@ class _Reproductor extends StatelessWidget {
                                 ayuda: control.silenciado ? 'Activar sonido' : 'Silenciar',
                                 alTocar: control.alternarSonido,
                               ),
-                              if (control.fuentes.length > 1) ...[
-                                const SizedBox(width: 4),
-                                BotonRedondo(
-                                  icono: Icons.tune_rounded,
-                                  tamanio: 32,
-                                  tamanioIcono: 18,
-                                  ayuda: 'Cambiar fuente',
-                                  alTocar: alFuentes,
-                                ),
-                              ],
+                              const SizedBox(width: 4),
+                              BotonRedondo(
+                                icono: Icons.tune_rounded,
+                                tamanio: 32,
+                                tamanioIcono: 18,
+                                ayuda: 'Ajustes (calidad, idioma, imagen, fuente)',
+                                alTocar: alAjustes,
+                              ),
                             ],
                           ),
                         ),
@@ -805,10 +780,7 @@ class _PantallaEnVivoCompletaState extends State<PantallaEnVivoCompleta> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (video != null)
-                Center(
-                  child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video)),
-                ),
+              if (video != null) VideoAjustado(video: video, ajuste: ControlSenal.ajuste),
               if (_control.cargando) const Center(child: CircularProgressIndicator()),
               if (_control.error != null)
                 Center(
@@ -929,6 +901,15 @@ class _PantallaEnVivoCompletaState extends State<PantallaEnVivoCompleta> {
                                   fondo: Tono.capaMaxima.withValues(alpha: .6),
                                   ayuda: 'Canal anterior',
                                   alTocar: () => _zapping(-1),
+                                ),
+                                const SizedBox(width: 6),
+                                BotonRedondo(
+                                  icono: Icons.tune_rounded,
+                                  tamanio: 40,
+                                  tamanioIcono: 20,
+                                  fondo: Tono.capaMaxima.withValues(alpha: .6),
+                                  ayuda: 'Ajustes',
+                                  alTocar: () => ajustesDeVideoMovil(context, _control),
                                 ),
                                 const SizedBox(width: 12),
                                 const InsigniaEnVivo(),

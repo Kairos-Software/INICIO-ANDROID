@@ -157,8 +157,8 @@ class FuenteCanal {
 
   bool get esReproducible => formatosQueReproduce.contains(tipo);
 
-  /// El códec del video (h264, h265, mpeg2...), según la verificación del
-  /// servidor. Vacío = no se sabe.
+  /// El códec del video (h264, h265, mpeg2...; h264_10 / h265_10 si es de
+  /// 10 bits), según la verificación del servidor. Vacío = no se sabe.
   final String codec;
 
   /// ¿Este aparato sabe mostrar el video? Si no se sabe el códec o qué
@@ -187,14 +187,11 @@ class Canal {
   /// "vivo", "pelicula" o "serie" (cada lista se pide aparte: ?contenido=).
   final String contenido;
 
-  /// Las fuentes que la app sabe reproducir, en orden de prioridad.
-  /// Las que el reproductor sabe abrir, en orden de prioridad, pero con las
-  /// de un códec que este aparato no muestra al final: se prueban solo si las
-  /// demás fallan (es lo que da "imagen verde o negra con sonido").
-  List<FuenteCanal> get fuentesReproducibles => [
-    ...fuentes.where((f) => f.esReproducible && f.aparatoLoMuestra),
-    ...fuentes.where((f) => f.esReproducible && !f.aparatoLoMuestra),
-  ];
+  /// Las fuentes que este aparato puede ver, en orden de prioridad: las que
+  /// el reproductor sabe abrir y con un códec que el aparato sabe mostrar (las
+  /// otras dan "imagen verde o negra con sonido" o la imagen rota). Si no
+  /// queda ninguna, el catálogo no lo muestra (ver Catalogo.cargar).
+  List<FuenteCanal> get fuentesReproducibles => fuentes.where((f) => f.esReproducible && f.aparatoLoMuestra).toList();
 }
 
 /// Una categoría con sus canales.

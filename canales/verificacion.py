@@ -22,8 +22,12 @@ De paso averigua el CÓDEC del video (h264, h265, mpeg2...): en HLS lo dice
 la lista maestra (CODECS=...) o, si no, el pedazo de video; en video directo,
 los primeros bytes (ver detectar_codec). No todos los aparatos saben mostrar
 todos los códecs (muchos TV box no leen MPEG-2, muchos celulares no leen
-H.265): la app lo compara con lo que sabe su aparato y deja esas fuentes
-para el final. Así se evita la "imagen verde o negra con sonido".
+H.265): la app lo compara con lo que sabe su aparato y no muestra lo que no
+puede ver. Así se evita la "imagen verde o negra con sonido".
+
+También distingue el video de 10 BITS (h264_10: H.264 "Hi10P", muy común en
+anime; h265_10: H.265 "Main 10"): casi ningún TV box decodifica H.264 de 10
+bits, y lo muestra con franjas verdes y la imagen rota (ver perfil_10_bits).
 
 YouTube y las páginas de video (Twitch, Dailymotion...) se comprueban con
 yt-dlp (ver paginas.py). Si una dirección cualquiera responde con una página
@@ -81,7 +85,7 @@ class Resultado:
     es_pagina: bool = False  # respondió una página web (puede tener un video adentro)
     titulo: str = ''      # YouTube / páginas: el título del video o canal (para sugerir el nombre)
     imagen: str = ''      # ...y su miniatura (para sugerir el logo)
-    codec: str = ''       # el códec del video: h264, h265, mpeg2, mpeg4, vc1, av1, vp9 ('' = no se sabe)
+    codec: str = ''       # el códec del video: h264, h265, h264_10, h265_10, mpeg2, mpeg4, vc1, av1, vp9 ('' = no se sabe)
 
 
 def cabeceras_para(user_agent='', referer=''):
@@ -200,16 +204,78 @@ def _codec_mpeg_ts(datos):
     return ''
 
 
+# Los "perfiles" de 10 bits (o más). H.264: High 10 (110), High 4:2:2 (122), High 4:4:4 (244).
+# H.265: Main 10 (2) y Range Extensions (4).
+_PERFILES_10_BITS = {'h264': {110, 122, 244}, 'h265': {2, 4}}
+_PERFILES_H264 = {66, 77, 88, 100, 110, 118, 122, 128, 144, 244, 44}
+
+
+def _perfil_en_registro(datos, inicio, codec):
+    """El perfil en un registro avcC / hvcC (empieza con la versión 1, el perfil es el byte siguiente)."""
+    if inicio + 2 > len(datos) or datos[inicio] != 1:
+        return None
+    return datos[inicio + 1] & (0x1F if codec == 'h265' else 0xFF)
+
+
+def _perfil_en_sps(datos, codec):
+    """El perfil leyendo el SPS del video "crudo" (MPEG-TS, pedazos de HLS): 00 00 01 + encabezado."""
+    i = datos.find(b'\x00\x00\x01')
+    while 0 <= i < len(datos) - 6:
+        encabezado = datos[i + 3]
+        if codec == 'h264' and encabezado & 0x1F == 7 and datos[i + 4] in _PERFILES_H264:
+            return datos[i + 4]
+        if codec == 'h265' and (encabezado >> 1) & 0x3F == 33:   # el SPS de H.265
+            return datos[i + 6] & 0x1F
+        i = datos.find(b'\x00\x00\x01', i + 3)
+    return None
+
+
+def perfil_10_bits(datos, codec):
+    """
+    Si el video es de 10 bits (o más): mira el perfil del códec. En MP4 está en
+    la "caja" avcC / hvcC; en MKV, en el CodecPrivate (el mismo registro); en
+    MPEG-TS, en el SPS (los datos de arranque del video). Si no lo encuentra, False.
+    """
+    if codec not in _PERFILES_10_BITS:
+        return False
+    perfil = None
+    caja = datos.find(b'avcC' if codec == 'h264' else b'hvcC')
+    if caja >= 0:
+        perfil = _perfil_en_registro(datos, caja + 4, codec)
+    if perfil is None:
+        marca = datos.find(b'V_MPEG4/ISO/AVC' if codec == 'h264' else b'V_MPEGH/ISO/HEVC')
+        privado = datos.find(b'\x63\xa2', marca) if marca >= 0 else -1   # CodecPrivate de MKV
+        if privado >= 0 and privado + 2 < len(datos):
+            primero = datos[privado + 2]
+            largo_del_tamanio = next((n for n in range(1, 9) if primero & (0x80 >> (n - 1))), 8)
+            perfil = _perfil_en_registro(datos, privado + 2 + largo_del_tamanio, codec)
+    if perfil is None:
+        perfil = _perfil_en_sps(datos, codec)
+    return perfil in _PERFILES_10_BITS[codec]
+
+
 def detectar_codec(datos):
     """El códec del video mirando los primeros bytes (MPEG-TS, MKV o MP4). '' = no se sabe."""
     if not datos:
         return ''
+    codec = ''
     if _es_mpeg_ts(datos):
-        return _codec_mpeg_ts(datos)
-    for marca, codec in _MARCAS_DE_CODEC:
-        if marca in datos:
-            return codec
-    return ''
+        codec = _codec_mpeg_ts(datos)
+    else:
+        codec = next((codec for marca, codec in _MARCAS_DE_CODEC if marca in datos), '')
+    if perfil_10_bits(datos, codec):
+        return f'{codec}_10'
+    return codec
+
+
+def _perfil_hls(parte, codec):
+    """El perfil en el CODECS de HLS: avc1.6E0028 -> 0x6E = 110; hvc1.2.4.L120 -> 2 (puede venir como A2, B2...)."""
+    try:
+        if codec == 'h264':
+            return int(parte.split('.')[1][:2], 16)
+        return int(re.sub(r'^[A-Ca-c]', '', parte.split('.')[1]))
+    except (IndexError, ValueError):
+        return None
 
 
 def codec_de_hls(texto):
@@ -218,8 +284,11 @@ def codec_de_hls(texto):
         codecs = re.search(r'CODECS="([^"]*)"', linea) if linea.startswith('#EXT-X-STREAM-INF') else None
         if codecs:
             for parte in codecs.group(1).split(','):
+                parte = parte.strip()
                 for prefijo, codec in _PREFIJOS_HLS:
-                    if parte.strip().lower().startswith(prefijo):
+                    if parte.lower().startswith(prefijo):
+                        if _perfil_hls(parte, codec) in _PERFILES_10_BITS.get(codec, ()):
+                            return f'{codec}_10'
                         return codec
             return ''
     return ''

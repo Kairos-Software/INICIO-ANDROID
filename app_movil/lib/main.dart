@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'acceso.dart';
 import 'actualizacion.dart';
 import 'aparato.dart';
+import 'bienvenida.dart';
 import 'config.dart';
 import 'movil/estructura.dart';
 import 'pantallas/perfil.dart';
@@ -28,7 +29,10 @@ Future<void> main() async {
     SesionScope(
       sesion: sesion,
       // El aviso "Hay una versión nueva" (lib/actualizacion.dart)
-      child: VigilarActualizacion(sesion: sesion, navegador: claveNavegador, child: const App()),
+      // La presentación con sonido al abrir (lib/bienvenida.dart), encima de todo
+      child: Bienvenida(
+        child: VigilarActualizacion(sesion: sesion, navegador: claveNavegador, child: const App()),
+      ),
     ),
   );
 }
