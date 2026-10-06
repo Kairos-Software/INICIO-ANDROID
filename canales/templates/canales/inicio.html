@@ -31,20 +31,27 @@
 {% block contenido %}
 <section class="tarjeta mb-4">
     <h2 class="tarjeta-titulo">Resumen</h2>
-    <dl class="ficha-datos">
-        <div><dt>Canales cargados</dt><dd class="dato">{{ resumen.canales }}</dd></div>
-        <div><dt>Canales que ve la app</dt><dd class="dato" title="Con la app 1.0.0 (solo HLS): {{ resumen.canales_en_la_app_vieja }}">{{ resumen.canales_en_la_app }}</dd></div>
-        <div><dt>Quitados a mano</dt><dd class="dato">{{ resumen.quitados }}</dd></div>
-        <div><dt>Fuentes que funcionan</dt><dd class="dato">{{ resumen.funcionan }}</dd></div>
-        <div><dt>Fuentes caídas</dt><dd class="dato">{{ resumen.caidas }}</dd></div>
-        <div><dt>Fuentes sin verificar</dt><dd class="dato">{{ resumen.sin_verificar }}</dd></div>
-    </dl>
-    {% if resumen.canales_en_la_app != resumen.canales_en_la_app_vieja %}
-    <p class="texto-suave small mt-2 mb-0">
-        <i class="bi bi-info-circle" aria-hidden="true"></i>
-        Con la app 1.0.0 (que solo reproduce HLS) se ven {{ resumen.canales_en_la_app_vieja }}. Los demás aparecen al actualizar la app.
-    </p>
-    {% endif %}
+    <div class="resumen-contenidos">
+        {% for bloque in resumen.por_contenido %}
+        <article class="resumen-contenido">
+            <div class="resumen-contenido-encabezado">
+                <span class="resumen-contenido-icono" aria-hidden="true">
+                    {% if bloque.contenido == 'vivo' %}<i class="bi bi-broadcast"></i>
+                    {% elif bloque.contenido == 'pelicula' %}<i class="bi bi-film"></i>
+                    {% else %}<i class="bi bi-collection-play"></i>{% endif %}
+                </span>
+                <div><h3>{{ bloque.nombre }}</h3><strong class="dato">{{ bloque.cargados }}</strong> cargados</div>
+            </div>
+            <dl class="resumen-contenido-datos">
+                <div><dt>Los ve la app</dt><dd class="dato">{{ bloque.en_la_app }}</dd></div>
+                <div><dt>Fuentes funcionan</dt><dd class="dato estado-bien">{{ bloque.funcionan }}</dd></div>
+                <div><dt>Fuentes caídas</dt><dd class="dato estado-mal">{{ bloque.caidas }}</dd></div>
+                <div><dt>Sin verificar</dt><dd class="dato">{{ bloque.sin_verificar }}</dd></div>
+                <div><dt>Ocultas en aparatos</dt><dd class="dato">{{ bloque.ocultas }}</dd></div>
+            </dl>
+        </article>
+        {% endfor %}
+    </div>
 
     {% if puede_importar %}
     <hr>

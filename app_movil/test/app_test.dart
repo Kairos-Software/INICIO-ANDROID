@@ -62,7 +62,10 @@ void main() {
         'es_superusuario': false,
         'permisos': ['ver_usuarios'],
         'permisos_por_modulo': [
-          {'modulo': 'Usuarios', 'permisos': ['Ver la lista']},
+          {
+            'modulo': 'Usuarios',
+            'permisos': ['Ver la lista'],
+          },
         ],
       });
       expect(perfil.primerNombre, 'Ana');
@@ -200,7 +203,13 @@ void main() {
 
   group('Fuentes', () {
     test('cabeceras para pedir el video', () {
-      final fuente = FuenteCanal({'id': 1, 'url': 'https://x/a.m3u8', 'tipo': 'hls', 'user_agent': 'Mozilla/5.0', 'referer': ''});
+      final fuente = FuenteCanal({
+        'id': 1,
+        'url': 'https://x/a.m3u8',
+        'tipo': 'hls',
+        'user_agent': 'Mozilla/5.0',
+        'referer': '',
+      });
       expect(fuente.cabeceras, {'User-Agent': 'Mozilla/5.0'});
       expect(FuenteCanal({'id': 2, 'url': 'https://x'}).cabeceras, isEmpty);
     });

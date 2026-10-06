@@ -3,9 +3,14 @@
 /// Series, Buscar, Favoritos y Mi cuenta).
 ///
 /// El menú mide 88 px con solo íconos; al entrar en él (Izquierda desde el
-/// contenido) se abre a 292 px con los nombres. OK abre la sección; Derecha
-/// vuelve al contenido. "Atrás" en una sección vuelve a Inicio, y en Inicio
-/// pregunta si salir.
+/// borde izquierdo del contenido) se abre a 292 px con los nombres y el foco
+/// cae en la sección actual. OK abre la sección; Derecha o "Atrás" vuelven al
+/// contenido. "Atrás" en una sección vuelve a Inicio, y en Inicio pregunta si
+/// salir.
+///
+/// El contenido y el menú son dos áreas de foco separadas (FocusScope): Flutter
+/// no deja salir de un área con las flechas, así que el paso de una a otra se
+/// hace a mano (_teclaEnContenido y _teclaEnMenu).
 ///
 /// Acá se crean el catálogo y la biblioteca, igual que en el celular
 /// (movil/estructura.dart): se pide el catálogo al abrir, al volver a la app
@@ -31,6 +36,8 @@ import 'foco.dart';
 import 'grilla.dart';
 import 'guia.dart';
 import 'inicio.dart';
+import 'piezas.dart';
+import 'reposo.dart';
 import 'reproductor.dart';
 
 enum SeccionTv { inicio, enVivo, guia, peliculas, series, buscar, favoritos, cuenta }
@@ -48,12 +55,23 @@ class NavegacionTv extends InheritedWidget {
 }
 
 class PantallaTv extends StatefulWidget {
-  const PantallaTv({super.key, this.catalogo, this.biblioteca, this.seccionInicial = SeccionTv.inicio});
+  const PantallaTv({
+    super.key,
+    this.catalogo,
+    this.biblioteca,
+    this.seccionInicial = SeccionTv.inicio,
+    this.esperaReposo = const Duration(minutes: 3),
+  });
 
   /// Solo para las pruebas: un catálogo y una biblioteca ya armados.
   final Catalogo? catalogo;
   final Biblioteca? biblioteca;
   final SeccionTv seccionInicial;
+
+  /// Cuánto tiempo sin tocar el control (y sin nada reproduciéndose) hasta
+  /// que aparece el modo reposo (tv/reposo.dart). Menos que el protector de
+  /// pantalla de Android TV (5 minutos o más), para que se vea el nuestro.
+  final Duration esperaReposo;
 
   @override
   State<PantallaTv> createState() => _PantallaTvState();
@@ -66,13 +84,22 @@ class _PantallaTvState extends State<PantallaTv> {
   late final Biblioteca _biblioteca = widget.biblioteca ?? Biblioteca();
   late SeccionTv _seccion = widget.seccionInicial;
   final _contenido = FocusScopeNode(debugLabel: 'contenido');
+  final _menu = FocusScopeNode(debugLabel: 'menú');
+  final _opcionesDelMenu = {for (final s in SeccionTv.values) s: FocusNode(debugLabel: 'menú: ${s.name}')};
   bool _menuAbierto = false;
   AppLifecycleListener? _ciclo;
   Timer? _refresco;
+  Timer? _reposo;
+  bool _enReposo = false;
 
   @override
   void initState() {
     super.initState();
+    _menu.addListener(_alCambiarFocoDelMenu);
+    HardwareKeyboard.instance.addHandler(_alTocarElControl);
+    HardwareKeyboard.instance.addHandler(_teclaSinFoco);
+    _esperarReposo();
+    FocusManager.instance.addListener(_vigilarFoco);
     if (widget.biblioteca == null) _biblioteca.cargar();
     _catalogo.addListener(_alCargarPorPrimeraVez);
     if (widget.catalogo != null) return;
@@ -86,7 +113,17 @@ class _PantallaTvState extends State<PantallaTv> {
     _catalogo.removeListener(_alCargarPorPrimeraVez);
     _ciclo?.dispose();
     _refresco?.cancel();
+    _reposo?.cancel();
     _contenido.dispose();
+    HardwareKeyboard.instance.removeHandler(_alTocarElControl);
+    HardwareKeyboard.instance.removeHandler(_teclaSinFoco);
+    FocusManager.instance.removeListener(_vigilarFoco);
+    _menu
+      ..removeListener(_alCambiarFocoDelMenu)
+      ..dispose();
+    for (final nodo in _opcionesDelMenu.values) {
+      nodo.dispose();
+    }
     if (widget.catalogo == null) _catalogo.dispose();
     if (widget.biblioteca == null) _biblioteca.dispose();
     super.dispose();
@@ -119,11 +156,118 @@ class _PantallaTvState extends State<PantallaTv> {
     });
     // El foco pasa al contenido de la sección nueva (a su "foco inicial")
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _contenido.requestFocus();
+      if (mounted) _enfocarContenido();
     });
   }
 
+  // ── Modo reposo (tv/reposo.dart) ──
+
+  /// Cualquier tecla reinicia la cuenta (no la consume: sigue su camino).
+  bool _alTocarElControl(KeyEvent evento) {
+    if (!_enReposo) _esperarReposo();
+    return false;
+  }
+
+  void _esperarReposo() {
+    _reposo?.cancel();
+    _reposo = Timer(widget.esperaReposo, _entrarEnReposo);
+  }
+
+  /// Solo si esta pantalla está adelante: con el reproductor o un cartel
+  /// encima, no (se vuelve a esperar). Sin títulos con imagen, muestra solo el logo.
+  Future<void> _entrarEnReposo() async {
+    if (!mounted || _enReposo) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? false) || !_catalogo.cargado) return _esperarReposo();
+    _enReposo = true;
+    await abrirTv<void>(_contexto, PantallaReposoTv(diapositivas: Diapositiva.delCatalogo(_catalogo)));
+    _enReposo = false;
+    if (mounted) _esperarReposo();
+  }
+
+  void _alCambiarFocoDelMenu() {
+    if (_menu.hasFocus != _menuAbierto) setState(() => _menuAbierto = _menu.hasFocus);
+  }
+
+  void _abrirMenu() => _opcionesDelMenu[_seccion]!.requestFocus();
+
+  void _cerrarMenu() => _enfocarContenido();
+
+  /// El foco al contenido: a lo último que estaba elegido o, si no hay nada
+  /// (sección recién abierta), a su "foco inicial" (el elemento con autofocus,
+  /// ej: la primera película) o al primero que se pueda elegir. Nunca "a la
+  /// pantalla en general": ahí el control no movería nada.
+  void _enfocarContenido() {
+    if (_contenido.focusedChild != null) return _contenido.requestFocus();
+    final elegibles = _contenido.traversalDescendants.where((n) => n.canRequestFocus && !n.skipTraversal);
+    final inicial = elegibles.where((n) {
+      final widget = n.context?.widget;
+      return widget is Focus && widget.autofocus;
+    }).firstOrNull;
+    (inicial ?? elegibles.firstOrNull ?? _contenido).requestFocus();
+  }
+
+  /// Si el foco cae en "la pantalla en general" (al abrir la app, al cerrar un
+  /// cartel, si lo elegido desapareció), se lo pasa enseguida al contenido:
+  /// desde ahí las flechas no llevarían a donde corresponde.
+  void _vigilarFoco() {
+    if (!mounted) return;
+    final general = FocusScope.of(context, createDependency: false);
+    if (FocusManager.instance.primaryFocus != general) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || FocusManager.instance.primaryFocus != general) return;
+      if (ModalRoute.of(context)?.isCurrent ?? false) _enfocarContenido();
+    });
+  }
+
+  /// Red de seguridad: si el foco quedó afuera del contenido y del menú (al
+  /// abrir la app, o si lo elegido desapareció) y se aprieta una tecla, se
+  /// recupera: Izquierda abre el menú y lo demás va al contenido. Así el
+  /// control remoto nunca queda "muerto". Solo con esta pantalla adelante
+  /// (no con un cartel o el reproductor encima).
+  bool _teclaSinFoco(KeyEvent evento) {
+    if (evento is KeyUpEvent || !mounted || _contenido.hasFocus || _menu.hasFocus) return false;
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    final tecla = evento.logicalKey;
+    if (tecla == LogicalKeyboardKey.arrowLeft) {
+      _abrirMenu();
+    } else if (_teclasDeMovimiento.contains(tecla) || teclasOk.contains(tecla)) {
+      _enfocarContenido();
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  static final _teclasDeMovimiento = {
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowRight,
+  };
+
+  /// Izquierda en el contenido: se mueve dentro de la sección y, si ya está en
+  /// el borde izquierdo (no hay nada más a la izquierda), abre el menú.
+  KeyEventResult _teclaEnContenido(FocusNode nodo, KeyEvent evento) {
+    if (evento is KeyUpEvent || evento.logicalKey != LogicalKeyboardKey.arrowLeft) return KeyEventResult.ignored;
+    final actual = FocusManager.instance.primaryFocus;
+    if (actual == null || !actual.focusInDirection(TraversalDirection.left)) _abrirMenu();
+    return KeyEventResult.handled;
+  }
+
+  /// En el menú: Arriba/Abajo se mueven entre las opciones (lo hace Flutter) y
+  /// Derecha vuelve al contenido, a lo último que estaba elegido.
+  KeyEventResult _teclaEnMenu(FocusNode nodo, KeyEvent evento) {
+    if (evento is KeyUpEvent) return KeyEventResult.ignored;
+    if (evento.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _cerrarMenu();
+      return KeyEventResult.handled;
+    }
+    // Izquierda no lleva a ningún lado (ya está en el borde)
+    if (evento.logicalKey == LogicalKeyboardKey.arrowLeft) return KeyEventResult.handled;
+    return KeyEventResult.ignored;
+  }
+
   Future<void> _atras() async {
+    if (_menuAbierto) return _cerrarMenu();
     if (_seccion != SeccionTv.inicio) return _irA(SeccionTv.inicio);
     final salir = await showDialog<bool>(context: context, builder: (_) => const _ConfirmarSalida());
     if (salir == true) await SystemNavigator.pop();
@@ -164,6 +308,7 @@ class _PantallaTvState extends State<PantallaTv> {
                     key: _claveContenido,
                     child: FocusScope(
                       node: _contenido,
+                      onKeyEvent: _teclaEnContenido,
                       child: ListenableBuilder(
                         listenable: _catalogo,
                         builder: (context, _) {
@@ -190,11 +335,10 @@ class _PantallaTvState extends State<PantallaTv> {
                     left: 32,
                     top: 54,
                     bottom: 54,
-                    child: Focus(
-                      canRequestFocus: false,
-                      skipTraversal: true,
-                      onFocusChange: (dentro) => setState(() => _menuAbierto = dentro),
-                      child: _Menu(seccion: _seccion, abierto: _menuAbierto, alElegir: _irA),
+                    child: FocusScope(
+                      node: _menu,
+                      onKeyEvent: _teclaEnMenu,
+                      child: _Menu(seccion: _seccion, abierto: _menuAbierto, nodos: _opcionesDelMenu, alElegir: _irA),
                     ),
                   ),
                 ],
@@ -208,10 +352,13 @@ class _PantallaTvState extends State<PantallaTv> {
 }
 
 class _Menu extends StatelessWidget {
-  const _Menu({required this.seccion, required this.abierto, required this.alElegir});
+  const _Menu({required this.seccion, required this.abierto, required this.nodos, required this.alElegir});
 
   final SeccionTv seccion;
   final bool abierto;
+
+  /// Uno por opción: al abrir el menú, el foco va a la de la sección actual.
+  final Map<SeccionTv, FocusNode> nodos;
   final ValueChanged<SeccionTv> alElegir;
 
   static const _opciones = [
@@ -226,11 +373,12 @@ class _Menu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget opcion(SeccionTv valor, IconData icono, String texto) {
+    Widget opcion(SeccionTv valor, IconData icono, String texto, {required bool conNombre}) {
       final activa = valor == seccion;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Enfocable(
+          nodo: nodos[valor],
           alOk: () => alElegir(valor),
           curva: Curva.boton,
           escala: 1.0,
@@ -245,7 +393,7 @@ class _Menu extends StatelessWidget {
             child: Row(
               children: [
                 Icon(icono, size: 26, color: activa ? Tono.celeste : Tono.textoSuave),
-                if (abierto) ...[
+                if (conNombre) ...[
                   const SizedBox(width: 18),
                   Expanded(
                     child: Text(
@@ -281,20 +429,30 @@ class _Menu extends StatelessWidget {
       ),
       child: FocusTraversalGroup(
         policy: OrderedTraversalPolicy(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: abierto ? Alignment.centerLeft : Alignment.center,
-              child: Padding(
-                padding: EdgeInsets.only(left: abierto ? 12 : 0, bottom: 34),
-                child: abierto ? const LogoKairos(tamanio: 40) : const SimboloKairos(tamanio: 42),
-              ),
-            ),
-            for (final (valor, icono, texto) in _opciones) opcion(valor, icono, texto),
-            const Spacer(),
-            opcion(SeccionTv.cuenta, Icons.account_circle_rounded, 'Mi cuenta'),
-          ],
+        // Los nombres y el logo completo aparecen recién cuando el menú ya se
+        // ensanchó lo suficiente (si no, se desbordan durante la animación).
+        child: LayoutBuilder(
+          builder: (context, medidas) {
+            final conNombres = medidas.maxWidth >= 220;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: conNombres ? Alignment.centerLeft : Alignment.center,
+                  child: Padding(
+                    padding: EdgeInsets.only(left: conNombres ? 12 : 0, bottom: 34),
+                    // El logo completo se achica si no entra en el ancho del menú
+                    child: conNombres
+                        ? const FittedBox(fit: BoxFit.scaleDown, child: LogoKairos(tamanio: 40))
+                        : const SimboloKairos(tamanio: 42),
+                  ),
+                ),
+                for (final (valor, icono, texto) in _opciones) opcion(valor, icono, texto, conNombre: conNombres),
+                const Spacer(),
+                opcion(SeccionTv.cuenta, Icons.account_circle_rounded, 'Mi cuenta', conNombre: conNombres),
+              ],
+            );
+          },
         ),
       ),
     );

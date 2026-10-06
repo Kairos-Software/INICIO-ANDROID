@@ -65,6 +65,20 @@ def _ejecutar(request, funcion, *args, exito='', **kwargs):
     return resultado
 
 
+# ── Mi pantalla (el revendedor mirando la app) ───────────────────────
+
+@require_POST
+@requiere_reventa
+def mi_pantalla(request):
+    """Crea (la primera vez) el cliente propio del revendedor y lleva a su ficha para activarlo."""
+    if request.revendedor is None:
+        raise PermissionDenied
+    cliente = servicios.pantalla_propia(request.revendedor, por=request.user)
+    messages.info(request, 'Esta es tu pantalla: activala con tus créditos (como a cualquier cliente) y entrá '
+                           'a la app con este código.')
+    return redirect('reventa:cliente', pk=cliente.pk)
+
+
 # ── Inicio ───────────────────────────────────────────────────────────
 
 @requiere_reventa

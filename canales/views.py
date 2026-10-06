@@ -3,7 +3,9 @@ Pantallas de canales del panel:
 
   /canales/                         resumen, subir una lista, verificar todas (de a tandas) e importaciones anteriores
   /canales/importaciones/<id>/      el avance y el detalle de una lista: qué se agregó, qué no y por qué
-  /canales/catalogo/                todos los canales como los ve la app, con filtros para quitar los que no sirven
+  /canales/catalogo/                canales en vivo y películas, con filtros para quitar los que no sirven
+  /canales/series/                  series agrupadas, con búsqueda, filtros y paginación
+  /canales/series/detalle/          temporadas, capítulos, disponibilidad y fuentes de una serie
   /canales/canal/<id>/editar/       nombre, logo, categoría... de un canal, y sus fuentes
   /canales/probar/                  probar una dirección suelta y, si anda, agregarla como canal
 
@@ -15,7 +17,7 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -32,6 +34,7 @@ from .verificacion import Resultado, verificar_url, verificar_varias
 
 CANALES_POR_PAGINA = 120
 ENTRADAS_POR_PAGINA = 100
+SERIES_POR_PAGINA = 24
 
 
 def _parametros_sin_pagina(request):
@@ -163,6 +166,8 @@ def _filtros_catalogo(datos):
 @requiere_permiso('ver_canales')
 def catalogo(request):
     filtros = _filtros_catalogo(request.GET)
+    if filtros['contenido'] not in (Contenido.VIVO, Contenido.PELICULA):
+        filtros['contenido'] = Contenido.VIVO
     pagina = Paginator(consultas.catalogo(**filtros), CANALES_POR_PAGINA).get_page(request.GET.get('pagina'))
     for canal in pagina:
         canal.no_se_ve = consultas.por_que_no_se_ve(canal)
@@ -170,7 +175,7 @@ def catalogo(request):
         'pagina': pagina,
         'grupos': consultas.agrupar_por_categoria(pagina),
         'filtros': filtros,
-        'hay_filtros': any(filtros.values()),
+        'hay_filtros': any(valor for clave, valor in filtros.items() if clave != 'contenido'),
         'parametros': _parametros_sin_pagina(request),
         'categorias': consultas.categorias_con_canales(),
         'origenes': consultas.origenes(),
@@ -178,6 +183,49 @@ def catalogo(request):
         'contenidos': Contenido.choices,
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
         'resumen': consultas.resumen(),
+    })
+
+
+@requiere_permiso('ver_canales')
+def series(request):
+    """Series agrupadas, sin repetir un bloque por cada capítulo importado."""
+    estado = request.GET.get('estado', '')
+    filtros = {
+        'texto': request.GET.get('q', '').strip(),
+        'estado': estado if estado in ('en_app', 'fuera') else '',
+    }
+    pagina = Paginator(consultas.series(**filtros), SERIES_POR_PAGINA).get_page(request.GET.get('pagina'))
+    return render(request, 'canales/series.html', {
+        'pagina': pagina,
+        'filtros': filtros,
+        'hay_filtros': any(filtros.values()),
+        'parametros': _parametros_sin_pagina(request),
+    })
+
+
+@requiere_permiso('ver_canales')
+def serie_detalle(request):
+    nombre = request.GET.get('nombre', '').strip()
+    if not nombre:
+        raise Http404('Falta el nombre de la serie.')
+
+    serie = next(
+        (item for item in consultas.series(texto=nombre) if item.nombre.casefold() == nombre.casefold()),
+        None,
+    )
+    if serie is None:
+        raise Http404('No se encontró la serie.')
+
+    serie.temporadas_ordenadas = []
+    for numero in serie.numeros_de_temporada:
+        capitulos = serie.temporadas[numero]
+        for capitulo in capitulos:
+            capitulo.no_se_ve = consultas.por_que_no_se_ve(capitulo.canal)
+        serie.temporadas_ordenadas.append((numero, capitulos))
+
+    return render(request, 'canales/serie_detalle.html', {
+        'serie': serie,
+        'puede_editar': chequear_permiso(request.user, 'importar_canales'),
     })
 
 

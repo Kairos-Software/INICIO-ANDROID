@@ -30,6 +30,12 @@ Revendedor 1 ──< Cliente 1 ──< Renovacion
 - El revendedor fija su **precio por dispositivo**. Al renovar se propone
   `precio × dispositivos`, pero se puede cambiar el monto realmente cobrado.
 - **Ganancia del revendedor** = lo cobrado a sus clientes − lo pagado por sus créditos.
+- **El revendedor también paga lo que mira:** con su usuario del panel NO ve
+  los canales en la app (la API responde `revendedor_sin_pantalla`). En el
+  inicio de reventa tiene **"Mi pantalla"**: un cliente propio
+  (`Cliente.propio`, `servicios.pantalla_propia`) que activa con sus créditos
+  como a cualquier otro, y entra a la app con ese código. El administrador
+  (`administrar_reventa`) sí ve gratis con su usuario, para probar.
 - **Clientes directos:** un cliente sin revendedor es de la empresa. Solo lo
   maneja el administrador y **no gasta créditos** (sirve también para probar).
   Lo que se le cobra cuenta como ingreso de la empresa.

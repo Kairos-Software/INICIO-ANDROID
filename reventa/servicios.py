@@ -167,6 +167,24 @@ def precio_sugerido(cliente, dispositivos=1):
 
 
 @transaction.atomic
+def pantalla_propia(revendedor, por=None):
+    """
+    El cliente con el que el revendedor mira la app ("Mi pantalla"). Los
+    revendedores no ven gratis con su usuario del panel: se activan a sí
+    mismos con sus créditos, como a cualquier cliente, y entran con ese
+    código. Se crea la primera vez (sin activar: no gasta créditos).
+    """
+    with transaction.atomic():
+        Revendedor.objects.select_for_update().get(pk=revendedor.pk)   # que no se creen dos a la vez
+        cliente = revendedor.clientes.filter(propio=True).first()
+        if cliente is None:
+            cliente = crear_cliente(revendedor, f'{revendedor} (mi pantalla)'[:150],
+                                    notas='Tu propia pantalla: activala con tus créditos para ver la app.', por=por)
+            cliente.propio = True
+            cliente.save(update_fields=['propio'])
+    return cliente
+
+
 def renovar(cliente, dispositivos=1, monto_cobrado=None, por=None):
     """
     Activa o renueva al cliente: `dispositivos` aparatos a la vez durante

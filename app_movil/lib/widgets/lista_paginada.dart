@@ -95,7 +95,12 @@ class ListaPaginadaState<T> extends State<ListaPaginada<T>> {
     return RefreshIndicator(
       onRefresh: recargar,
       child: _items.isEmpty
-          ? ListView(children: [const SizedBox(height: 80), VistaVacia(mensaje: widget.mensajeVacio)])
+          ? ListView(
+              children: [
+                const SizedBox(height: 80),
+                VistaVacia(mensaje: widget.mensajeVacio),
+              ],
+            )
           : ListView.separated(
               controller: _scroll,
               physics: const AlwaysScrollableScrollPhysics(),

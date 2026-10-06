@@ -129,8 +129,8 @@ class _PantallaUsuarioDetalleState extends State<PantallaUsuarioDetalle> {
         body: _error != null
             ? VistaError(mensaje: textoDeError(_error!), alReintentar: _cargar)
             : usuario == null
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(onRefresh: _cargar, child: _contenido(usuario)),
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(onRefresh: _cargar, child: _contenido(usuario)),
       ),
     );
   }
@@ -139,7 +139,9 @@ class _PantallaUsuarioDetalleState extends State<PantallaUsuarioDetalle> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Center(child: Avatar(iniciales: usuario.iniciales, foto: usuario.foto, radio: 40)),
+        Center(
+          child: Avatar(iniciales: usuario.iniciales, foto: usuario.foto, radio: 40),
+        ),
         const SizedBox(height: 10),
         Text(
           usuario.nombreCompleto,
@@ -153,7 +155,9 @@ class _PantallaUsuarioDetalleState extends State<PantallaUsuarioDetalle> {
           runSpacing: 6,
           children: [
             Etiqueta(usuario.descripcionRol),
-            usuario.activo ? const Etiqueta('Activo', color: Colores.exito) : const Etiqueta('Inactivo', color: Colores.peligro),
+            usuario.activo
+                ? const Etiqueta('Activo', color: Colores.exito)
+                : const Etiqueta('Inactivo', color: Colores.peligro),
             if (usuario.debeCambiarPassword) const Etiqueta('Debe cambiar la contraseña', color: Colores.textoSuave),
           ],
         ),
@@ -169,11 +173,13 @@ class _PantallaUsuarioDetalleState extends State<PantallaUsuarioDetalle> {
           TarjetaDatos(filas: filasDeSeccion(seccion, usuario.datos)),
         ],
         const TituloSeccion('Registro'),
-        TarjetaDatos(filas: [
-          ('Fecha de alta', fechaLegible(usuario.datos['date_joined'])),
-          ('Último ingreso', fechaLegible(usuario.datos['last_login'])),
-          ('Creado por', '${usuario.datos['creado_por'] ?? ''}'),
-        ]),
+        TarjetaDatos(
+          filas: [
+            ('Fecha de alta', fechaLegible(usuario.datos['date_joined'])),
+            ('Último ingreso', fechaLegible(usuario.datos['last_login'])),
+            ('Creado por', '${usuario.datos['creado_por'] ?? ''}'),
+          ],
+        ),
       ],
     );
   }
@@ -278,7 +284,11 @@ class _DialogoRestablecerState extends State<_DialogoRestablecer> {
             TextField(
               controller: _password1,
               obscureText: true,
-              decoration: InputDecoration(labelText: 'Contraseña nueva', errorText: _error?.campo('password1'), errorMaxLines: 4),
+              decoration: InputDecoration(
+                labelText: 'Contraseña nueva',
+                errorText: _error?.campo('password1'),
+                errorMaxLines: 4,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(

@@ -46,10 +46,7 @@ String saludo() {
 void mostrarMensaje(BuildContext context, String texto, {bool error = false}) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(
-      content: Text(texto),
-      backgroundColor: error ? Colores.peligro : const Color(0xFF13806A),
-    ));
+    ..showSnackBar(SnackBar(content: Text(texto), backgroundColor: error ? Colores.peligro : const Color(0xFF13806A)));
 }
 
 /// Texto de un error cualquiera, para mostrar.

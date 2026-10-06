@@ -1,18 +1,27 @@
 /// Los reproductores de la TV (diseno_kairos_tv: tv-12, tv-13, tv-19).
 ///
-/// EN VIVO (ReproductorVivoTv), con el control remoto:
-///   Arriba/Abajo (o CH+/CH-): cambia de canal al toque (zapping).
+/// Pensados para el control remoto: nada "atrapa" el botón Atrás sin que se
+/// vea, y lo que se abre encima del video lleva el foco a su primer botón y
+/// se cierra solo si no se toca.
+///
+/// EN VIVO (ReproductorVivoTv):
+///   Al abrir o cambiar de canal: un cartel con el canal que SOLO informa
+///   (4 s; no toma el foco: Atrás sale directo).
+///   OK (o la tecla Guía): la GUÍA encima del video, parada en el canal que
+///       se ve. Arriba/Abajo la recorren, OK cambia de canal, Atrás la cierra.
+///   Arriba/Abajo (o CH+/CH-): zapping.
+///   Izquierda/Derecha (o Info/Menú): las opciones (Guía, favoritos, fuente).
 ///   Números: se escribe el número del canal (hasta 3, 1,5 s) y cambia solo.
-///   OK: muestra los controles; con los controles a la vista, OK en "Guía"
-///       abre la lista de canales encima del video.
-///   Atrás: cierra la guía, después los controles, después sale.
+///   Atrás: cierra lo que esté abierto; si no hay nada, sale.
 ///
 /// PELÍCULAS Y CAPÍTULOS (ReproductorVodTv):
-///   OK: pausa/sigue.  Izquierda/Derecha: -10 s / +10 s.  En los controles,
-///   la línea de tiempo también se mueve con Izquierda/Derecha.
+///   OK (o Play/Pausa): pausa / sigue y muestra la barra.
+///   Izquierda/Derecha: -10 s / +10 s (y la barra queda en la línea de tiempo).
+///   Arriba/Abajo: la barra (pausa, siguiente episodio, favoritos, fuente).
+///   Atrás: esconde la barra; si no está, sale.
 ///   Guarda por dónde va cada 5 s y al terminar un capítulo sigue con el próximo.
 ///
-/// Los controles se esconden solos a los 5 segundos.
+/// Las opciones y la barra se esconden solas a los 5 s (en pausa, no); la guía a los 15 s.
 library;
 
 import 'dart:async';
@@ -33,7 +42,14 @@ import 'estructura.dart' show DialogoTv;
 import 'foco.dart';
 import 'piezas.dart';
 
+/// Las opciones y la barra se cierran solas si no se toca nada en este tiempo.
 const _esperaControles = Duration(seconds: 5);
+
+/// El cartel con el nombre del canal (solo informa).
+const _esperaCartel = Duration(seconds: 4);
+
+/// La guía encima del video (da más tiempo: se está eligiendo).
+const _esperaGuia = Duration(seconds: 15);
 
 /// Pone un canal en vivo a pantalla completa. [lista]: los canales para el zapping (por defecto, todos).
 Future<void> verCanalTv(BuildContext context, Canal canal, {List<Canal>? lista}) {
@@ -80,14 +96,24 @@ class ReproductorVivoTv extends StatefulWidget {
   State<ReproductorVivoTv> createState() => _ReproductorVivoTvState();
 }
 
+/// Lo que está abierto encima del video en vivo.
+enum _CapaVivo { nada, opciones, guia }
+
 class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
   late final ControlSenal _control = ControlSenal(SesionScope.leer(context).api)
     ..alVerCanal = ((canal) => DatosScope.of(context).biblioteca.registrarCanalVisto(canal.id))
     ..addListener(_alCambiar);
   final _raiz = FocusNode(debugLabel: 'reproductor');
-  bool _controles = true;
-  bool _guia = false;
-  Timer? _ocultar;
+  final _primeraOpcion = FocusNode(debugLabel: 'opciones: guía');
+  final _canalEnLaGuia = FocusNode(debugLabel: 'guía: canal actual');
+  final _reintentar = FocusNode(debugLabel: 'probar de nuevo');
+  _CapaVivo _capa = _CapaVivo.nada;
+
+  /// El cartel con el nombre del canal: solo informa (no toma el foco ni atrapa "Atrás").
+  bool _cartel = true;
+  Timer? _cerrarCartel;
+  Timer? _cerrarCapa;
+  String? _errorAnterior;
 
   /// El número que se está escribiendo con el control ("10_").
   String _numero = '';
@@ -98,37 +124,77 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
     super.initState();
     WakelockPlus.enable().catchError((Object _) {});
     _control.abrir(widget.canal);
-    _mostrarControles();
+    _esconderCartelDespues();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _raiz.requestFocus();
+    });
   }
 
   @override
   void dispose() {
-    _ocultar?.cancel();
+    _cerrarCartel?.cancel();
+    _cerrarCapa?.cancel();
     _numeroListo?.cancel();
     _control.dispose();
-    _raiz.dispose();
+    for (final nodo in [_raiz, _primeraOpcion, _canalEnLaGuia, _reintentar]) {
+      nodo.dispose();
+    }
     WakelockPlus.disable().catchError((Object _) {});
     super.dispose();
   }
 
   void _alCambiar() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Si la señal falló, el foco va a "Probar de nuevo" (si no hay nada abierto encima)
+    final error = _control.error;
+    if (error != null && error != _errorAnterior && _capa == _CapaVivo.nada) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _reintentar.context != null) _reintentar.requestFocus();
+      });
+    }
+    _errorAnterior = error;
+    setState(() {});
   }
 
   Canal get _canal => _control.canal ?? widget.canal;
 
-  void _mostrarControles() {
-    setState(() => _controles = true);
-    _reiniciarEspera();
+  void _mostrarCartel() {
+    setState(() => _cartel = true);
+    _esconderCartelDespues();
   }
 
-  void _reiniciarEspera() {
-    _ocultar?.cancel();
-    _ocultar = Timer(_esperaControles, () {
-      if (!mounted || _guia || _control.error != null) return;
-      setState(() => _controles = false);
-      _raiz.requestFocus();
+  /// (El cartel arranca visible: al abrir solo hace falta esto.)
+  void _esconderCartelDespues() {
+    _cerrarCartel?.cancel();
+    _cerrarCartel = Timer(_esperaCartel, () {
+      if (mounted) setState(() => _cartel = false);
     });
+  }
+
+  /// Abre las opciones o la guía y les lleva el foco. Se cierran solas si no se toca nada.
+  void _abrir(_CapaVivo capa) {
+    setState(() {
+      _capa = capa;
+      _cartel = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _capa != capa) return;
+      (capa == _CapaVivo.guia ? _canalEnLaGuia : _primeraOpcion).requestFocus();
+    });
+    _esperarParaCerrar();
+  }
+
+  void _esperarParaCerrar() {
+    _cerrarCapa?.cancel();
+    _cerrarCapa = Timer(_capa == _CapaVivo.guia ? _esperaGuia : _esperaControles, () {
+      if (mounted && _capa != _CapaVivo.nada) _cerrar();
+    });
+  }
+
+  void _cerrar() {
+    _cerrarCapa?.cancel();
+    setState(() => _capa = _CapaVivo.nada);
+    (_control.error != null && _reintentar.context != null ? _reintentar : _raiz).requestFocus();
   }
 
   void _zapping(int paso) {
@@ -136,20 +202,20 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
     if (lista.length < 2) return;
     final actual = lista.indexWhere((c) => c.id == _canal.id);
     _control.abrir(lista[((actual < 0 ? 0 : actual) + paso) % lista.length]);
-    _mostrarControles();
+    _mostrarCartel();
   }
 
   void _ver(Canal canal) {
-    setState(() => _guia = false);
-    _control.abrir(canal);
-    _mostrarControles();
-    _raiz.requestFocus();
+    if (canal.id != _canal.id) _control.abrir(canal);
+    _cerrar();
+    _mostrarCartel();
   }
 
   void _escribirNumero(String digito) {
     _numeroListo?.cancel();
     setState(() => _numero = (_numero + digito).length > 3 ? digito : _numero + digito);
     _numeroListo = Timer(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
       final canal = DatosScope.of(context).catalogo.canalPorNumero(_numero);
       setState(() => _numero = '');
       if (canal != null) {
@@ -164,41 +230,47 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
     if (evento is KeyUpEvent) return KeyEventResult.ignored;
     final tecla = evento.logicalKey;
     final digito = evento.character != null && RegExp(r'^\d$').hasMatch(evento.character!) ? evento.character : null;
-    if (digito != null && !_guia) {
+    if (digito != null && _capa != _CapaVivo.guia) {
       _escribirNumero(digito);
       return KeyEventResult.handled;
     }
-    if (tecla == LogicalKeyboardKey.channelUp) {
-      _zapping(1);
+    if (tecla == LogicalKeyboardKey.channelUp || tecla == LogicalKeyboardKey.channelDown) {
+      _zapping(tecla == LogicalKeyboardKey.channelUp ? 1 : -1);
       return KeyEventResult.handled;
     }
-    if (tecla == LogicalKeyboardKey.channelDown) {
-      _zapping(-1);
+    if (tecla == LogicalKeyboardKey.guide) {
+      _capa == _CapaVivo.guia ? _cerrar() : _abrir(_CapaVivo.guia);
       return KeyEventResult.handled;
     }
-    if (_guia) return KeyEventResult.ignored;
-    if (_controles) {
-      _reiniciarEspera();
-      return KeyEventResult.ignored; // las flechas recorren los controles
+    if (_capa != _CapaVivo.nada) {
+      _esperarParaCerrar(); // se está usando: no se cierra
+      return KeyEventResult.ignored; // las flechas recorren la guía o las opciones
     }
-    if (tecla == LogicalKeyboardKey.arrowUp) {
-      _zapping(1);
+    if (tecla == LogicalKeyboardKey.arrowUp || tecla == LogicalKeyboardKey.arrowDown) {
+      _zapping(tecla == LogicalKeyboardKey.arrowUp ? 1 : -1);
       return KeyEventResult.handled;
     }
-    if (tecla == LogicalKeyboardKey.arrowDown) {
-      _zapping(-1);
+    // Con el error a la vista, Izquierda/Derecha recorren sus botones ("Probar de nuevo", "Ver la guía")
+    if (_control.error != null && !_raiz.hasPrimaryFocus) return KeyEventResult.ignored;
+    if (teclasOk.contains(tecla)) {
+      _abrir(_CapaVivo.guia);
       return KeyEventResult.handled;
     }
-    if (teclasOk.contains(tecla) || tecla == LogicalKeyboardKey.arrowLeft || tecla == LogicalKeyboardKey.arrowRight) {
-      _mostrarControles();
+    if (tecla == LogicalKeyboardKey.arrowLeft ||
+        tecla == LogicalKeyboardKey.arrowRight ||
+        tecla == LogicalKeyboardKey.info ||
+        tecla == LogicalKeyboardKey.contextMenu) {
+      _abrir(_CapaVivo.opciones);
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
   }
 
   Future<void> _elegirFuente() async {
+    _cerrarCapa?.cancel();
     final elegida = await elegirFuenteTv(context, _control);
     if (elegida != null) _control.usarFuente(elegida);
+    if (mounted) _cerrar();
   }
 
   @override
@@ -212,23 +284,43 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
     final categoria = categoriaLegible(canal.categoria);
     final escrito = _numero.isEmpty ? null : catalogo.canalPorNumero(_numero);
 
+    final datosDelCanal = [
+      Container(
+        width: 84,
+        height: 62,
+        decoration: BoxDecoration(color: Tono.capa, borderRadius: BorderRadius.circular(Curva.grande)),
+        child: LogoCanalTv(canal: canal, tamanioIniciales: 22, relleno: const EdgeInsets.all(8)),
+      ),
+      const SizedBox(width: 18),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              canal.nombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: LetraTv.tarjeta.copyWith(fontSize: 24),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              [if (numero.isNotEmpty) 'Canal $numero', if (categoria.isNotEmpty) categoria].join(' · '),
+              style: LetraTv.ayuda.copyWith(fontSize: 17, color: Tono.textoSuave),
+            ),
+          ],
+        ),
+      ),
+    ];
+
     return PopScope(
-      canPop: !_guia && !_controles,
+      // "Atrás": cierra lo que esté abierto; si no hay nada, sale
+      canPop: _capa == _CapaVivo.nada,
       onPopInvokedWithResult: (salio, _) {
-        if (salio) return;
-        if (_guia) {
-          setState(() => _guia = false);
-          _mostrarControles();
-        } else {
-          setState(() => _controles = false);
-          _raiz.requestFocus();
-        }
+        if (!salio) _cerrar();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
         body: Focus(
-          // Sin autofocus: al abrir, el foco va al primer botón de los controles;
-          // cuando se esconden, lo toma la pantalla entera (_raiz)
           focusNode: _raiz,
           onKeyEvent: _tecla,
           child: Stack(
@@ -238,14 +330,10 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
               _EstadoSenal(
                 control: _control,
                 alReintentar: _control.reintentar,
-                alGuia: () {
-                  setState(() {
-                    _guia = true;
-                    _controles = true;
-                  });
-                },
+                alGuia: () => _abrir(_CapaVivo.guia),
+                nodoReintentar: _reintentar,
               ),
-              if (_controles || _guia)
+              if (_cartel || _capa != _CapaVivo.nada)
                 const Positioned(top: MargenTv.arriba, left: MargenTv.derecha, child: InsigniaEnVivoTv(grande: true)),
               if (_numero.isNotEmpty)
                 Positioned(
@@ -253,51 +341,41 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
                   right: MargenTv.derecha,
                   child: _NumeroEscrito(numero: _numero, canal: escrito?.nombre),
                 ),
-              if (_controles && !_guia)
+              // El cartel: solo informa
+              if (_cartel && _capa == _CapaVivo.nada && _control.error == null)
                 Positioned(
                   left: MargenTv.derecha,
                   right: MargenTv.derecha,
                   bottom: MargenTv.abajo,
                   child: _PanelControles(
-                    ayuda: '↑ ↓ cambiar de canal  ·  números: ir a un canal  ·  Atrás: ocultar',
+                    ayuda: 'OK: guía  ·  ↑ ↓ cambiar de canal  ·  ← →: opciones  ·  Atrás: salir',
+                    fila: datosDelCanal,
+                  ),
+                ),
+              if (_capa == _CapaVivo.opciones)
+                Positioned(
+                  left: MargenTv.derecha,
+                  right: MargenTv.derecha,
+                  bottom: MargenTv.abajo,
+                  child: _PanelControles(
+                    ayuda: '← → elegir  ·  OK: confirmar  ·  Atrás: cerrar',
                     fila: [
                       _BotonCuadrado(
                         icono: Icons.view_list_rounded,
                         etiqueta: 'Guía',
-                        autofocus: true,
-                        alOk: () => setState(() => _guia = true),
+                        nodo: _primeraOpcion,
+                        alOk: () => _abrir(_CapaVivo.guia),
                       ),
                       const SizedBox(width: 20),
-                      Container(
-                        width: 84,
-                        height: 62,
-                        decoration: BoxDecoration(color: Tono.capa, borderRadius: BorderRadius.circular(Curva.grande)),
-                        child: LogoCanalTv(canal: canal, tamanioIniciales: 22, relleno: const EdgeInsets.all(8)),
-                      ),
-                      const SizedBox(width: 18),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              canal.nombre,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: LetraTv.tarjeta.copyWith(fontSize: 24),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              [if (numero.isNotEmpty) 'Canal $numero', if (categoria.isNotEmpty) categoria].join(' · '),
-                              style: LetraTv.ayuda.copyWith(fontSize: 17, color: Tono.textoSuave),
-                            ),
-                          ],
-                        ),
-                      ),
+                      ...datosDelCanal,
                       _BotonCuadrado(
                         icono: favorito ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                         color: favorito ? Tono.rubi : null,
                         etiqueta: favorito ? 'Quitar de favoritos' : 'Agregar a favoritos',
-                        alOk: () => alternarFavoritoTv(context, clave),
+                        alOk: () {
+                          alternarFavoritoTv(context, clave);
+                          _esperarParaCerrar();
+                        },
                       ),
                       if (_control.fuentes.length > 1) ...[
                         const SizedBox(width: 18),
@@ -306,7 +384,14 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
                     ],
                   ),
                 ),
-              if (_guia) _GuiaEncima(lista: widget.lista, actual: canal, numeroDe: catalogo.numeroDe, alElegir: _ver),
+              if (_capa == _CapaVivo.guia)
+                _GuiaEncima(
+                  lista: widget.lista,
+                  actual: canal,
+                  numeroDe: catalogo.numeroDe,
+                  nodoActual: _canalEnLaGuia,
+                  alElegir: _ver,
+                ),
             ],
           ),
         ),
@@ -353,12 +438,21 @@ class _NumeroEscrito extends StatelessWidget {
 
 /// La guía encima del video: la lista de canales a la izquierda, parada en el que se ve.
 class _GuiaEncima extends StatelessWidget {
-  const _GuiaEncima({required this.lista, required this.actual, required this.numeroDe, required this.alElegir});
+  const _GuiaEncima({
+    required this.lista,
+    required this.actual,
+    required this.numeroDe,
+    required this.alElegir,
+    required this.nodoActual,
+  });
 
   final List<Canal> lista;
   final Canal actual;
   final String Function(Canal) numeroDe;
   final ValueChanged<Canal> alElegir;
+
+  /// El del canal que se está viendo: ahí arranca el foco al abrir la guía.
+  final FocusNode nodoActual;
 
   static const _altoFila = 92.0;
 
@@ -399,7 +493,7 @@ class _GuiaEncima extends StatelessWidget {
                         child: FilaCanalTv(
                           canal: canal,
                           numero: numeroDe(canal),
-                          autofocus: i == indice,
+                          nodo: i == indice ? nodoActual : null,
                           enReproduccion: canal.id == actual.id,
                           alOk: () => alElegir(canal),
                         ),
@@ -428,6 +522,7 @@ class FilaCanalTv extends StatelessWidget {
     this.enReproduccion = false,
     this.favorito = false,
     this.ayuda,
+    this.nodo,
   });
 
   final Canal canal;
@@ -435,6 +530,9 @@ class FilaCanalTv extends StatelessWidget {
   final VoidCallback alOk;
   final VoidCallback? alOkLargo;
   final bool autofocus;
+
+  /// Para llevarle el foco desde afuera (ej: al abrir la guía, al canal que se ve).
+  final FocusNode? nodo;
   final bool enReproduccion;
   final bool favorito;
 
@@ -448,6 +546,7 @@ class FilaCanalTv extends StatelessWidget {
       alOk: alOk,
       alOkLargo: alOkLargo,
       autofocus: autofocus,
+      nodo: nodo,
       curva: Curva.boton,
       escala: 1.02,
       etiqueta: 'Canal $numero, ${canal.nombre}',
@@ -540,11 +639,21 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
   late final ControlSenal _control = ControlSenal(SesionScope.leer(context).api)..addListener(_alCambiar);
   late final Biblioteca _biblioteca = DatosScope.of(context).biblioteca;
   final _raiz = FocusNode(debugLabel: 'reproductor');
+  final _botonPausa = FocusNode(debugLabel: 'pausa');
+  final _linea = FocusNode(debugLabel: 'línea de tiempo');
+  final _reintentar = FocusNode(debugLabel: 'probar de nuevo');
   late Canal _canal = widget.canal;
   late Episodio? _episodio = widget.episodio;
-  bool _controles = true;
+
+  /// La barra con los botones y la línea de tiempo (toma el foco).
+  bool _controles = false;
+
+  /// El título arriba, al empezar (solo informa: no atrapa "Atrás").
+  bool _cartel = true;
   bool _siguienteLanzado = false;
+  String? _errorAnterior;
   Timer? _ocultar;
+  Timer? _cerrarCartel;
   Timer? _guardar;
 
   @override
@@ -553,21 +662,29 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
     WakelockPlus.enable().catchError((Object _) {});
     _control.abrir(_canal, desde: widget.desde);
     _guardar = Timer.periodic(const Duration(seconds: 5), (_) => _guardarProgreso());
-    _mostrarControles();
+    _esconderCartelDespues();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _raiz.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _guardarProgreso();
     _ocultar?.cancel();
+    _cerrarCartel?.cancel();
     _guardar?.cancel();
     _control.dispose();
-    _raiz.dispose();
+    for (final nodo in [_raiz, _botonPausa, _linea, _reintentar]) {
+      nodo.dispose();
+    }
     WakelockPlus.disable().catchError((Object _) {});
     super.dispose();
   }
 
   VideoPlayerValue? get _valor => _control.video?.value;
+
+  bool get _reproduciendo => _valor?.isPlaying ?? false;
 
   void _alCambiar() {
     if (!mounted) return;
@@ -582,6 +699,15 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
       _guardarProgreso();
       if (_siguiente != null) _pasarA(_siguiente!);
     }
+    // Si falló, el foco va a "Probar de nuevo"
+    final error = _control.error;
+    if (error != null && error != _errorAnterior) {
+      _controles = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _reintentar.context != null) _reintentar.requestFocus();
+      });
+    }
+    _errorAnterior = error;
     setState(() {});
   }
 
@@ -609,26 +735,60 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
     });
     final progreso = _biblioteca.progresoDe(episodio.canal.id);
     _control.abrir(episodio.canal, desde: progreso == null || progreso.terminado ? null : progreso.posicion);
-    _mostrarControles();
+    _cerrarControles();
+    _mostrarCartel();
   }
 
-  void _mostrarControles() {
-    setState(() => _controles = true);
+  void _mostrarCartel() {
+    setState(() => _cartel = true);
+    _esconderCartelDespues();
+  }
+
+  /// (El cartel arranca visible: al abrir solo hace falta esto.)
+  void _esconderCartelDespues() {
+    _cerrarCartel?.cancel();
+    _cerrarCartel = Timer(_esperaCartel, () {
+      if (mounted) setState(() => _cartel = false);
+    });
+  }
+
+  /// Muestra la barra y le lleva el foco a [nodo] (Pausa, o la línea de tiempo si se está adelantando).
+  void _abrirControles(FocusNode nodo) {
+    final yaEstaban = _controles;
+    setState(() {
+      _controles = true;
+      _cartel = false;
+    });
+    if (!yaEstaban) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _controles) nodo.requestFocus();
+      });
+    }
     _reiniciarEspera();
   }
 
+  /// Mientras se reproduce, la barra se esconde sola. En pausa queda a la vista.
   void _reiniciarEspera() {
     _ocultar?.cancel();
     _ocultar = Timer(_esperaControles, () {
-      if (!mounted || !(_valor?.isPlaying ?? false)) return;
-      setState(() => _controles = false);
-      _raiz.requestFocus();
+      if (mounted && _controles && _reproduciendo) _cerrarControles();
     });
+  }
+
+  void _cerrarControles() {
+    _ocultar?.cancel();
+    setState(() => _controles = false);
+    (_control.error != null && _reintentar.context != null ? _reintentar : _raiz).requestFocus();
   }
 
   void _saltar(Duration cuanto) {
     _control.saltar(cuanto);
-    _mostrarControles();
+    _abrirControles(_linea);
+  }
+
+  void _pausa() {
+    _control.alternarPausa();
+    _abrirControles(_botonPausa);
   }
 
   KeyEventResult _tecla(FocusNode _, KeyEvent evento) {
@@ -638,40 +798,42 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
     if (tecla == LogicalKeyboardKey.mediaPlayPause ||
         tecla == LogicalKeyboardKey.mediaPlay ||
         tecla == LogicalKeyboardKey.mediaPause) {
-      _control.alternarPausa();
-      _mostrarControles();
+      _pausa();
       return KeyEventResult.handled;
     }
-    if (tecla == LogicalKeyboardKey.mediaFastForward) {
-      _saltar(_salto * 3);
-      return KeyEventResult.handled;
-    }
-    if (tecla == LogicalKeyboardKey.mediaRewind) {
-      _saltar(-_salto * 3);
+    if (tecla == LogicalKeyboardKey.mediaFastForward || tecla == LogicalKeyboardKey.mediaRewind) {
+      _saltar(tecla == LogicalKeyboardKey.mediaFastForward ? _salto * 3 : -_salto * 3);
       return KeyEventResult.handled;
     }
     if (_controles) {
-      _reiniciarEspera();
-      return KeyEventResult.ignored;
+      _reiniciarEspera(); // se está usando: no se esconde
+      return KeyEventResult.ignored; // las flechas recorren la barra
     }
-    if (tecla == LogicalKeyboardKey.arrowLeft) {
-      _saltar(-_salto);
+    // Con el error a la vista, las flechas y OK son de sus botones
+    if (_control.error != null && !_raiz.hasPrimaryFocus) return KeyEventResult.ignored;
+    if (tecla == LogicalKeyboardKey.arrowLeft || tecla == LogicalKeyboardKey.arrowRight) {
+      _saltar(tecla == LogicalKeyboardKey.arrowRight ? _salto : -_salto);
       return KeyEventResult.handled;
     }
-    if (tecla == LogicalKeyboardKey.arrowRight) {
-      _saltar(_salto);
+    if (teclasOk.contains(tecla)) {
+      _pausa();
       return KeyEventResult.handled;
     }
-    if (teclasOk.contains(tecla) || tecla == LogicalKeyboardKey.arrowUp || tecla == LogicalKeyboardKey.arrowDown) {
-      _mostrarControles();
+    if (tecla == LogicalKeyboardKey.arrowUp ||
+        tecla == LogicalKeyboardKey.arrowDown ||
+        tecla == LogicalKeyboardKey.info ||
+        tecla == LogicalKeyboardKey.contextMenu) {
+      _abrirControles(_botonPausa);
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
   }
 
   Future<void> _elegirFuente() async {
+    _ocultar?.cancel();
     final elegida = await elegirFuenteTv(context, _control);
     if (elegida != null) _control.usarFuente(elegida);
+    if (mounted) _cerrarControles();
   }
 
   @override
@@ -689,27 +851,36 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
     final duracion = valor?.duration ?? Duration.zero;
     final posicion = valor?.position ?? Duration.zero;
     final siguiente = _siguiente;
+    final textoDelTitulo = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(titulo, maxLines: 1, overflow: TextOverflow.ellipsis, style: LetraTv.tarjeta.copyWith(fontSize: 24)),
+        Text(
+          subtitulo,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: LetraTv.ayuda.copyWith(fontSize: 17, color: Tono.textoSuave),
+        ),
+      ],
+    );
 
     return PopScope(
-      canPop: !_controles || !(valor?.isPlaying ?? false),
+      // "Atrás": si la barra está a la vista, la esconde; si no, sale
+      canPop: !_controles,
       onPopInvokedWithResult: (salio, _) {
-        if (salio) return;
-        setState(() => _controles = false);
-        _raiz.requestFocus();
+        if (!salio) _cerrarControles();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
         body: Focus(
-          // Sin autofocus: al abrir, el foco va al primer botón de los controles;
-          // cuando se esconden, lo toma la pantalla entera (_raiz)
           focusNode: _raiz,
           onKeyEvent: _tecla,
           child: Stack(
             fit: StackFit.expand,
             children: [
               _Video(control: _control),
-              _EstadoSenal(control: _control, alReintentar: _control.reintentar),
-              if (_controles)
+              _EstadoSenal(control: _control, alReintentar: _control.reintentar, nodoReintentar: _reintentar),
+              if (_controles || _cartel)
                 Positioned(
                   top: MargenTv.arriba,
                   left: MargenTv.derecha,
@@ -732,42 +903,36 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
                     ),
                   ),
                 ),
+              // El cartel del principio: título y cómo se maneja (solo informa)
+              if (_cartel && !_controles && _control.error == null)
+                Positioned(
+                  left: MargenTv.derecha,
+                  right: MargenTv.derecha,
+                  bottom: MargenTv.abajo,
+                  child: _PanelControles(
+                    fila: [Expanded(child: textoDelTitulo)],
+                    ayuda: 'OK: pausa  ·  ← →: atrasar / adelantar 10 s  ·  ↑ ↓: opciones  ·  Atrás: salir',
+                  ),
+                ),
               if (_controles)
                 Positioned(
                   left: MargenTv.derecha,
                   right: MargenTv.derecha,
                   bottom: MargenTv.abajo,
                   child: _PanelControles(
+                    ayuda: 'Atrás: ocultar',
                     fila: [
                       _BotonCuadrado(
-                        icono: (valor?.isPlaying ?? false) ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        etiqueta: (valor?.isPlaying ?? false) ? 'Pausa' : 'Seguir',
-                        autofocus: true,
+                        icono: _reproduciendo ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                        etiqueta: _reproduciendo ? 'Pausa' : 'Seguir',
+                        nodo: _botonPausa,
                         alOk: () {
                           _control.alternarPausa();
                           _reiniciarEspera();
                         },
                       ),
                       const SizedBox(width: 20),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              titulo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: LetraTv.tarjeta.copyWith(fontSize: 24),
-                            ),
-                            Text(
-                              subtitulo,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: LetraTv.ayuda.copyWith(fontSize: 17, color: Tono.textoSuave),
-                            ),
-                          ],
-                        ),
-                      ),
+                      Expanded(child: textoDelTitulo),
                       if (siguiente != null) ...[
                         BotonTv(
                           texto: 'Siguiente episodio',
@@ -781,7 +946,10 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
                         icono: favorito ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                         color: favorito ? Tono.rubi : null,
                         etiqueta: favorito ? 'Quitar de favoritos' : 'Agregar a favoritos',
-                        alOk: () => alternarFavoritoTv(context, clave),
+                        alOk: () {
+                          alternarFavoritoTv(context, clave);
+                          _reiniciarEspera();
+                        },
                       ),
                       if (_control.fuentes.length > 1) ...[
                         const SizedBox(width: 18),
@@ -789,6 +957,7 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
                       ],
                     ],
                     debajo: _LineaDeTiempo(
+                      nodo: _linea,
                       posicion: posicion,
                       duracion: duracion,
                       alSaltar: (cuanto) {
@@ -806,13 +975,14 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
   }
 }
 
-/// La línea de tiempo: con el foco, Izquierda/Derecha mueven ±10 s.
+// La línea de tiempo: con el foco, Izquierda/Derecha mueven ±10 s.
 class _LineaDeTiempo extends StatelessWidget {
-  const _LineaDeTiempo({required this.posicion, required this.duracion, required this.alSaltar});
+  const _LineaDeTiempo({required this.posicion, required this.duracion, required this.alSaltar, this.nodo});
 
   final Duration posicion;
   final Duration duracion;
   final ValueChanged<Duration> alSaltar;
+  final FocusNode? nodo;
 
   @override
   Widget build(BuildContext context) {
@@ -822,6 +992,7 @@ class _LineaDeTiempo extends StatelessWidget {
     return Column(
       children: [
         Enfocable(
+          nodo: nodo,
           curva: 99,
           escala: 1.0,
           etiqueta: 'Línea de tiempo: ${reloj(posicion)} de ${reloj(duracion)}',
@@ -916,11 +1087,14 @@ class _Video extends StatelessWidget {
 
 /// Cargando, "probando otra señal…" o el error con "Probar de nuevo" (tv-19).
 class _EstadoSenal extends StatelessWidget {
-  const _EstadoSenal({required this.control, required this.alReintentar, this.alGuia});
+  const _EstadoSenal({required this.control, required this.alReintentar, this.alGuia, this.nodoReintentar});
 
   final ControlSenal control;
   final VoidCallback alReintentar;
   final VoidCallback? alGuia;
+
+  /// El de "Probar de nuevo": el reproductor le lleva el foco cuando aparece el error.
+  final FocusNode? nodoReintentar;
 
   @override
   Widget build(BuildContext context) {
@@ -953,6 +1127,7 @@ class _EstadoSenal extends StatelessWidget {
                       icono: Icons.refresh_rounded,
                       principal: true,
                       autofocus: true,
+                      nodo: nodoReintentar,
                       alOk: alReintentar,
                     ),
                     if (alGuia != null) BotonTv(texto: 'Ver la guía', icono: Icons.view_list_rounded, alOk: alGuia),
@@ -1017,19 +1192,15 @@ class _PanelControles extends StatelessWidget {
 }
 
 class _BotonCuadrado extends StatelessWidget {
-  const _BotonCuadrado({
-    required this.icono,
-    required this.etiqueta,
-    required this.alOk,
-    this.autofocus = false,
-    this.color,
-  });
+  const _BotonCuadrado({required this.icono, required this.etiqueta, required this.alOk, this.color, this.nodo});
 
   final IconData icono;
   final String etiqueta;
   final VoidCallback alOk;
-  final bool autofocus;
   final Color? color;
+
+  /// Para llevarle el foco al abrir la barra (el reproductor lo pide explícitamente).
+  final FocusNode? nodo;
 
   @override
   Widget build(BuildContext context) {
@@ -1037,7 +1208,7 @@ class _BotonCuadrado extends StatelessWidget {
       message: etiqueta,
       child: Enfocable(
         alOk: alOk,
-        autofocus: autofocus,
+        nodo: nodo,
         curva: Curva.boton,
         escala: 1.08,
         etiqueta: etiqueta,

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% load canales_extras %}
+
+{% block titulo %}{{ serie.nombre }}{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{% url 'canales:series' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Series</a>
+    <div class="serie-hero">
+        <div class="serie-hero-portada">
+            {% if serie.logo %}<img src="{{ serie.logo }}" alt="" referrerpolicy="no-referrer">
+            {% else %}<span>{{ serie.nombre|iniciales }}</span>{% endif %}
+        </div>
+        <div>
+            <p class="serie-categoria">{{ serie.categoria|default:"Sin categoría" }}</p>
+            <h1 class="pagina-titulo">{{ serie.nombre }}</h1>
+            <p class="pagina-bajada mb-3">{{ serie.numeros_de_temporada|length }} temporada{{ serie.numeros_de_temporada|length|pluralize }} · {{ serie.cantidad }} capítulo{{ serie.cantidad|pluralize }}.</p>
+            <div class="d-flex flex-wrap gap-2">
+                <span class="chip chip-agregada">{{ serie.en_la_app }} se ven en la app</span>
+                {% if serie.fuera %}<span class="chip chip-caida">{{ serie.fuera }} no se ven</span>{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<div class="temporadas-lista">
+    {% for numero, capitulos in serie.temporadas_ordenadas %}
+    <details class="temporada" {% if forloop.first %}open{% endif %}>
+        <summary>
+            <span><i class="bi bi-chevron-right" aria-hidden="true"></i> Temporada {{ numero }}</span>
+            <span class="texto-suave">{{ capitulos|length }} capítulo{{ capitulos|length|pluralize }}</span>
+        </summary>
+        <div class="temporada-capitulos">
+            {% for capitulo in capitulos %}
+            <article class="capitulo" id="capitulo-{{ capitulo.canal.pk }}">
+                <div class="capitulo-encabezado">
+                    <span class="capitulo-numero dato">E{% if capitulo.numero != None %}{{ capitulo.numero|stringformat:"02d" }}{% else %}—{% endif %}</span>
+                    <div class="capitulo-titulo">
+                        <h2>{{ capitulo.titulo|default:capitulo.canal.nombre }}</h2>
+                        <p class="texto-suave mb-0">{{ capitulo.canal.nombre }}</p>
+                    </div>
+                    <div class="capitulo-estado">
+                        {% if capitulo.no_se_ve %}<span class="chip chip-caida">No se ve</span>
+                        <span class="capitulo-motivo">{{ capitulo.no_se_ve }}</span>
+                        {% else %}<span class="chip chip-agregada">Se ve en la app</span>{% endif %}
+                    </div>
+                    {% if puede_editar %}
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'canales:canal_editar' capitulo.canal.pk %}?volver={{ request.get_full_path|urlencode }}">
+                        <i class="bi bi-pencil" aria-hidden="true"></i> Editar
+                    </a>
+                    {% endif %}
+                </div>
+
+                <div class="table-responsive capitulo-fuentes">
+                    <table class="table tabla mb-0">
+                        <thead><tr><th scope="col">Fuente</th><th scope="col">Formato</th><th scope="col">Códec</th><th scope="col">Estado</th><th scope="col">Error</th></tr></thead>
+                        <tbody>
+                        {% for fuente in capitulo.canal.fuentes.all %}
+                            <tr>
+                                <td><span class="dato">{{ forloop.counter }}</span><div class="direccion">{{ fuente.url }}</div></td>
+                                <td>{{ fuente.get_tipo_display }}</td>
+                                <td class="dato">{{ fuente.codec|default:"No se sabe" }}</td>
+                                <td>
+                                    <span class="chip {% if fuente.estado == 'funciona' %}chip-agregada{% elif fuente.estado == 'caida' %}chip-caida{% else %}chip-pendiente{% endif %}">{{ fuente.get_estado_display }}</span>
+                                    {% if not fuente.activa %}<span class="chip">Apagada</span>{% endif %}
+                                </td>
+                                <td class="small">{{ fuente.error|default:"Sin errores registrados." }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="5" class="texto-suave">Este capítulo no tiene fuentes.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </details>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -24,6 +24,13 @@ from .errores import ErrorApi
 # avisar si uno falla), su estado y cerrar sesión. Todo lo demás es de los usuarios del panel.
 VISTAS_DE_CLIENTES = {'api_v1:canales', 'api_v1:fuente_falla', 'api_v1:cliente', 'api_v1:cliente_logout'}
 
+# Las vistas para MIRAR (los canales). Un revendedor no las usa con su usuario
+# del panel: mira con su propia pantalla, un cliente que activa con sus
+# créditos (reventa.servicios.pantalla_propia). El administrador sí, para probar.
+VISTAS_PARA_MIRAR = {'api_v1:canales', 'api_v1:fuente_falla', 'api_v1:fuente_resolver'}
+MENSAJE_REVENDEDOR = ('Para ver la app usá tu propia pantalla: en el panel, entrá a Reventa → "Mi pantalla", '
+                      'activala con tus créditos y entrá a la app con ese código.')
+
 # Lo único que puede hacer quien tiene que cambiar la contraseña
 VISTAS_CON_PASSWORD_PENDIENTE = {'api_v1:perfil', 'api_v1:cambiar_password', 'api_v1:logout'}
 
@@ -47,6 +54,8 @@ class SistemaDisponible(BasePermission):
 
         if getattr(usuario, 'es_cliente_app', False):
             self._chequear_cliente(request, usuario.cliente)
+        elif usuario.is_authenticated and self._es_revendedor_mirando(request, usuario):
+            raise ErrorApi(MENSAJE_REVENDEDOR, 'revendedor_sin_pantalla', status.HTTP_403_FORBIDDEN)
 
         if usuario.is_authenticated and usuario.debe_cambiar_password:
             vista = request.resolver_match.view_name if request.resolver_match else ''
@@ -55,6 +64,15 @@ class SistemaDisponible(BasePermission):
                                status.HTTP_403_FORBIDDEN)
         return True
 
+
+    @staticmethod
+    def _es_revendedor_mirando(request, usuario):
+        """Un revendedor (que no es administrador) pidiendo los canales con su usuario del panel."""
+        vista = request.resolver_match.view_name if request.resolver_match else ''
+        if vista not in VISTAS_PARA_MIRAR or tiene_algun_permiso(usuario, 'administrar_reventa'):
+            return False
+        from reventa.models import Revendedor
+        return Revendedor.objects.filter(usuario=usuario).exists()
 
     @staticmethod
     def _chequear_cliente(request, cliente):

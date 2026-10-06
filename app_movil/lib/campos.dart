@@ -58,7 +58,12 @@ const seccionesUsuario = [
   _contacto,
   _domicilio,
   _emergencia,
-  Seccion('Datos laborales', [_puesto, _area, _fechaIngreso, Campo('notas_internas', 'Notas internas', TipoCampo.multilinea)]),
+  Seccion('Datos laborales', [
+    _puesto,
+    _area,
+    _fechaIngreso,
+    Campo('notas_internas', 'Notas internas', TipoCampo.multilinea),
+  ]),
 ];
 
 /// Lo que cada uno puede editar de sí mismo en "Mi perfil".

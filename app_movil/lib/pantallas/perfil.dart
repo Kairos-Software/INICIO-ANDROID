@@ -52,11 +52,7 @@ class PantallaPerfil extends StatelessWidget {
                 children: [
                   Avatar(iniciales: perfil.iniciales, foto: perfil.foto, radio: 44),
                   const SizedBox(height: 12),
-                  Text(
-                    perfil.nombreCompleto,
-                    textAlign: TextAlign.center,
-                    style: estiloTitulo(22),
-                  ),
+                  Text(perfil.nombreCompleto, textAlign: TextAlign.center, style: estiloTitulo(22)),
                   Text('@${perfil.username}', style: const TextStyle(color: Colores.textoSuave)),
                   const SizedBox(height: 10),
                   Etiqueta(perfil.descripcionRol),
@@ -70,10 +66,8 @@ class PantallaPerfil extends StatelessWidget {
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     label: const Text('Editar datos'),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(builder: (_) => const PantallaPerfilEditar()),
-                    ),
+                    onPressed: () =>
+                        Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const PantallaPerfilEditar())),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -135,9 +129,7 @@ class _MisPermisos extends StatelessWidget {
     }
     final modulos = perfil.permisosPorModulo;
     if (modulos.isEmpty) {
-      return const Card(
-        child: ListTile(title: Text('Por ahora solo podés gestionar tu propio perfil.')),
-      );
+      return const Card(child: ListTile(title: Text('Por ahora solo podés gestionar tu propio perfil.')));
     }
     return Card(
       child: Padding(
@@ -146,7 +138,10 @@ class _MisPermisos extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (final (modulo, permisos) in modulos) ...[
-              Text(modulo, style: const TextStyle(fontWeight: FontWeight.w600, color: Colores.celeste)),
+              Text(
+                modulo,
+                style: const TextStyle(fontWeight: FontWeight.w600, color: Colores.celeste),
+              ),
               const SizedBox(height: 4),
               for (final permiso in permisos)
                 Padding(
@@ -199,9 +194,11 @@ class _PantallaPerfilEditarState extends State<PantallaPerfilEditar> {
     try {
       final datos = await SesionScope.leer(context).api.get('perfil/opciones/') as Map<String, dynamic>;
       if (!mounted) return;
-      setState(() => _opciones = {
-            'genero': [for (final o in datos['genero'] as List) Opcion.desdeJson(o as Map<String, dynamic>)],
-          });
+      setState(
+        () => _opciones = {
+          'genero': [for (final o in datos['genero'] as List) Opcion.desdeJson(o as Map<String, dynamic>)],
+        },
+      );
     } catch (error) {
       if (mounted) mostrarMensaje(context, textoDeError(error), error: true);
     }
@@ -283,7 +280,7 @@ class _PantallaCambiarPasswordState extends State<PantallaCambiarPassword> {
         'new_password1': _nueva.text,
         'new_password2': _repetir.text,
       });
-      await sesion.recargarPerfil();   // ya no "debe cambiarla": main.dart muestra el sistema
+      await sesion.recargarPerfil(); // ya no "debe cambiarla": main.dart muestra el sistema
       if (!mounted) return;
       mostrarMensaje(context, 'Tu contraseña se cambió.');
       if (!widget.obligatorio) Navigator.pop(context);
@@ -335,7 +332,12 @@ class _PantallaCambiarPasswordState extends State<PantallaCambiarPassword> {
           _campo(_nueva, 'Contraseña nueva', 'new_password1'),
           _campo(_repetir, 'Repetir contraseña nueva', 'new_password2'),
           const SizedBox(height: 8),
-          BotonDegradado(texto: 'Cambiar contraseña', icono: Icons.key_rounded, cargando: _guardando, alTocar: _guardar),
+          BotonDegradado(
+            texto: 'Cambiar contraseña',
+            icono: Icons.key_rounded,
+            cargando: _guardando,
+            alTocar: _guardar,
+          ),
         ],
       ),
     );

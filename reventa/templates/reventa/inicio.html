@@ -57,6 +57,11 @@
         <h2 class="tarjeta-titulo">Mis números</h2>
         <div class="d-flex gap-2">
             <a href="{% url 'reventa:cliente_nuevo' %}" class="btn btn-acento btn-sm"><i class="bi bi-person-plus" aria-hidden="true"></i> Nuevo cliente</a>
+            {# Para ver la app: el revendedor se activa a sí mismo con sus créditos #}
+            <form method="post" action="{% url 'reventa:mi_pantalla' %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-secondary btn-sm" title="Activate con tus créditos para ver la app"><i class="bi bi-tv" aria-hidden="true"></i> Mi pantalla</button>
+            </form>
             <a href="{% url 'reventa:creditos' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-coin" aria-hidden="true"></i> Comprar créditos</a>
             <a href="{% url 'reventa:estadisticas' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-bar-chart" aria-hidden="true"></i> Estadísticas</a>
         </div>

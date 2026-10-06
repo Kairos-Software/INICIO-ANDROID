@@ -6,6 +6,7 @@ app_name = 'reventa'
 
 urlpatterns = [
     path('', views.inicio, name='inicio'),
+    path('mi-pantalla/', views.mi_pantalla, name='mi_pantalla'),
     path('estadisticas/', views.ver_estadisticas, name='estadisticas'),
     path('revendedores/', views.revendedores, name='revendedores'),
     path('revendedores/nuevo/', views.revendedor_nuevo, name='revendedor_nuevo'),

@@ -176,6 +176,53 @@ class VerificarUrlTests(TestCase):
         verificar_url.assert_not_called()
 
 
+def _paquete_ts(pid, carga, inicio_de_tabla=True):
+    """Un paquete MPEG-TS de 188 bytes (cabecera + pointer field + la tabla, relleno con 0xFF)."""
+    cabecera = bytes([0x47, (0x40 if inicio_de_tabla else 0) | (pid >> 8), pid & 0xFF, 0x10])
+    cuerpo = (b'\x00' + carga) if inicio_de_tabla else carga
+    return (cabecera + cuerpo).ljust(188, b'\xff')
+
+
+def _video_ts(tipo_de_video):
+    """Un pedazo de MPEG-TS: PAT (programa 1 en el PID 0x100) + PMT (video del tipo pedido + audio AAC)."""
+    pat = bytes([0x00, 0xB0, 13, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00]) + b'CRC!'
+    pistas = bytes([tipo_de_video, 0xE1, 0x01, 0xF0, 0x00, 0x0F, 0xE1, 0x02, 0xF0, 0x00])
+    pmt = bytes([0x02, 0xB0, 9 + len(pistas) + 4, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x01, 0xF0, 0x00])
+    return _paquete_ts(0, pat) + _paquete_ts(0x100, pmt + pistas + b'CRC!') + _paquete_ts(0x1FFF, b'', False)
+
+
+class CodecTests(TestCase):
+    """El códec del video: el aparato lo compara con los que sabe mostrar."""
+
+    def test_mpeg_ts(self):
+        self.assertEqual(verificacion.detectar_codec(_video_ts(0x1B)), 'h264')
+        self.assertEqual(verificacion.detectar_codec(_video_ts(0x24)), 'h265')
+        self.assertEqual(verificacion.detectar_codec(_video_ts(0x02)), 'mpeg2')
+
+    def test_mkv_y_mp4(self):
+        self.assertEqual(verificacion.detectar_codec(b'\x1aE\xdf\xa3...V_MPEGH/ISO/HEVC...'), 'h265')
+        self.assertEqual(verificacion.detectar_codec(b'\x00\x00\x00\x18ftypisom...avc1...'), 'h264')
+        self.assertEqual(verificacion.detectar_codec(b'cualquier cosa'), '')
+
+    def test_lista_maestra_hls(self):
+        texto = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,CODECS="mp4a.40.2,hvc1.1.6.L93.B0"\nalta.m3u8\n'
+        self.assertEqual(verificacion.codec_de_hls(texto), 'h265')
+        self.assertEqual(verificacion.codec_de_hls('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\na.m3u8\n'), '')
+
+    def test_la_verificacion_lo_guarda(self):
+        lista = '#EXTM3U\n#EXTINF:6,\nseg1.ts\n'
+        datos = {'https://x/a.m3u8': lista.encode(), 'https://x/seg1.ts': _video_ts(0x02)}
+        with mock.patch.object(verificacion, '_descargar', side_effect=lambda url, *_a, **_k: (datos[url], url, '')):
+            resultado = verificacion.verificar_url('https://x/a.m3u8')
+        self.assertEqual((resultado.estado, resultado.codec), (FUNCIONA, 'mpeg2'))
+        # Y la API se lo manda a la app
+        canal = Canal.objects.create(nombre='Canal 26')
+        fuente = Fuente.objects.create(canal=canal, url='https://x/a.m3u8', estado=Fuente.Estado.FUNCIONA,
+                                       codec=resultado.codec)
+        from api.v1.serializers import FuenteSerializer
+        self.assertEqual(FuenteSerializer(fuente).data['codec'], 'mpeg2')
+
+
 class ImportarDeATandasTests(TestCase):
 
     def test_solo_agrega_las_que_funcionan(self):
@@ -405,9 +452,9 @@ class AvisoDeFallaTests(TestCase):
 
     def test_si_falla_en_varios_aparatos_se_oculta_aunque_al_servidor_le_ande(self, verificar_url):
         verificar_url.return_value = Resultado(FUNCIONA)
+        # Con dos aparatos distintos alcanza (AVISOS_PARA_OCULTAR)
         self.assertEqual(self.avisar_desde('a').json()['estado'], FUNCIONA)
-        self.assertEqual(self.avisar_desde('b').json()['estado'], FUNCIONA)
-        self.assertEqual(self.avisar_desde('c').json()['estado'], CAIDA)
+        self.assertEqual(self.avisar_desde('b').json()['estado'], CAIDA)
         self.assertEqual(self.app.get(reverse('api_v1:canales')).json()['cantidad'], 0)
         self.fuente.refresh_from_db()
         self.assertIn('no puede leer el formato', self.fuente.falla_en_aparatos)
@@ -418,11 +465,10 @@ class AvisoDeFallaTests(TestCase):
 
     def test_el_mismo_aparato_reintentando_no_la_oculta(self, verificar_url):
         verificar_url.return_value = Resultado(FUNCIONA)
-        self.avisar_desde('a')
         for _ in range(4):
             self.avisar()
         self.fuente.refresh_from_db()
-        self.assertEqual(self.fuente.avisos_de_aparatos, 2)   # "a" y el de setUp, una vez cada uno
+        self.assertEqual(self.fuente.avisos_de_aparatos, 1)   # el de setUp cuenta una sola vez
         self.assertIsNone(self.fuente.oculta_desde)
 
     def test_solo_fuentes_que_la_app_recibe(self, verificar_url):
@@ -517,3 +563,39 @@ class EditarCanalTests(TestCase):
         self.client.force_login(Usuario.objects.create_user(
             'mira', None, 'x', rol=Rol.objects.create(nombre='Mira', permisos=['ver_canales'])))
         self.assertEqual(self.client.get(self.url).status_code, 403)
+
+
+class ResumenYSeriesTests(TestCase):
+    """El panel separa en vivo, películas y series; las series se agrupan como en la app."""
+
+    def capitulo(self, nombre, estado=Fuente.Estado.FUNCIONA, contenido='serie'):
+        canal = Canal.objects.create(nombre=nombre, contenido=contenido)
+        Fuente.objects.create(canal=canal, url=f'https://x/{canal.pk}.mkv', tipo='directo', estado=estado)
+        return canal
+
+    def test_resumen_separado(self):
+        from canales import consultas
+        self.capitulo('Canal 26', contenido='vivo')
+        self.capitulo('Matrix (1999)', contenido='pelicula')
+        self.capitulo('Arrow S01 E01')
+        self.capitulo('Arrow S01 E02', estado=Fuente.Estado.CAIDA)
+        resumen = consultas.resumen()
+        self.assertEqual(resumen['canales'], 1)   # antes sumaba también películas y capítulos
+        series = {r['contenido']: r for r in resumen['por_contenido']}['serie']
+        self.assertEqual((series['cargados'], series['en_la_app'], series['caidas']), (2, 1, 1))
+
+    def test_series_agrupadas(self):
+        from canales import consultas
+        from canales.clasificar import episodio
+        self.assertEqual(episodio('Arrow S02 E05 El regreso'), ('Arrow', 2, 5, 'El regreso'))
+        self.assertEqual(episodio('The Office 1x05'), ('The Office', 1, 5, ''))
+        self.assertEqual(episodio('Especial'), ('Especial', 1, None, ''))
+        for nombre in ['Arrow S01 E02', 'Arrow S01 E01', 'arrow S02E01', 'Lucifer S01 E01']:
+            self.capitulo(nombre)
+        self.capitulo('Lucifer S01 E02', estado=Fuente.Estado.CAIDA)
+        arrow, lucifer = consultas.series()
+        self.assertEqual((arrow.nombre, arrow.numeros_de_temporada, arrow.cantidad), ('Arrow', [1, 2], 3))
+        self.assertEqual([c.numero for c in arrow.temporadas[1]], [1, 2])   # ordenados
+        self.assertEqual((lucifer.en_la_app, lucifer.fuera), (1, 1))
+        self.capitulo('Rota S01 E01', estado=Fuente.Estado.CAIDA)
+        self.assertEqual([s.nombre for s in consultas.series(estado='fuera')], ['Rota'])

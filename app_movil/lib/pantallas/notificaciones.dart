@@ -48,10 +48,7 @@ class _PantallaNotificacionesState extends State<PantallaNotificaciones> {
             Text(notificacion.titulo, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text(fechaLegible(notificacion.creada), style: const TextStyle(color: Colores.textoSuave, fontSize: 12)),
-            if (notificacion.mensaje.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text(notificacion.mensaje),
-            ],
+            if (notificacion.mensaje.isNotEmpty) ...[const SizedBox(height: 16), Text(notificacion.mensaje)],
           ],
         ),
       ),
@@ -111,16 +108,16 @@ class _PantallaNotificacionesState extends State<PantallaNotificaciones> {
   }
 
   IconData _icono(String nivel) => switch (nivel) {
-        'exito' => Icons.check_circle_outline,
-        'aviso' => Icons.warning_amber_outlined,
-        'error' => Icons.error_outline,
-        _ => Icons.info_outline,
-      };
+    'exito' => Icons.check_circle_outline,
+    'aviso' => Icons.warning_amber_outlined,
+    'error' => Icons.error_outline,
+    _ => Icons.info_outline,
+  };
 
   Color _color(String nivel) => switch (nivel) {
-        'exito' => Colores.exito,
-        'aviso' => Colores.aviso,
-        'error' => Colores.peligro,
-        _ => Colores.celeste,
-      };
+    'exito' => Colores.exito,
+    'aviso' => Colores.aviso,
+    'error' => Colores.peligro,
+    _ => Colores.celeste,
+  };
 }

@@ -22,6 +22,10 @@ class Aparato {
   /// Dónde se deja la APK nueva que se baja para actualizar (lib/actualizacion.dart).
   static String carpetaTemporal = '';
 
+  /// Los códecs de video que este aparato sabe mostrar (h264, h265, mpeg2...,
+  /// los mismos nombres que usa el servidor). Vacío = no se sabe (se prueba todo).
+  static Set<String> codecs = {};
+
   /// Abre el instalador de Android con la APK de [ruta] (la persona confirma).
   static Future<void> instalar(String ruta) => _canal.invokeMethod('instalar', {'ruta': ruta});
 
@@ -41,6 +45,7 @@ class Aparato {
       esTv = datos?['esTv'] == true;
       version = '${datos?['version'] ?? ''}';
       carpetaTemporal = '${datos?['carpetaTemporal'] ?? ''}';
+      codecs = {for (final c in datos?['codecs'] as List? ?? const []) '$c'};
     } on MissingPluginException {
       // En los tests (o fuera de Android) no hay canal: quedan los valores por defecto
     } on PlatformException {

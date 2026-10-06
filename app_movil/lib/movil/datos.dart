@@ -15,6 +15,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/cliente.dart';
 import '../api/modelos.dart';
+import '../aparato.dart';
+import 'control_senal.dart';
 
 // ── Series ─────────────────────────────────────────────────────────
 
@@ -295,14 +297,19 @@ class Biblioteca extends ChangeNotifier {
   final Map<int, Progreso> _progresos = {};
   final List<int> _recientes = [];
   bool _volverAlUltimo = false;
+  static const _claveVideoEnSuperficie = 'kairos.video_superficie';
+  bool? _videoEnSuperficie;
 
   Future<void> cargar() async {
+    ControlSenal.enSuperficie = videoEnSuperficie;
     try {
       final preferencias = await SharedPreferences.getInstance();
       _preferencias = preferencias;
       _miLista.addAll(preferencias.getStringList(_claveLista) ?? []);
       _recientes.addAll((preferencias.getStringList(_claveRecientes) ?? []).map(int.tryParse).nonNulls);
       _volverAlUltimo = preferencias.getBool(_claveVolverAlUltimo) ?? false;
+      _videoEnSuperficie = preferencias.getBool(_claveVideoEnSuperficie);
+      ControlSenal.enSuperficie = videoEnSuperficie;
       final guardados = jsonDecode(preferencias.getString(_claveProgreso) ?? '[]') as List;
       for (final p in guardados) {
         final progreso = Progreso.desdeJson(p as Map<String, dynamic>);
@@ -348,6 +355,18 @@ class Biblioteca extends ChangeNotifier {
   set volverAlUltimo(bool valor) {
     _volverAlUltimo = valor;
     _preferencias?.setBool(_claveVolverAlUltimo, valor);
+    notifyListeners();
+  }
+
+  /// Modo de video (Mi cuenta en la TV): dibujarlo en una superficie de
+  /// Android (ver ControlSenal.enSuperficie). Si no se eligió, en la TV sí:
+  /// es lo que evita la imagen verde o negra en muchos TV box.
+  bool get videoEnSuperficie => _videoEnSuperficie ?? Aparato.esTv;
+
+  set videoEnSuperficie(bool valor) {
+    _videoEnSuperficie = valor;
+    ControlSenal.enSuperficie = valor;
+    _preferencias?.setBool(_claveVideoEnSuperficie, valor);
     notifyListeners();
   }
 

@@ -14,34 +14,52 @@
 {% endblock %}
 
 {% block contenido %}
-<section class="tarjeta mb-4">
+<section class="tarjeta descarga-hero mb-4">
+    <div class="descarga-hero-icono" aria-hidden="true"><i class="bi bi-android2"></i></div>
+    <div class="descarga-hero-contenido">
     <h2 class="tarjeta-titulo">Descargar</h2>
     {% if ultima %}
-    <p>Última versión: <strong>{{ ultima.version }}</strong> <span class="texto-suave">({{ ultima.subida|date:"j/m/Y" }})</span></p>
-    <p><a href="{% url 'descargas:descargar' %}" class="btn btn-primary"><i class="bi bi-download" aria-hidden="true"></i> Descargar la APK</a></p>
-    <p class="mb-1">Link directo (siempre baja la última versión):</p>
-    <p class="dato fs-5">{{ link }}</p>
+    <p class="descarga-version">Versión <strong>{{ ultima.version }}</strong> <span class="texto-suave">· publicada el {{ ultima.subida|date:"j/m/Y" }}</span></p>
+    <a href="{% url 'descargas:descargar' %}" class="btn btn-primary descarga-boton"><i class="bi bi-download" aria-hidden="true"></i> Descargar la APK</a>
+    <p class="descarga-link-etiqueta">Link directo —siempre descarga la última versión—</p>
+    <p class="dato descarga-link">{{ link }}</p>
     {% if ultima.notas %}<p class="texto-suave small mb-0">Qué cambió: {{ ultima.notas|linebreaksbr }}</p>{% endif %}
     {% else %}
-    <p class="texto-suave mb-0">Todavía no se subió ninguna versión de la app.</p>
+    <div class="vacio descarga-vacio">
+        <i class="bi bi-cloud-slash" aria-hidden="true"></i>
+        <p>Todavía no se subió ninguna versión de la app.</p>
+    </div>
     {% endif %}
+    </div>
 </section>
 
 <section class="tarjeta mb-4">
     <h2 class="tarjeta-titulo">Cómo instalarla</h2>
-    <h3 class="h6">En un celular</h3>
-    <ol>
-        <li>Abrí el link directo desde el celular y descargá el archivo.</li>
-        <li>Al abrirlo, Android pide permiso para "instalar apps desconocidas": aceptá.</li>
-        <li>Abrí <strong>Kairos TV</strong> y poné el código del cliente.</li>
-    </ol>
-    <h3 class="h6">En un televisor Android / Google TV</h3>
-    <ol class="mb-0">
-        <li>Desde la tienda de la TV, instalá la app gratuita <strong>Downloader</strong>.</li>
-        <li>En la TV: Ajustes → Privacidad / Seguridad → permitir instalar apps desconocidas para Downloader.</li>
-        <li>Abrí Downloader, escribí el link directo con el control remoto y descargá.</li>
-        <li>Instalá, abrí <strong>Kairos TV</strong> (aparece en el menú de apps) y poné el código del cliente.</li>
-    </ol>
+    <div class="instalacion-grid">
+        <div class="instalacion-opcion">
+            <span class="instalacion-icono" aria-hidden="true"><i class="bi bi-phone"></i></span>
+            <div>
+                <h3>En un celular</h3>
+                <ol>
+                    <li>Abrí el link directo desde el celular y descargá el archivo.</li>
+                    <li>Al abrirlo, Android pide permiso para "instalar apps desconocidas": aceptá.</li>
+                    <li>Abrí <strong>Kairos TV</strong> y poné el código del cliente.</li>
+                </ol>
+            </div>
+        </div>
+        <div class="instalacion-opcion">
+            <span class="instalacion-icono" aria-hidden="true"><i class="bi bi-tv"></i></span>
+            <div>
+                <h3>En Android TV o Google TV</h3>
+                <ol>
+                    <li>Desde la tienda de la TV, instalá la app gratuita <strong>Downloader</strong>.</li>
+                    <li>En Ajustes → Privacidad / Seguridad, permití instalar apps desconocidas para Downloader.</li>
+                    <li>Abrí Downloader, escribí el link directo con el control remoto y descargá.</li>
+                    <li>Instalá, abrí <strong>Kairos TV</strong> y poné el código del cliente.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
 </section>
 
 {% if puede_publicar %}

@@ -2,8 +2,11 @@
 Lo que el sistema BUSCA de los canales (capa Base).
 """
 
+from dataclasses import dataclass, field
+
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 
+from . import clasificar
 from .models import Canal, Categoria, Contenido, Fuente, Importacion, hace_dias_oculta
 
 # Lo que el reproductor de la app sabe reproducir. La app nueva lo dice al
@@ -59,25 +62,116 @@ def agrupar_por_categoria(canales):
     return list(grupos.values())
 
 
-def resumen():
-    """Números para la pantalla de canales del panel."""
-    por_estado = dict(
-        Fuente.objects.filter(canal__eliminado_en__isnull=True)
-        .order_by()   # sin el orden por defecto, que rompería el agrupado
-        .values_list('estado').annotate(cantidad=Count('pk'))
-    )
+def resumen_de(contenido):
+    """
+    Los números de un tipo de contenido (en vivo, películas o series):
+    cuántos hay cargados, cuántos ve la app, quitados, y sus fuentes por estado.
+    En series se cuenta por capítulo (cada capítulo es un Canal).
+    """
+    fuentes = Fuente.objects.filter(canal__eliminado_en__isnull=True, canal__contenido=contenido).order_by()
+    por_estado = dict(fuentes.values_list('estado').annotate(cantidad=Count('pk')))
     return {
-        'canales': Canal.objects.count(),
-        'canales_en_la_app': canales_disponibles().count(),
-        'canales_en_la_app_vieja': canales_disponibles(TIPOS_DE_LA_APP_VIEJA).count(),
-        'quitados': Canal.objects.filter(activo=False).count(),
-        'peliculas': Canal.objects.filter(contenido=Contenido.PELICULA).count(),
-        'series': Canal.objects.filter(contenido=Contenido.SERIE).count(),
+        'contenido': contenido,
+        'nombre': Contenido(contenido).label,
+        'cargados': Canal.objects.filter(contenido=contenido).count(),
+        'en_la_app': canales_disponibles(contenido=contenido).count(),
+        'quitados': Canal.objects.filter(contenido=contenido, activo=False).count(),
         'funcionan': por_estado.get(Fuente.Estado.FUNCIONA, 0),
         'caidas': por_estado.get(Fuente.Estado.CAIDA, 0),
         'sin_verificar': por_estado.get(Fuente.Estado.SIN_VERIFICAR, 0),
+        'ocultas': fuentes.filter(oculta_desde__gt=hace_dias_oculta()).count(),
         'fuentes': sum(por_estado.values()),
     }
+
+
+def resumen():
+    """
+    Números para la pantalla de canales del panel. Las claves sueltas
+    (canales, funcionan, caidas...) son SOLO de los canales en vivo: antes
+    sumaban también películas y capítulos, y "7262 canales" confundía.
+    `por_contenido`: lo mismo para en vivo, películas y series (resumen_de).
+    """
+    por_contenido = [resumen_de(c) for c in Contenido.values]
+    vivo = por_contenido[0]
+    return {
+        'canales': vivo['cargados'],
+        'canales_en_la_app': vivo['en_la_app'],
+        # Ya no quedan apps 1.0.0 (solo HLS): igual al total, así el aviso viejo no aparece
+        'canales_en_la_app_vieja': vivo['en_la_app'],
+        'quitados': vivo['quitados'],
+        'peliculas': por_contenido[1]['cargados'],
+        'series': por_contenido[2]['cargados'],
+        'funcionan': vivo['funcionan'],
+        'caidas': vivo['caidas'],
+        'sin_verificar': vivo['sin_verificar'],
+        'fuentes': vivo['fuentes'],
+        'por_contenido': por_contenido,
+    }
+
+
+# ── Series: los capítulos agrupados por serie y temporada ────────────
+
+@dataclass
+class Capitulo:
+    canal: Canal
+    temporada: int
+    numero: int | None
+    titulo: str
+
+
+@dataclass
+class Serie:
+    nombre: str
+    categoria: str = ''
+    logo: str = ''
+    temporadas: dict = field(default_factory=dict)   # {número: [Capitulo, ...]}
+
+    @property
+    def capitulos(self):
+        return [c for lista in self.temporadas.values() for c in lista]
+
+    @property
+    def cantidad(self):
+        return len(self.capitulos)
+
+    @property
+    def en_la_app(self):
+        """Cuántos capítulos ve la app."""
+        return sum(1 for c in self.capitulos if c.canal.activo and c.canal.tiene_usable)
+
+    @property
+    def fuera(self):
+        return self.cantidad - self.en_la_app
+
+    @property
+    def numeros_de_temporada(self):
+        return sorted(self.temporadas)
+
+
+def series(texto='', estado=''):
+    """
+    Las series armadas a partir de los capítulos sueltos ("Show S01 E02"),
+    con la misma regla que la app (clasificar.episodio). Cada capítulo trae
+    los números del catálogo (fuentes, cuáles andan, si la app lo ve).
+      estado: 'en_app' (con algún capítulo que se ve) | 'fuera' (ninguno) | '' (todas)
+    """
+    capitulos = catalogo(texto=texto, contenido=Contenido.SERIE).prefetch_related(None)
+    por_nombre = {}
+    for canal in capitulos:
+        nombre, temporada, numero, titulo = clasificar.episodio(canal.nombre)
+        serie = por_nombre.setdefault(nombre.lower(), Serie(
+            nombre=nombre, categoria=canal.categoria.nombre if canal.categoria else ''))
+        serie.logo = serie.logo or canal.logo
+        serie.temporadas.setdefault(temporada, []).append(Capitulo(canal, temporada, numero, titulo))
+    resultado = sorted(por_nombre.values(), key=lambda s: s.nombre.lower())
+    for serie in resultado:
+        for lista in serie.temporadas.values():
+            lista.sort(key=lambda c: (c.numero is None, c.numero or 0, c.canal.nombre))
+    if estado == 'en_app':
+        resultado = [s for s in resultado if s.en_la_app]
+    elif estado == 'fuera':
+        resultado = [s for s in resultado if not s.en_la_app]
+    return resultado
 
 
 def ultimas_importaciones(limite=10):

@@ -25,12 +25,12 @@ siguiente. Si una fuente se cae, el canal sigue andando.
 |---|---|---|
 | `models.py` | Base | `Categoria`, `Canal` (con idioma, baja lógica y "quitado" con motivo), `Fuente` (dirección, formato, prioridad, estado) e `Importacion` / `EntradaImportada` (cada lista subida y qué pasó con cada canal). |
 | `m3u.py` | Base | Lector de listas M3U/M3U8: saca nombre, logo, categoría, número, tvg-id, país, idioma (`tvg-language`), cabeceras y dirección. No toca la base. |
-| `clasificar.py` | Base | Conclusiones sobre cada entrada: idioma y país, si es en vivo / película / serie, si es para adultos, el formato que parece y el nombre limpio (`ES: (HD REPUESTO) DAZN F1` → `DAZN F1`). |
+| `clasificar.py` | Base | Conclusiones sobre cada entrada: idioma y país, si es en vivo / película / serie, si es para adultos, el formato que parece y el nombre limpio (`ES: (HD REPUESTO) DAZN F1` → `DAZN F1`). `episodio()`: "Arrow S02 E05" → serie, temporada y capítulo (la misma regla que la app). |
 | `paginas.py` | Base | YouTube y páginas de video (Twitch, Dailymotion, Vimeo, Kick...) con **yt-dlp**: `verificar()` (¿hay video?) y `resolver()` (la dirección real en este momento). |
-| `verificacion.py` | Base | Prueba si una fuente responde y **qué formato es** mirando los bytes (como VLC): HLS, DASH, video directo (MPEG-TS/MP4/MKV) o RTSP. Si el servidor rechaza al "navegador", reintenta como VLC. Máximo 2 pedidos a la vez al mismo servidor y un tiempo límite por tanda. |
+| `verificacion.py` | Base | Prueba si una fuente responde y **qué formato es** mirando los bytes (como VLC): HLS, DASH, video directo (MPEG-TS/MP4/MKV) o RTSP. Si el servidor rechaza al "navegador", reintenta como VLC. Además averigua el **códec** del video (h264, h265, mpeg2...) por la lista HLS o los primeros bytes (`Fuente.codec`): la app lo compara con lo que sabe mostrar su aparato y deja esas fuentes al final (evita la "imagen verde con sonido"). Máximo 2 pedidos a la vez al mismo servidor y un tiempo límite por tanda. |
 | `servicios.py` | Base | `crear_importacion()` (analiza la lista, rápido), `procesar_lote()` (verifica las próximas 50 y agrega las que andan), `verificar_lote_de_fuentes()` (vuelve a probar las guardadas de a 50), `quitar_canales()` / `mostrar_canales()` e `importar_m3u()` (todo de una vez, para la consola). |
-| `consultas.py` | Base | `canales_disponibles(tipos)` (lo que ve la app, según los formatos que sabe reproducir), `resumen()`, `catalogo(filtros)` y `por_que_no_se_ve(canal)`. |
-| `views.py`, `urls.py`, `forms.py`, `templates/` | Panel | `/canales/` (resumen, subir lista, verificar todas), `/canales/importaciones/<id>/` (avance e informe), `/canales/catalogo/` (los canales como en la app) y `/canales/canal/<id>/editar/`. Permisos `ver_canales` e `importar_canales`. |
+| `consultas.py` | Base | `canales_disponibles(tipos)` (lo que ve la app, según los formatos que sabe reproducir), `resumen()` (los números sueltos son solo de en vivo; `por_contenido` trae en vivo, películas y series por separado), `series()` (los capítulos agrupados por serie y temporada, con cuántos ve la app), `catalogo(filtros)` y `por_que_no_se_ve(canal)`. |
+| `views.py`, `urls.py`, `forms.py`, `templates/` | Panel | `/canales/` (resumen separado de en vivo, películas y series), `/canales/importaciones/<id>/` (avance e informe), `/canales/catalogo/` (pestañas En vivo / Películas), `/canales/series/` (series agrupadas y paginadas), `/canales/series/detalle/?nombre=...` (temporadas, capítulos y fuentes) y `/canales/canal/<id>/editar/`. Permisos `ver_canales` e `importar_canales`. |
 | `templatetags/canales_extras.py` | Panel | Filtro `iniciales` (lo que muestra la app cuando un canal no tiene logo). |
 | `admin.py` | Técnica | Editar canales, fuentes y categorías puntuales desde `/admin/`. |
 | `management/commands/importar_m3u.py` | Técnica | `python manage.py importar_m3u <archivo> [--sin-verificar] [--solo-espanol] [--descartar-sin-logo] [--con-peliculas] [--con-adultos]` |
@@ -73,10 +73,17 @@ python manage.py importar_m3u canales/datos/canales_prueba.m3u8
 
 ## Catálogo: elegir qué canales se ven
 
-`/canales/catalogo/` muestra todos los canales con el aspecto de la app
-(agrupados por categoría, con logo). Cada uno dice idioma, país, cuántas
+`/canales/catalogo/` tiene pestañas para **En vivo** y **Películas**; cada una
+muestra solo ese contenido con el aspecto de la app (agrupado por categoría,
+con logo). La pestaña **Series** abre `/canales/series/`, donde los capítulos
+se agrupan por nombre y temporada. Se puede buscar una serie y filtrar las que
+tienen al menos un capítulo visible o las que no tienen ninguno. El detalle de
+una serie despliega sus temporadas y muestra, por capítulo, disponibilidad,
+motivo si no se ve, fuentes y acceso a la edición.
+
+Cada canal o película dice idioma, país, cuántas
 fuentes andan y, si la app no lo muestra, por qué. "Ver detalle" muestra sus
-fuentes (formato, estado, error, de qué lista vino). Filtros: nombre, se ve /
+fuentes (formato, códec, estado, error, de qué lista vino). Filtros: nombre, se ve /
 no se ve / quitado, idioma, categoría, lista de origen y "solo sin logo".
 
 **Quitar** = el canal deja de verse en la app (no se borra). Se puede quitar
@@ -144,6 +151,7 @@ llega, guarda el formato real en la fuente, y la app se lo pasa al reproductor.
 | `activa` | Una persona (admin) | Apagar una fuente a mano aunque funcione. |
 | `estado` | La verificación automática | `funciona`, `caida` o `sin_verificar` (si YouTube no dejó verificar desde el servidor, o importada con `--sin-verificar`). |
 | `tipo` | La verificación automática | El formato real (ver la tabla de arriba). |
+| `codec` | La verificación automática | Códec de video (`h264`, `h265`, `mpeg2`...), o vacío si todavía no se sabe. |
 
 La app recibe una fuente solo si está **activa, no caída y es de un formato
 que esa versión reproduce**. Un canal sin ninguna fuente así **no aparece en
@@ -172,7 +180,7 @@ servidor le responden pero en los celulares y TV no se reproducen (un formato
 de video que el aparato no lee, servidores que aceptan una sola conexión,
 otros que rechazan a los reproductores). Por eso la app manda también el
 motivo (`{"motivo": "formato" | "rechazo" | "tiempo" | "conexion" | "error",
-"detalle"}`). Si en un día avisan **3 aparatos distintos** (o el mismo, con
+"detalle"}`). Si en un día avisan **2 aparatos distintos** (o el mismo, con
 media hora de diferencia), la fuente se **oculta 7 días** aunque al servidor
 le ande (`Fuente.oculta_desde`, `falla_en_aparatos`; ver
 `servicios.registrar_falla_en_aparato`). En el catálogo el canal aparece como

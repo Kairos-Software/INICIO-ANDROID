@@ -79,6 +79,7 @@
                 {% if r.cambios %}
                 <details class="registro-cambios">
                     <summary>Ver {{ r.cambios|length }} cambio{{ r.cambios|length|pluralize }}</summary>
+                    <div class="table-responsive" aria-label="Cambios del registro">
                     <table class="table table-sm mb-0">
                         <thead><tr><th scope="col">Dato</th><th scope="col">Antes</th><th scope="col">Después</th></tr></thead>
                         <tbody>
@@ -91,6 +92,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    </div>
                 </details>
                 {% endif %}
             </div>

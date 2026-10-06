@@ -114,6 +114,9 @@ class Fuente(models.Model):
     url = models.CharField('dirección', max_length=1000,
                            validators=[URLValidator(schemes=['http', 'https', 'rtsp', 'rtsps'])])
     tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.HLS)
+    # El códec del video (h264, h265, mpeg2...): lo averigua la verificación.
+    # La app lo compara con los que sabe mostrar su aparato (no todos leen todos).
+    codec = models.CharField('códec', max_length=10, blank=True, help_text='Lo averigua la verificación.')
     prioridad = models.PositiveIntegerField(default=0, help_text='Menor = se prueba primero.')
     activa = models.BooleanField(default=True, help_text='Apagarla a mano: la app no la usa aunque funcione.')
     estado = models.CharField(max_length=15, choices=Estado.choices, default=Estado.SIN_VERIFICAR,

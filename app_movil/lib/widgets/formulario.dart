@@ -11,10 +11,7 @@ import 'comunes.dart';
 
 /// Filas "Etiqueta: valor" de un usuario, listas para [TarjetaDatos].
 List<(String, String)> filasDeSeccion(Seccion seccion, Map<String, dynamic> datos) {
-  return [
-    for (final campo in seccion.campos)
-      (campo.etiqueta, _valorLegible(campo, datos)),
-  ];
+  return [for (final campo in seccion.campos) (campo.etiqueta, _valorLegible(campo, datos))];
 }
 
 String _valorLegible(Campo campo, Map<String, dynamic> datos) {
@@ -110,8 +107,7 @@ class _CamposFormularioState extends State<CamposFormulario> {
       children: [
         for (final seccion in widget.secciones) ...[
           TituloSeccion(seccion.titulo),
-          for (final campo in seccion.campos)
-            Padding(padding: const EdgeInsets.only(bottom: 12), child: _campo(campo)),
+          for (final campo in seccion.campos) Padding(padding: const EdgeInsets.only(bottom: 12), child: _campo(campo)),
         ],
       ],
     );

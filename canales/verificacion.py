@@ -18,6 +18,13 @@ prueba otra vez presentándose como VLC (USER_AGENT_VLC): hay paneles que
 solo le entregan la señal a reproductores conocidos. Si así anda, el
 resultado trae ese User-Agent para guardarlo en la fuente (y la app lo usa).
 
+De paso averigua el CÓDEC del video (h264, h265, mpeg2...): en HLS lo dice
+la lista maestra (CODECS=...) o, si no, el pedazo de video; en video directo,
+los primeros bytes (ver detectar_codec). No todos los aparatos saben mostrar
+todos los códecs (muchos TV box no leen MPEG-2, muchos celulares no leen
+H.265): la app lo compara con lo que sabe su aparato y deja esas fuentes
+para el final. Así se evita la "imagen verde o negra con sonido".
+
 YouTube y las páginas de video (Twitch, Dailymotion...) se comprueban con
 yt-dlp (ver paginas.py). Si una dirección cualquiera responde con una página
 web, también se prueba si adentro hay un video. RTSP se comprueba con un
@@ -33,6 +40,7 @@ paneles IPTV cortan si una misma cuenta abre muchas conexiones).
 """
 
 import http.client
+import re
 import socket
 import ssl
 import threading
@@ -73,6 +81,7 @@ class Resultado:
     es_pagina: bool = False  # respondió una página web (puede tener un video adentro)
     titulo: str = ''      # YouTube / páginas: el título del video o canal (para sugerir el nombre)
     imagen: str = ''      # ...y su miniatura (para sugerir el logo)
+    codec: str = ''       # el códec del video: h264, h265, mpeg2, mpeg4, vc1, av1, vp9 ('' = no se sabe)
 
 
 def cabeceras_para(user_agent='', referer=''):
@@ -128,6 +137,94 @@ def detectar_formato(datos, tipo_contenido=''):
     return ''
 
 
+# ── Códec del video ──────────────────────────────────────────────────
+
+# MPEG-TS: el "stream_type" de cada pista en la tabla PMT (solo las de video)
+_TIPOS_TS = {0x01: 'mpeg2', 0x02: 'mpeg2', 0x10: 'mpeg4', 0x1B: 'h264', 0x24: 'h265', 0xEA: 'vc1'}
+
+# MKV (CodecID) y MP4 / HLS con fMP4 (nombre de la "caja" de la pista de video)
+_MARCAS_DE_CODEC = [
+    (b'V_MPEGH/ISO/HEVC', 'h265'), (b'V_MPEG4/ISO/AVC', 'h264'), (b'V_MPEG2', 'mpeg2'),
+    (b'V_AV1', 'av1'), (b'V_VP9', 'vp9'),
+    (b'hvc1', 'h265'), (b'hev1', 'h265'), (b'avc1', 'h264'), (b'avc3', 'h264'), (b'av01', 'av1'),
+    (b'vp09', 'vp9'),
+]
+
+# HLS: el atributo CODECS de la lista maestra
+_PREFIJOS_HLS = [('hvc1', 'h265'), ('hev1', 'h265'), ('avc1', 'h264'), ('avc3', 'h264'), ('av01', 'av1'),
+                 ('vp09', 'vp9'), ('mp4v.20', 'mpeg4')]
+
+
+def _codec_mpeg_ts(datos):
+    """Lee las tablas PAT y PMT del MPEG-TS y devuelve el códec de la primera pista de video."""
+    inicio = next((i for i in range(min(188, len(datos))) if datos[i] == 0x47), None)
+    if inicio is None:
+        return ''
+    paquetes = [datos[i:i + 188] for i in range(inicio, len(datos) - 187, 188) if datos[i] == 0x47]
+
+    def seccion(paquete):
+        """Los datos de una tabla (PAT/PMT) dentro del paquete, o None."""
+        if not paquete[1] & 0x40:      # no empieza una tabla en este paquete
+            return None
+        cuerpo = 4
+        if paquete[3] & 0x20:          # hay "adaptation field": se saltea
+            cuerpo += 1 + paquete[4]
+        if cuerpo >= 188:
+            return None
+        cuerpo += 1 + paquete[cuerpo]  # pointer field
+        return paquete[cuerpo:]
+
+    pids_pmt = set()
+    for paquete in paquetes:
+        if ((paquete[1] & 0x1F) << 8 | paquete[2]) == 0:   # PAT
+            tabla = seccion(paquete)
+            if not tabla or len(tabla) < 12:
+                continue
+            largo = (tabla[1] & 0x0F) << 8 | tabla[2]
+            for i in range(8, min(3 + largo - 4, len(tabla) - 3), 4):
+                if tabla[i] << 8 | tabla[i + 1]:            # programa 0 = red, no sirve
+                    pids_pmt.add((tabla[i + 2] & 0x1F) << 8 | tabla[i + 3])
+    for paquete in paquetes:
+        if ((paquete[1] & 0x1F) << 8 | paquete[2]) not in pids_pmt:
+            continue
+        tabla = seccion(paquete)
+        if not tabla or len(tabla) < 12 or tabla[0] != 0x02:
+            continue
+        largo = (tabla[1] & 0x0F) << 8 | tabla[2]
+        i = 12 + ((tabla[10] & 0x0F) << 8 | tabla[11])
+        fin = min(3 + largo - 4, len(tabla))
+        while i + 5 <= fin:
+            if tabla[i] in _TIPOS_TS:
+                return _TIPOS_TS[tabla[i]]
+            i += 5 + ((tabla[i + 3] & 0x0F) << 8 | tabla[i + 4])
+    return ''
+
+
+def detectar_codec(datos):
+    """El códec del video mirando los primeros bytes (MPEG-TS, MKV o MP4). '' = no se sabe."""
+    if not datos:
+        return ''
+    if _es_mpeg_ts(datos):
+        return _codec_mpeg_ts(datos)
+    for marca, codec in _MARCAS_DE_CODEC:
+        if marca in datos:
+            return codec
+    return ''
+
+
+def codec_de_hls(texto):
+    """El códec de la primera calidad de una lista maestra (CODECS="avc1.64001f,mp4a.40.2")."""
+    for linea in texto.splitlines():
+        codecs = re.search(r'CODECS="([^"]*)"', linea) if linea.startswith('#EXT-X-STREAM-INF') else None
+        if codecs:
+            for parte in codecs.group(1).split(','):
+                for prefijo, codec in _PREFIJOS_HLS:
+                    if parte.strip().lower().startswith(prefijo):
+                        return codec
+            return ''
+    return ''
+
+
 def _direcciones(texto):
     return [linea.strip() for linea in texto.splitlines() if linea.strip() and not linea.strip().startswith('#')]
 
@@ -157,7 +254,9 @@ def _probar(url, cabeceras):
         datos, final, tipo_contenido = _descargar(url, cabeceras, BYTES_INICIALES)
         tipo = detectar_formato(datos, tipo_contenido)
         if tipo == 'directo':
-            return Resultado(FUNCIONA, tipo='directo') if datos else Resultado(CAIDA, 'No llegó video.')
+            if not datos:
+                return Resultado(CAIDA, 'No llegó video.')
+            return Resultado(FUNCIONA, tipo='directo', codec=detectar_codec(datos))
         if tipo == 'dash':
             return Resultado(FUNCIONA, tipo='dash')
         if tipo != 'hls':
@@ -169,6 +268,7 @@ def _probar(url, cabeceras):
         if len(datos) >= BYTES_INICIALES:   # una lista larga: se pide entera
             datos, final, _ = _descargar(url, cabeceras, MAX_BYTES)
         texto = _texto(datos)
+        codec = codec_de_hls(texto)
         calidad = _primera_calidad(texto, final)
         if calidad:
             datos, final, _ = _descargar(calidad, cabeceras, MAX_BYTES)
@@ -179,8 +279,10 @@ def _probar(url, cabeceras):
         if not pedazos:
             return Resultado(CAIDA, 'La lista no tiene video (está vacía).', tipo='hls')
         que = 'el video'
-        _descargar(urljoin(final, pedazos[-1]), cabeceras, BYTES_DE_VIDEO)   # el más reciente
-        return Resultado(FUNCIONA, tipo='hls')
+        pedazo, _, _ = _descargar(urljoin(final, pedazos[-1]), cabeceras, BYTES_DE_VIDEO)   # el más reciente
+        if not pedazo:
+            return Resultado(CAIDA, 'La lista responde, pero no llega video.', tipo='hls')
+        return Resultado(FUNCIONA, tipo='hls', codec=codec or detectar_codec(pedazo))
     except urllib.error.HTTPError as error:
         return _error_http(error, que)
     except urllib.error.URLError as error:

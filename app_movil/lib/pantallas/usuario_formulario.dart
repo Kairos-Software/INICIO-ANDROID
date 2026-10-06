@@ -52,7 +52,9 @@ class _PantallaUsuarioFormularioState extends State<PantallaUsuarioFormulario> {
   Future<void> _cargarOpciones() async {
     try {
       final datos = await SesionScope.leer(context).api.get('usuarios/opciones/') as Map<String, dynamic>;
-      List<Opcion> lista(String clave) => [for (final o in datos[clave] as List) Opcion.desdeJson(o as Map<String, dynamic>)];
+      List<Opcion> lista(String clave) => [
+        for (final o in datos[clave] as List) Opcion.desdeJson(o as Map<String, dynamic>),
+      ];
       if (!mounted) return;
       setState(() {
         _roles = [for (final r in datos['roles'] as List) RolOpcion(r as Map<String, dynamic>)];
@@ -136,7 +138,10 @@ class _PantallaUsuarioFormularioState extends State<PantallaUsuarioFormulario> {
                   TextField(
                     controller: _password2,
                     obscureText: true,
-                    decoration: InputDecoration(labelText: 'Repetir contraseña inicial', errorText: _error?.campo('password2')),
+                    decoration: InputDecoration(
+                      labelText: 'Repetir contraseña inicial',
+                      errorText: _error?.campo('password2'),
+                    ),
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,

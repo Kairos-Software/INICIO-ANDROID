@@ -207,7 +207,7 @@ def _agregar(entrada, resultado, indice, categorias, origen, usuario, ahora):
     user_agent = entrada.user_agent or (resultado.user_agent if resultado else '')
     Fuente.objects.create(
         canal=canal, url=entrada.url, tipo=tipo, prioridad=prioridad, origen=origen[:150],
-        user_agent=user_agent, referer=entrada.referer, estado=estado,
+        user_agent=user_agent, referer=entrada.referer, estado=estado, codec=resultado.codec if resultado else '',
         error=resultado.error[:200] if resultado else '', verificada=ahora if resultado else None,
     )
 
@@ -354,11 +354,13 @@ def aplicar_resultado(fuente, resultado, ahora):
     fuente.estado, fuente.error, fuente.verificada = resultado.estado, resultado.error[:200], ahora
     if resultado.tipo:
         fuente.tipo = resultado.tipo
+    if resultado.codec:
+        fuente.codec = resultado.codec
     if resultado.user_agent and not fuente.user_agent:
         fuente.user_agent = resultado.user_agent
 
 
-CAMPOS_DE_VERIFICACION = ['estado', 'error', 'verificada', 'tipo', 'user_agent']
+CAMPOS_DE_VERIFICACION = ['estado', 'error', 'verificada', 'tipo', 'codec', 'user_agent']
 
 
 def _fuentes_vigentes():
@@ -594,7 +596,7 @@ MOTIVOS_DE_LOS_APARATOS = {
 }
 # Cuántos avisos (de aparatos distintos, o del mismo pero separados por
 # ESPERA_ENTRE_AVISOS) en un día hacen falta para ocultarla.
-AVISOS_PARA_OCULTAR = 3
+AVISOS_PARA_OCULTAR = 2
 ESPERA_ENTRE_AVISOS = 30 * 60   # segundos
 
 

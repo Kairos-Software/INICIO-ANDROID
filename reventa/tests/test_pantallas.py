@@ -156,3 +156,41 @@ class FlujoCompletoTests(Base):
         self.entrar(self.juan.usuario)
         for nombre in ['inicio', 'clientes', 'creditos', 'compras', 'cliente_nuevo']:
             self.assertEqual(self.client.get(reverse(f'reventa:{nombre}')).status_code, 200, nombre)
+
+
+class MiPantallaTests(Base):
+    """El revendedor no ve la app gratis: se activa a sí mismo con sus créditos, como a un cliente."""
+
+    def test_crea_su_pantalla_una_sola_vez_y_se_activa_con_creditos(self):
+        self.entrar(self.juan.usuario)
+        respuesta = self.client.post(reverse('reventa:mi_pantalla'))
+        pantalla = Cliente.objects.get(revendedor=self.juan, propio=True)
+        self.assertRedirects(respuesta, reverse('reventa:cliente', args=[pantalla.pk]))
+        self.client.post(reverse('reventa:mi_pantalla'))
+        self.assertEqual(Cliente.objects.filter(revendedor=self.juan, propio=True).count(), 1)   # no la duplica
+        # Se activa como cualquier cliente: gasta sus créditos
+        servicios.regalar_creditos(self.juan, 2)
+        servicios.renovar(pantalla, dispositivos=1)
+        self.assertEqual(self.juan.saldo, 1)
+
+    def test_solo_revendedores_y_por_post(self):
+        self.entrar(self.juan.usuario)
+        self.assertEqual(self.client.get(reverse('reventa:mi_pantalla')).status_code, 405)
+        self.entrar(self.admin)   # el administrador no es revendedor: no tiene "mi pantalla"
+        self.assertEqual(self.client.post(reverse('reventa:mi_pantalla')).status_code, 403)
+
+    def test_con_su_usuario_del_panel_no_ve_los_canales(self):
+        from rest_framework.test import APIClient
+
+        from api import tokens
+
+        def canales(usuario):
+            app = APIClient()
+            clave, _ = tokens.crear_token(usuario)
+            app.credentials(HTTP_AUTHORIZATION=f'Bearer {clave}')
+            return app.get(reverse('api_v1:canales'))
+
+        respuesta = canales(self.juan.usuario)
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertIn('Mi pantalla', str(respuesta.json()))
+        self.assertEqual(canales(self.admin).status_code, 200)   # el administrador sí, para probar

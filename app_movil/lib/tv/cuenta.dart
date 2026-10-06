@@ -175,6 +175,21 @@ class CuentaTv extends StatelessWidget {
                             alOk: () => biblioteca.volverAlUltimo = !biblioteca.volverAlUltimo,
                           ),
                           const SizedBox(height: 14),
+                          // Si un canal se ve verde o negro con el sonido bien, el otro modo suele arreglarlo
+                          BotonTv(
+                            texto: biblioteca.videoEnSuperficie
+                                ? 'Modo de video: TV (recomendado)'
+                                : 'Modo de video: compatible',
+                            icono: Icons.tv_rounded,
+                            ancho: double.infinity,
+                            alOk: () => biblioteca.videoEnSuperficie = !biblioteca.videoEnSuperficie,
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            '¿Imagen verde o negra con sonido? Probá cambiar el modo de video.',
+                            style: LetraTv.ayuda,
+                          ),
+                          const SizedBox(height: 14),
                           BotonTv(
                             texto: 'Administrar favoritos',
                             icono: Icons.favorite_rounded,

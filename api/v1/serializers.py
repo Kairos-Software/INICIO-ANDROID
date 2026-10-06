@@ -110,7 +110,7 @@ class FuenteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Fuente
-        fields = ['id', 'url', 'tipo', 'user_agent', 'referer']
+        fields = ['id', 'url', 'tipo', 'codec', 'user_agent', 'referer']
 
     def get_user_agent(self, fuente):
         return fuente.user_agent or USER_AGENT_REPRODUCTOR

@@ -1,4 +1,5 @@
 import 'package:app_movil/api/modelos.dart';
+import 'package:app_movil/aparato.dart';
 import 'package:app_movil/movil/datos.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -21,6 +22,23 @@ void main() {
     expect(silicon.temporadas[1]!.last.titulo, 'El Algoritmo');
     expect(silicon.temporadas[2]!.single.codigo, 'T2:E1');
     expect(series[1].temporadas[1]!.single.numero, 3);
+  });
+
+  test('las fuentes con un códec que el aparato no muestra se prueban al final', () {
+    final canal = Canal({
+      'id': 1,
+      'nombre': 'Canal 26',
+      'fuentes': [
+        {'id': 1, 'url': 'https://a/1.m3u8', 'tipo': 'hls', 'codec': 'mpeg2'},
+        {'id': 2, 'url': 'https://a/2.m3u8', 'tipo': 'hls', 'codec': 'h264'},
+        {'id': 3, 'url': 'https://a/3.m3u8', 'tipo': 'hls'}, // sin códec: se supone que anda
+      ],
+    });
+    Aparato.codecs = {};
+    expect(canal.fuentesReproducibles.map((f) => f.id), [1, 2, 3]); // no se sabe qué muestra el aparato
+    Aparato.codecs = {'h264', 'h265'};
+    addTearDown(() => Aparato.codecs = {});
+    expect(canal.fuentesReproducibles.map((f) => f.id), [2, 3, 1]);
   });
 
   test('categorías, años y nombres legibles', () {

@@ -3,6 +3,17 @@
 /// siguiente (failover) y le avisa al servidor que esa falló y por qué (ver
 /// [Falla]). Si ninguna anda, queda con [error]: el motivo de la última.
 ///
+/// Además:
+///   - Sin imagen: si a los pocos segundos el video suena pero no tiene imagen
+///     (el aparato no sabe mostrar ese video), se toma como falla de formato.
+///   - Cortes: si una fuente venía andando bien y se corta, primero se
+///     reconecta a la MISMA (suele ser un microcorte o un link con vencimiento
+///     que se renueva al volver a pedirlo); una película sigue donde iba. En
+///     vivo, si se caen todas, se vuelve a recorrerlas antes de rendirse.
+///   - [enSuperficie]: el video se dibuja en una superficie de Android
+///     (SurfaceView) en vez de una textura. En muchos TV box la textura muestra
+///     la imagen verde o negra con el sonido bien; es lo que usa la TV.
+///
 /// Lo usan el reproductor chico de "En vivo" y los de pantalla completa.
 ///
 ///     final control = ControlSenal(api)..addListener(() => setState(() {}));
@@ -29,6 +40,22 @@ class ControlSenal extends ChangeNotifier {
   static const _esperaArchivo = Duration(seconds: 30);
   static const _esperaTrabado = Duration(seconds: 20);
 
+  /// Cuánto se espera a que aparezca la imagen después de arrancar.
+  static const _esperaImagen = Duration(seconds: 8);
+
+  /// Cuánto tiene que andar sin problemas una fuente para contar como "andaba"
+  /// (y que, si se corta, se reconecte a ella antes de pasar a otra).
+  static const _esperaEstable = Duration(seconds: 20);
+  static const _maximoReconexiones = 2;
+
+  /// En vivo: cuántas veces se vuelve a recorrer todas las fuentes si se caen.
+  static const _maximoVueltas = 2;
+  static const _esperaEntreVueltas = Duration(seconds: 3);
+
+  /// Dibujar el video en una superficie de Android (ver arriba). Lo decide
+  /// Biblioteca.videoEnSuperficie (Mi cuenta en la TV).
+  static bool enSuperficie = false;
+
   final ApiCliente api;
 
   /// Se llama cuando un canal en vivo empieza a verse (para "Últimos canales vistos").
@@ -44,11 +71,23 @@ class ControlSenal extends ChangeNotifier {
   /// se cambia de canal, su resultado (que llega tarde) se descarta.
   int _intento = 0;
   Timer? _vigiaTrabado;
+  Timer? _vigiaImagen;
+  Timer? _vigiaEstable;
   Duration? _desde;
   double _volumen = 1;
   Falla? _ultimaFalla;
 
-  Duration get _esperaInicio => canal?.contenido == 'vivo' ? _esperaVivo : _esperaArchivo;
+  /// La fuente actual anduvo bien un rato ([_esperaEstable]).
+  bool _andaba = false;
+
+  /// Alguna fuente de este canal llegó a andar bien.
+  bool _seVio = false;
+  int _reconexiones = 0;
+  int _vueltas = 0;
+
+  bool get _enVivo => canal?.contenido == 'vivo';
+
+  Duration get _esperaInicio => _enVivo ? _esperaVivo : _esperaArchivo;
 
   List<FuenteCanal> get fuentes => canal?.fuentesReproducibles ?? const [];
 
@@ -60,14 +99,28 @@ class ControlSenal extends ChangeNotifier {
   Future<void> abrir(Canal nuevo, {Duration? desde}) {
     canal = nuevo;
     _desde = desde;
-    _ultimaFalla = null;
+    _empezarDeCero();
     return _probar(0);
   }
 
   /// Vuelve a intentar desde la primera fuente.
   Future<void> reintentar() {
-    _ultimaFalla = null;
+    _empezarDeCero();
     return _probar(0);
+  }
+
+  void _empezarDeCero() {
+    _ultimaFalla = null;
+    _seVio = false;
+    _reconexiones = 0;
+    _vueltas = 0;
+  }
+
+  void _cancelarVigias() {
+    _vigiaTrabado?.cancel();
+    _vigiaTrabado = null;
+    _vigiaImagen?.cancel();
+    _vigiaEstable?.cancel();
   }
 
   /// Pasa a una fuente en particular (el usuario la eligió).
@@ -75,14 +128,24 @@ class ControlSenal extends ChangeNotifier {
 
   Future<void> _probar(int indice) async {
     final intento = ++_intento;
-    _vigiaTrabado?.cancel();
+    _cancelarVigias();
     final anterior = video;
     video = null;
     fuente = indice;
     error = null;
+    _andaba = false;
     _avisar();
     await anterior?.dispose();
     if (intento != _intento || _cerrado) return;
+
+    // En vivo, si ya se había visto y se cayeron todas: otra vuelta en un ratito
+    if (indice >= fuentes.length && _enVivo && _seVio && _vueltas < _maximoVueltas && fuentes.isNotEmpty) {
+      _vueltas++;
+      _vigiaEstable = Timer(_esperaEntreVueltas, () {
+        if (intento == _intento && !_cerrado) _probar(0);
+      });
+      return;
+    }
 
     if (indice >= fuentes.length) {
       error = fuentes.isEmpty
@@ -110,6 +173,7 @@ class ControlSenal extends ChangeNotifier {
       Uri.parse(senal.url),
       formatHint: senal.formato,
       httpHeaders: senal.cabeceras, // como un navegador (o VLC): algunos canales rechazan a ExoPlayer
+      viewType: enSuperficie ? VideoViewType.platformView : VideoViewType.textureView,
     );
     try {
       await nuevo.initialize().timeout(_esperaInicio);
@@ -134,34 +198,72 @@ class ControlSenal extends ChangeNotifier {
     nuevo.addListener(_vigilar);
     await nuevo.play();
     video = nuevo;
-    if (canal?.contenido == 'vivo') alVerCanal?.call(canal!);
+    if (_enVivo) alVerCanal?.call(canal!);
     _avisar();
+
+    // ¿Aparece la imagen? (las radios no tienen: no se controlan)
+    if (_deberiaTenerImagen(elegida)) {
+      _vigiaImagen = Timer(_esperaImagen, () {
+        if (_cerrado || video != nuevo || nuevo.value.hasError) return;
+        if (nuevo.value.size.isEmpty) _fallo(nuevo, Falla.sinImagen, reconectar: false);
+      });
+    }
+    // Si anda bien un rato, "andaba": ante un corte se reconecta a esta misma
+    _vigiaEstable = Timer(_esperaEstable, () {
+      if (_cerrado || video != nuevo || nuevo.value.hasError) return;
+      _andaba = true;
+      _seVio = true;
+      _reconexiones = 0;
+      _vueltas = 0;
+    });
   }
 
-  /// Si la señal da error o se queda cargando demasiado, pasa a la siguiente fuente.
+  /// Las radios (solo audio) no tienen imagen y está bien.
+  bool _deberiaTenerImagen(FuenteCanal elegida) {
+    final ruta = Uri.tryParse(elegida.url)?.path.toLowerCase() ?? '';
+    if (RegExp(r'\.(mp3|aac|m4a|ogg|opus)$').hasMatch(ruta)) return false;
+    return !RegExp(r'\bradio', caseSensitive: false).hasMatch(canal?.categoria ?? '');
+  }
+
+  /// Si la señal da error, se queda cargando demasiado o (en vivo) termina,
+  /// reconecta o pasa a la siguiente fuente.
   void _vigilar() {
     final actual = video;
     if (actual == null || _cerrado) return;
     if (actual.value.hasError) {
-      actual.removeListener(_vigilar);
-      _avisarFalla(fuentes[fuente], Falla.de(actual.value.errorDescription ?? ''));
-      _probar(fuente + 1);
+      _fallo(actual, Falla.de(actual.value.errorDescription ?? ''));
+      return;
+    }
+    // Una señal en vivo no "termina": si terminó, se cortó
+    if (_enVivo && actual.value.isCompleted) {
+      _fallo(actual, Falla.cortada);
       return;
     }
     if (actual.value.isBuffering) {
       _vigiaTrabado ??= Timer(_esperaTrabado, () {
         _vigiaTrabado = null;
-        if (!_cerrado && video == actual && actual.value.isBuffering) {
-          actual.removeListener(_vigilar);
-          _avisarFalla(fuentes[fuente], Falla.trabada);
-          _probar(fuente + 1);
-        }
+        if (!_cerrado && video == actual && actual.value.isBuffering) _fallo(actual, Falla.trabada);
       });
     } else {
       _vigiaTrabado?.cancel();
       _vigiaTrabado = null;
     }
     _avisar();
+  }
+
+  /// La fuente actual falló mientras se veía. Si venía andando bien, se
+  /// reconecta a la misma (una película, desde donde iba); si no, se avisa
+  /// al servidor y se pasa a la siguiente.
+  void _fallo(VideoPlayerController actual, Falla falla, {bool reconectar = true}) {
+    actual.removeListener(_vigilar);
+    if (reconectar && _andaba && _reconexiones < _maximoReconexiones && falla.motivo != Falla.formato.motivo) {
+      _reconexiones++;
+      if (!_enVivo) _desde = actual.value.position;
+      _probar(fuente);
+      return;
+    }
+    _avisarFalla(fuentes[fuente], falla);
+    _probar(fuente + 1);
   }
 
   /// Le avisa al servidor que esta fuente no anduvo y por qué. El servidor la
@@ -199,7 +301,7 @@ class ControlSenal extends ChangeNotifier {
   /// Corta la reproducción (libera la conexión: hay listas IPTV que permiten una sola).
   Future<void> detener() async {
     ++_intento;
-    _vigiaTrabado?.cancel();
+    _cancelarVigias();
     final actual = video;
     video = null;
     _avisar();
@@ -214,7 +316,7 @@ class ControlSenal extends ChangeNotifier {
   void dispose() {
     _cerrado = true;
     ++_intento;
-    _vigiaTrabado?.cancel();
+    _cancelarVigias();
     video?.dispose();
     super.dispose();
   }
@@ -235,6 +337,12 @@ class Falla {
   static const formato = Falla('formato', 'Este aparato no puede reproducir el formato de este video.');
   static const tiempo = Falla('tiempo', 'La señal tardó demasiado en arrancar. Probá de nuevo en un rato.');
   static const trabada = Falla('tiempo', 'La señal se quedó trabada cargando.');
+  static const cortada = Falla('conexion', 'La señal se cortó.');
+  static const sinImagen = Falla(
+    'formato',
+    'Este aparato no puede mostrar la imagen de esta señal (sale solo el sonido).',
+    'sin imagen: el video arrancó pero no tiene imagen',
+  );
   static const conexion = Falla(
     'conexion',
     'No se pudo conectar con la señal. Puede estar caída o no disponible en tu zona.',

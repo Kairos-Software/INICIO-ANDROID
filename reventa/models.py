@@ -82,6 +82,10 @@ class Cliente(ModeloBase):
     codigo = models.CharField('código de acceso', max_length=8, unique=True, default=_codigo_nuevo, editable=False)
     vence = models.DateTimeField(null=True, blank=True, help_text='Hasta cuándo puede ver. Vacío = nunca se activó.')
     suspendido = models.BooleanField(default=False, help_text='Cortarle el servicio aunque no haya vencido.')
+    # La pantalla del propio revendedor: los revendedores no ven la app gratis
+    # con su usuario del panel; se activan a sí mismos con sus créditos, como a
+    # cualquier cliente (ver servicios.pantalla_propia).
+    propio = models.BooleanField('pantalla propia del revendedor', default=False)
 
     class Meta:
         verbose_name = 'cliente'

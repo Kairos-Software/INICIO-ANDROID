@@ -30,9 +30,11 @@ class _PantallaUsuariosState extends State<PantallaUsuarios> {
 
   Future<Pagina<UsuarioResumen>> _cargar(String? siguiente) async {
     final api = SesionScope.leer(context).api;
-    final datos = await (siguiente != null
-        ? api.get(siguiente)
-        : api.get('usuarios/', parametros: {'q': _busqueda.text.trim(), 'estado': _estado})) as Map<String, dynamic>;
+    final datos =
+        await (siguiente != null
+                ? api.get(siguiente)
+                : api.get('usuarios/', parametros: {'q': _busqueda.text.trim(), 'estado': _estado}))
+            as Map<String, dynamic>;
     return Pagina.desdeJson(datos, UsuarioResumen.new);
   }
 

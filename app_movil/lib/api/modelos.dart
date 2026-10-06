@@ -4,6 +4,8 @@
 /// cada clase lee el JSON y lo deja cómodo para las pantallas.
 library;
 
+import '../aparato.dart';
+
 /// Una página de un listado: {"cantidad", "siguiente", "resultados": [...]}.
 class Pagina<T> {
   Pagina({required this.cantidad, required this.resultados, this.siguiente, this.extra = const {}});
@@ -125,6 +127,7 @@ class FuenteCanal {
     : id = json['id'] as int,
       url = '${json['url']}',
       tipo = '${json['tipo'] ?? 'hls'}',
+      codec = '${json['codec'] ?? ''}',
       userAgent = '${json['user_agent'] ?? ''}',
       referer = '${json['referer'] ?? ''}';
 
@@ -153,6 +156,14 @@ class FuenteCanal {
   static const formatosQueReproduce = ['hls', 'dash', 'directo', 'rtsp', 'youtube', 'pagina'];
 
   bool get esReproducible => formatosQueReproduce.contains(tipo);
+
+  /// El códec del video (h264, h265, mpeg2...), según la verificación del
+  /// servidor. Vacío = no se sabe.
+  final String codec;
+
+  /// ¿Este aparato sabe mostrar el video? Si no se sabe el códec o qué
+  /// códecs tiene el aparato, se supone que sí.
+  bool get aparatoLoMuestra => codec.isEmpty || Aparato.codecs.isEmpty || Aparato.codecs.contains(codec);
 }
 
 /// Un canal de TV en vivo (GET /canales/).
@@ -177,7 +188,13 @@ class Canal {
   final String contenido;
 
   /// Las fuentes que la app sabe reproducir, en orden de prioridad.
-  List<FuenteCanal> get fuentesReproducibles => fuentes.where((f) => f.esReproducible).toList();
+  /// Las que el reproductor sabe abrir, en orden de prioridad, pero con las
+  /// de un códec que este aparato no muestra al final: se prueban solo si las
+  /// demás fallan (es lo que da "imagen verde o negra con sonido").
+  List<FuenteCanal> get fuentesReproducibles => [
+    ...fuentes.where((f) => f.esReproducible && f.aparatoLoMuestra),
+    ...fuentes.where((f) => f.esReproducible && !f.aparatoLoMuestra),
+  ];
 }
 
 /// Una categoría con sus canales.

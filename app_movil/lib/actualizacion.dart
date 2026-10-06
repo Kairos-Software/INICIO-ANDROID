@@ -5,12 +5,23 @@
 /// instalada es más vieja, aparece un cartel con lo que cambió y el botón
 /// "Actualizar": la app baja la APK nueva y abre el instalador de Android
 /// (MainActivity.kt -> "instalar"). Se instala encima: no se pierde el login.
+///
+/// Es la única forma de actualizar sin reinstalar a mano, así que tiene que
+/// andar aunque el resto de la app falle (como el login trabado de la 1.2.0
+/// en la TV):
+///   - si no hay internet (la TV recién prendida, el Wi-Fi todavía
+///     conectando), se reintenta cada minuto hasta poder preguntar;
+///   - se vuelve a preguntar cada 6 horas aunque la app nunca se cierre;
+///   - antes de mostrar el cartel se cierra el teclado de Android y se suelta
+///     el foco, para que el control remoto llegue al botón "Actualizar";
+///   - el login tiene su propio "Buscar actualización" ([buscarAhora]).
 library;
 
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import 'aparato.dart';
@@ -56,8 +67,12 @@ class _VigilarActualizacionState extends State<VigilarActualizacion> with Widget
   /// Una TV queda prendida días: al volver a la app se pregunta de nuevo, pero no más seguido que esto.
   static const _cadaCuanto = Duration(hours: 6);
 
+  /// Si no se pudo preguntar (sin internet), se reintenta tras este tiempo.
+  static const _reintento = Duration(minutes: 1);
+
   DateTime? _ultimaConsulta;
   bool _mostrando = false;
+  Timer? _proxima;
 
   /// La que la persona dejó para "Más tarde": no se le vuelve a ofrecer hasta que abra la app de nuevo.
   String? _postergada;
@@ -73,6 +88,7 @@ class _VigilarActualizacionState extends State<VigilarActualizacion> with Widget
 
   @override
   void dispose() {
+    _proxima?.cancel();
     widget.sesion.removeListener(_consultar);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -89,6 +105,7 @@ class _VigilarActualizacionState extends State<VigilarActualizacion> with Widget
     final ahora = DateTime.now();
     if (!forzar && _ultimaConsulta != null && ahora.difference(_ultimaConsulta!) < _cadaCuanto) return null;
     _ultimaConsulta = ahora;
+    _programar(_cadaCuanto);
     try {
       final datos = await widget.sesion.api.get('app/') as Map<String, dynamic>;
       final version = datos['version'] as String?;
@@ -97,6 +114,10 @@ class _VigilarActualizacionState extends State<VigilarActualizacion> with Widget
       if (!esMasNueva(version, Aparato.version)) return false;
       final contexto = widget.navegador.currentContext;
       if (contexto == null || !contexto.mounted) return null;
+      // Que nada le robe el control remoto al cartel: ni un campo de texto
+      // con el teclado de Android abierto, ni lo que estaba elegido abajo.
+      FocusManager.instance.primaryFocus?.unfocus();
+      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
       _mostrando = true;
       final actualizo = await showDialog<bool>(
         context: contexto,
@@ -108,10 +129,19 @@ class _VigilarActualizacionState extends State<VigilarActualizacion> with Widget
       if (actualizo != true) _postergada = version;
       return true;
     } catch (_) {
-      // Sin conexión o un servidor viejo (sin /app/): se pregunta la próxima vez
+      // Sin conexión o un servidor viejo (sin /app/): se reintenta en un minuto
       _ultimaConsulta = null;
+      _programar(_reintento);
       return null;
     }
+  }
+
+  /// La próxima consulta automática (reemplaza a la que hubiera programada).
+  void _programar(Duration dentroDe) {
+    _proxima?.cancel();
+    _proxima = Timer(dentroDe, () {
+      if (mounted) _consultar();
+    });
   }
 
   @override

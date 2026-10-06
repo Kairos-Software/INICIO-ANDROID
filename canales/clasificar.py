@@ -208,6 +208,25 @@ _SUELTA = re.compile(rf'(?<![\w+]){_CALIDAD}(?![\w+])', re.I)
 _ENTRE_CORCHETES = re.compile(r'\[[^\]]*\]')
 
 
+# "Show S01 E02", "Show - S1E2 - Título", "Show 1x02". La MISMA regla que usa la
+# app para armar las series (app_movil/lib/movil/datos.dart -> _patronEpisodio).
+_EPISODIO = re.compile(
+    r'^(.*?)[\s._\-:|]*(?:\bS(\d{1,2})\s*[._\- ]?\s*E(\d{1,4})|\b(\d{1,2})x(\d{1,3}))\b[\s._\-:|]*(.*)$', re.I)
+
+
+def episodio(nombre):
+    """
+    'Arrow S02 E05 El regreso' -> ('Arrow', 2, 5, 'El regreso').
+    Sin número de capítulo -> (nombre, 1, None, ''): una "serie" de un solo capítulo.
+    """
+    partes = _EPISODIO.match(nombre or '')
+    if not partes or not partes.group(1).strip():
+        return (nombre or '').strip(), 1, None, ''
+    temporada = int(partes.group(2) or partes.group(4))
+    numero = int(partes.group(3) or partes.group(5))
+    return partes.group(1).strip(), temporada, numero, partes.group(6).strip()
+
+
 def limpiar_nombre(nombre):
     """
     El nombre para mostrar en la app: sin el prefijo de país, sin la calidad

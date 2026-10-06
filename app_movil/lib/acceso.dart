@@ -3,7 +3,8 @@
 /// ancha se parten en dos columnas.
 ///
 ///   PantallaAcceso         el código del cliente con su teclado numérico (lo
-///                          principal) y, aparte, usuario y contraseña del panel.
+///                          principal) y, aparte, usuario y contraseña del panel
+///                          (en la TV, con un teclado en la pantalla: ver [_TecladoTexto]).
 ///   PantallaServicioVencido  a quién pedirle la renovación y "volver a intentar".
 ///   PantallaCarga          mientras arranca.
 ///   PantallaSinConexion    el servidor no responde.
@@ -14,6 +15,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'actualizacion.dart';
 import 'api/cliente.dart';
 import 'aparato.dart';
 import 'config.dart';
@@ -72,6 +74,18 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
   final _password = TextEditingController();
   bool _verPassword = false;
 
+  /// Lo que pasó al tocar "Buscar actualización" (null = nada que mostrar).
+  String? _estadoVersion;
+
+  // En la TV, usuario y contraseña NO son campos de texto de Android: con el
+  // control quedaban trabados (las flechas movían el cursor y no se podía
+  // salir) y cada TV abre un teclado distinto. Se escribe con el teclado de la
+  // pantalla, como en Buscar, en el campo elegido.
+  bool _enPassword = false;
+  bool _mayusculas = false;
+  bool _simbolos = false;
+  final _primeraTecla = FocusNode(debugLabel: 'teclado del login');
+
   @override
   void initState() {
     super.initState();
@@ -83,6 +97,7 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
   void dispose() {
     _usuario.dispose();
     _password.dispose();
+    _primeraTecla.dispose();
     super.dispose();
   }
 
@@ -100,6 +115,57 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
       _codigo = _codigo.substring(0, _codigo.length - 1);
       _error = null;
     });
+  }
+
+  void _irAlPanel() {
+    setState(() {
+      _conCodigo = false;
+      _enPassword = false;
+      _error = null;
+    });
+    // En la TV el foco va directo al teclado de la pantalla
+    if (Aparato.esTv) WidgetsBinding.instance.addPostFrameCallback((_) => _primeraTecla.requestFocus());
+  }
+
+  void _volverAlCodigo() {
+    setState(() {
+      _conCodigo = true;
+      _error = null;
+    });
+  }
+
+  TextEditingController get _campoActivo => _enPassword ? _password : _usuario;
+
+  void _escribirTv(String letra) {
+    final campo = _campoActivo;
+    if (campo.text.length >= 150) return;
+    setState(() {
+      campo.text += letra;
+      _error = null;
+    });
+  }
+
+  void _borrarTv() {
+    final campo = _campoActivo;
+    if (campo.text.isEmpty) return;
+    setState(() => campo.text = campo.text.substring(0, campo.text.length - 1));
+  }
+
+  void _limpiarTv() => setState(() => _campoActivo.text = '');
+
+  /// "Siguiente": del usuario pasa a la contraseña; en la contraseña, entra.
+  void _siguienteTv() {
+    if (_enPassword) {
+      _ingresar();
+    } else {
+      setState(() => _enPassword = true);
+    }
+  }
+
+  /// Elegir un campo (OK sobre él): se escribe ahí y el foco baja al teclado.
+  void _elegirCampoTv(bool password) {
+    setState(() => _enPassword = password);
+    _primeraTecla.requestFocus();
   }
 
   Future<void> _ingresar() async {
@@ -130,9 +196,23 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
     }
   }
 
-  /// Los números y "borrar" del control remoto o del teclado también escriben el código.
+  /// Los números y "borrar" del control remoto o del teclado también escriben
+  /// el código. En el panel de la TV, un teclado enchufado escribe en el campo.
   KeyEventResult _teclaFisica(FocusNode _, KeyEvent evento) {
-    if (!_conCodigo || evento is KeyUpEvent) return KeyEventResult.ignored;
+    if (evento is KeyUpEvent) return KeyEventResult.ignored;
+    if (!_conCodigo) {
+      if (!Aparato.esTv) return KeyEventResult.ignored;
+      if (evento.logicalKey == LogicalKeyboardKey.backspace) {
+        _borrarTv();
+        return KeyEventResult.handled;
+      }
+      final caracter = evento.character;
+      if (caracter != null && caracter.length == 1 && caracter.codeUnitAt(0) > 32) {
+        _escribirTv(caracter);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
     final caracter = evento.character;
     if (caracter != null && RegExp(r'^\d$').hasMatch(caracter)) {
       _tecla(caracter);
@@ -198,10 +278,7 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
       onPopInvokedWithResult: (salio, _) {
         if (salio) return;
         if (!_conCodigo) {
-          setState(() {
-            _conCodigo = true;
-            _error = null;
-          });
+          _volverAlCodigo();
         } else {
           _borrar();
         }
@@ -242,6 +319,46 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
                 ),
         ),
       ),
+    );
+  }
+
+  /// "Buscar actualización" en el mismo login: si una versión trae un error
+  /// que impide entrar, desde acá se puede bajar la que lo arregla.
+  Future<void> _buscarActualizacion() async {
+    setState(() => _estadoVersion = 'Buscando…');
+    final hay = await VigilarActualizacion.buscarAhora(context);
+    if (!mounted) return;
+    setState(() {
+      _estadoVersion = switch (hay) {
+        true => null, // ya se mostró el cartel "Hay una versión nueva"
+        false => 'Ya tenés la última versión.',
+        null => 'No se pudo consultar. Revisá la conexión.',
+      };
+    });
+  }
+
+  Widget _actualizacion(bool ancha) {
+    final version = Aparato.version.isEmpty ? '' : ' · versión ${Aparato.version}';
+    return Column(
+      children: [
+        Center(
+          child: BotonTv(
+            texto: 'Buscar actualización$version',
+            icono: Icons.system_update_rounded,
+            alOk: _estadoVersion == 'Buscando…' ? null : _buscarActualizacion,
+            alto: ancha ? 46 : 40,
+            tamanioTexto: ancha ? 15 : 13,
+          ),
+        ),
+        if (_estadoVersion != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _estadoVersion!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Tono.textoSuave),
+          ),
+        ],
+      ],
     );
   }
 
@@ -295,22 +412,22 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
         const SizedBox(height: 18),
         BotonTv(
           texto: ancha ? 'Ingresar como revendedor o administrador' : 'Revendedores / administradores',
-          alOk: () => setState(() {
-            _conCodigo = false;
-            _error = null;
-          }),
+          alOk: _irAlPanel,
           ancho: double.infinity,
           tamanioTexto: ancha ? 17 : 15,
           alto: ancha ? 58 : 52,
         ),
         const SizedBox(height: 12),
         _servidor(),
+        const SizedBox(height: 4),
+        _actualizacion(ancha),
       ],
     );
     return ancha ? _Panel(child: contenido) : contenido;
   }
 
   Widget _tarjetaPanel(bool ancha) {
+    if (Aparato.esTv) return _tarjetaPanelTv();
     final error = _error;
     final errorDeCampo = error?.campo('username') ?? error?.campo('password');
     final contenido = Column(
@@ -356,10 +473,7 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
         const SizedBox(height: 12),
         BotonTv(
           texto: 'Volver al código de cliente',
-          alOk: () => setState(() {
-            _conCodigo = true;
-            _error = null;
-          }),
+          alOk: _volverAlCodigo,
           ancho: double.infinity,
           alto: ancha ? 58 : 52,
           tamanioTexto: ancha ? 17 : 15,
@@ -369,6 +483,317 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
       ],
     );
     return ancha ? _Panel(child: contenido) : contenido;
+  }
+
+  /// Usuario y contraseña en la TV: los dos campos (se eligen con las flechas)
+  /// y el teclado de la pantalla. Atrás vuelve al código.
+  Widget _tarjetaPanelTv() {
+    final error = _error;
+    final errorUsuario = error?.campo('username');
+    final errorPassword = error?.campo('password');
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('ACCESO SECUNDARIO', style: LetraTv.sobretitulo.copyWith(fontSize: 14)),
+          const SizedBox(height: 6),
+          Text('Revendedores y administradores', style: LetraTv.pantalla.copyWith(fontSize: 32)),
+          const SizedBox(height: 18),
+          if (error != null && errorUsuario == null && errorPassword == null) ...[
+            _CartelError(error),
+            const SizedBox(height: 14),
+          ],
+          FocusTraversalGroup(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _CampoTv(
+                  titulo: 'Usuario',
+                  vacio: 'Usuario o email',
+                  valor: _usuario.text,
+                  activo: !_enPassword,
+                  error: errorUsuario,
+                  alActivar: () => setState(() => _enPassword = false),
+                  alElegir: () => _elegirCampoTv(false),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _CampoTv(
+                        titulo: 'Contraseña',
+                        vacio: 'Tu contraseña',
+                        valor: _verPassword ? _password.text : '•' * _password.text.length,
+                        activo: _enPassword,
+                        error: errorPassword,
+                        alActivar: () => setState(() => _enPassword = true),
+                        alElegir: () => _elegirCampoTv(true),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Enfocable(
+                      alOk: () => setState(() => _verPassword = !_verPassword),
+                      curva: Curva.boton,
+                      escala: 1.06,
+                      etiqueta: _verPassword ? 'Ocultar contraseña' : 'Mostrar contraseña',
+                      child: Container(
+                        width: 66,
+                        height: 66,
+                        decoration: BoxDecoration(
+                          color: Tono.capaAlta,
+                          borderRadius: BorderRadius.circular(Curva.boton),
+                          border: Border.all(color: Tono.bordeSuave.withValues(alpha: .6)),
+                        ),
+                        child: Icon(
+                          _verPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          color: Tono.textoSuave,
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          _TecladoTexto(
+            primeraTecla: _primeraTecla,
+            mayusculas: _mayusculas,
+            simbolos: _simbolos,
+            enPassword: _enPassword,
+            enviando: _enviando,
+            alLetra: _escribirTv,
+            alBorrar: _borrarTv,
+            alLimpiar: _limpiarTv,
+            alMayusculas: () => setState(() => _mayusculas = !_mayusculas),
+            alSimbolos: () => setState(() => _simbolos = !_simbolos),
+            alSiguiente: _siguienteTv,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            '↑ elegí el campo · OK escribe · mantené OK en Borrar para limpiar · Atrás vuelve',
+            textAlign: TextAlign.center,
+            style: LetraTv.ayuda,
+          ),
+          const SizedBox(height: 14),
+          BotonTv(texto: 'Volver al código de cliente', alOk: _volverAlCodigo, ancho: double.infinity, alto: 54),
+        ],
+      ),
+    );
+  }
+}
+
+/// Un campo del login en la TV: no es un campo de texto, muestra lo escrito
+/// con el teclado de la pantalla. El que está [activo] (borde celeste y
+/// cursor) es donde se escribe; al pasarle el foco encima pasa a ser el activo.
+class _CampoTv extends StatelessWidget {
+  const _CampoTv({
+    required this.titulo,
+    required this.vacio,
+    required this.valor,
+    required this.activo,
+    required this.alActivar,
+    required this.alElegir,
+    this.error,
+  });
+
+  final String titulo;
+  final String vacio;
+  final String valor;
+  final bool activo;
+
+  /// Al pasar con el foco: pasa a ser donde se escribe.
+  final VoidCallback alActivar;
+
+  /// OK sobre el campo: además, el foco baja al teclado.
+  final VoidCallback alElegir;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorBorde = error != null ? Tono.rubi : (activo ? Tono.celeste : Tono.bordeSuave.withValues(alpha: .6));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Enfocable(
+          alOk: alElegir,
+          alEnfocar: (enfocado) {
+            if (enfocado && !activo) alActivar();
+          },
+          curva: Curva.boton,
+          escala: 1.02,
+          etiqueta: titulo,
+          child: Container(
+            height: 66,
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            decoration: BoxDecoration(
+              color: Tono.capaMinima,
+              borderRadius: BorderRadius.circular(Curva.boton),
+              border: Border.all(color: colorBorde, width: activo ? 2 : 1),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 128,
+                  child: Text(
+                    titulo,
+                    style: TextStyle(
+                      fontFamily: Letra.texto,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: activo ? Tono.celesteClaro : Tono.textoApagado,
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: Text(
+                    valor.isEmpty ? vacio : valor,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: Letra.texto,
+                      fontSize: 21,
+                      color: valor.isEmpty ? Tono.textoApagado : Tono.texto,
+                    ),
+                  ),
+                ),
+                if (activo)
+                  Container(width: 2, height: 28, margin: const EdgeInsets.only(left: 2), color: Tono.celeste),
+              ],
+            ),
+          ),
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 6, top: 6),
+            child: Text(
+              error!,
+              style: const TextStyle(fontFamily: Letra.texto, fontSize: 14, color: Tono.rubiClaro),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// El teclado de la pantalla del login de la TV: números, letras (o símbolos)
+/// y una fila de control: símbolos · mayúsculas · espacio · borrar (mantener
+/// OK: limpia todo) · Siguiente (en la contraseña, "Ingresar").
+class _TecladoTexto extends StatelessWidget {
+  const _TecladoTexto({
+    required this.primeraTecla,
+    required this.mayusculas,
+    required this.simbolos,
+    required this.enPassword,
+    required this.enviando,
+    required this.alLetra,
+    required this.alBorrar,
+    required this.alLimpiar,
+    required this.alMayusculas,
+    required this.alSimbolos,
+    required this.alSiguiente,
+  });
+
+  final FocusNode primeraTecla;
+  final bool mayusculas;
+  final bool simbolos;
+  final bool enPassword;
+  final bool enviando;
+  final ValueChanged<String> alLetra;
+  final VoidCallback alBorrar;
+  final VoidCallback alLimpiar;
+  final VoidCallback alMayusculas;
+  final VoidCallback alSimbolos;
+  final VoidCallback alSiguiente;
+
+  static const _letras = ['1234567890', 'qwertyuiop', 'asdfghjklñ', 'zxcvbnm@._'];
+  static const _otros = ['1234567890', r'-_!#$%&*+=', '?/:;,()<>~', r'''[]{}|\^'"`'''];
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tecla(
+      String etiqueta,
+      VoidCallback alOk, {
+      String? texto,
+      IconData? icono,
+      int flex = 1,
+      bool principal = false,
+      bool prendida = false,
+      FocusNode? nodo,
+      VoidCallback? alOkLargo,
+    }) {
+      final colorTexto = principal ? Tono.sobreCelesteOscuro : (prendida ? Tono.celesteClaro : Tono.texto);
+      return Expanded(
+        flex: flex,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Enfocable(
+            alOk: alOk,
+            alOkLargo: alOkLargo,
+            nodo: nodo,
+            curva: Curva.medio + 2,
+            escala: 1.08,
+            etiqueta: etiqueta,
+            child: Container(
+              height: 54,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: principal ? Tono.celeste : (prendida ? Tono.celeste.withValues(alpha: .18) : Tono.capaAlta),
+                borderRadius: BorderRadius.circular(Curva.medio + 2),
+                border: principal ? null : Border.all(color: Tono.bordeSuave.withValues(alpha: .45)),
+              ),
+              child: texto == null && icono != null
+                  ? Icon(icono, color: colorTexto, size: 24)
+                  : Text(
+                      texto ?? etiqueta,
+                      style: TextStyle(
+                        fontFamily: Letra.texto,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: colorTexto,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final filas = simbolos ? _otros : _letras;
+    return FocusTraversalGroup(
+      child: Column(
+        children: [
+          for (final (f, fila) in filas.indexed)
+            Row(
+              children: [
+                for (final (i, caracter) in fila.split('').indexed)
+                  tecla(
+                    mayusculas ? caracter.toUpperCase() : caracter,
+                    () => alLetra(mayusculas ? caracter.toUpperCase() : caracter),
+                    nodo: f == 1 && i == 0 ? primeraTecla : null,
+                  ),
+              ],
+            ),
+          Row(
+            children: [
+              tecla(simbolos ? 'Letras' : 'Símbolos', alSimbolos, texto: simbolos ? 'abc' : '#+=', flex: 2),
+              tecla('Mayúsculas', alMayusculas, icono: Icons.keyboard_capslock_rounded, flex: 2, prendida: mayusculas),
+              tecla('Espacio', () => alLetra(' '), icono: Icons.space_bar_rounded, flex: 2),
+              tecla('Borrar', alBorrar, icono: Icons.backspace_outlined, flex: 2, alOkLargo: alLimpiar),
+              tecla(
+                enPassword ? 'Ingresar' : 'Siguiente',
+                alSiguiente,
+                texto: enviando ? '…' : (enPassword ? 'Ingresar' : 'Siguiente'),
+                flex: 2,
+                principal: true,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
