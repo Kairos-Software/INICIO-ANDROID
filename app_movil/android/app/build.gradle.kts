@@ -42,6 +42,33 @@ android {
         versionName = flutter.versionName
     }
 
+    // Dos apps distintas (se pueden tener las dos instaladas a la vez):
+    //   produccion: la que se publica. Habla SIEMPRE con el servidor de
+    //               producción (lib/config.dart). Es la que se arma por defecto
+    //               (pubspec.yaml -> default-flavor).
+    //   local:      para probar contra el servidor de la PC. Se llama "Kairos TV
+    //               Local" y tiene otro identificador: nunca reemplaza a la de
+    //               producción ni recibe sus actualizaciones.
+    //     flutter run --flavor local
+    //     flutter build apk --release --flavor local
+    flavorDimensions += "servidor"
+    productFlavors {
+        create("produccion") {
+            dimension = "servidor"
+            resValue("string", "app_name", "Kairos TV")
+        }
+        create("local") {
+            dimension = "servidor"
+            applicationIdSuffix = ".local"
+            versionNameSuffix = "-local"
+            resValue("string", "app_name", "Kairos TV Local")
+        }
+    }
+
+    buildFeatures {
+        resValues = true
+    }
+
     signingConfigs {
         create("release") {
             if (archivoClave.exists()) {

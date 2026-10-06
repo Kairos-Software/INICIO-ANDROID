@@ -231,43 +231,6 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
     return KeyEventResult.ignored;
   }
 
-  Future<void> _configurarServidor() async {
-    final sesion = SesionScope.leer(context);
-    final control = TextEditingController(text: sesion.urlServidor);
-    final nueva = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Servidor'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Dirección de la API. En tu red, la IP de la PC donde corre Django; '
-              'en producción, el dominio con https.',
-              style: TextStyle(color: Tono.textoSuave, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: control,
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              decoration: const InputDecoration(hintText: 'http://192.168.1.50:8000/api/v1/'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => control.text = urlServidorPorDefecto, child: const Text('Por defecto')),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(context, control.text), child: const Text('Guardar')),
-        ],
-      ),
-    );
-    if (nueva != null && nueva.trim().isNotEmpty) {
-      await sesion.cambiarServidor(nueva);
-      if (mounted) setState(() {});
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final ancha = _esAncha(context);
@@ -362,14 +325,15 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
     );
   }
 
+  /// Solo en la versión local ("Kairos TV Local"): a qué PC se conecta, para no confundirla con la de producción.
   Widget _servidor() {
-    return Center(
-      child: TextButton.icon(
-        onPressed: _configurarServidor,
-        icon: const Icon(Icons.dns_rounded, size: 14, color: Tono.textoApagado),
-        label: Text(
-          SesionScope.of(context).urlServidor,
-          style: const TextStyle(color: Tono.textoApagado, fontSize: 12),
+    if (!esVersionLocal) return const SizedBox.shrink();
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: Text(
+          'VERSIÓN LOCAL · $urlServidor',
+          style: TextStyle(color: Tono.dorado, fontSize: 12, fontWeight: FontWeight.w700),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -1279,12 +1243,7 @@ class PantallaSinConexion extends StatelessWidget {
                   ancho: double.infinity,
                 ),
                 const SizedBox(height: 12),
-                BotonTv(
-                  texto: 'Cerrar sesión e ingresar con otro servidor',
-                  alOk: sesion.salir,
-                  ancho: double.infinity,
-                  tamanioTexto: 15,
-                ),
+                BotonTv(texto: 'Cerrar sesión', alOk: sesion.salir, ancho: double.infinity, tamanioTexto: 15),
               ],
             ),
           ),

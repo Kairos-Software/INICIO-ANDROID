@@ -50,7 +50,7 @@ La misma APK se instala en celulares y en televisores Android / Google TV:
 
 Instalar en una TV: copiar la APK con un pendrive, o con la app *Downloader*
 desde una dirección web (cuando esté en producción), o por la red:
-`adb connect <ip-de-la-tv>` y `flutter install` / `adb install app-release.apk`
+`adb connect <ip-de-la-tv>` y `flutter install` / `adb install app-produccion-release.apk`
 (en la TV: Ajustes → Preferencias del dispositivo → Opciones de desarrollador →
 Depuración por red).
 
@@ -80,39 +80,41 @@ Agregar uno: `flutter pub add <paquete>` (como `pip install`).
 2. El celular conectado por USB (con depuración USB activada) y en el mismo WiFi.
 3. Desde esta carpeta:
    ```
-   flutter run
+   flutter run --flavor local
    ```
    Instala la app y la abre. Con la app abierta, al guardar un cambio en el
    código y apretar `r` en la terminal, se actualiza al instante (hot reload).
 
-La dirección del servidor por defecto está en `lib/config.dart`, y se puede
-cambiar desde la app (login → "Servidor").
+## Las dos versiones: producción y local
 
-## Generar la APK para compartir
+Hay dos apps distintas (`android/app/build.gradle.kts`, `lib/config.dart`):
 
-1. **Una sola vez:** crear la clave de firma y el archivo `android/key.properties`
-   (copiando `android/key.properties.ejemplo`). La clave (`.jks`) se guarda
-   **fuera del proyecto y con copia de seguridad**: todas las versiones de la
-   app se firman con ella, y sin ella no se pueden publicar actualizaciones.
-2. Generar la APK, indicando a qué servidor se conecta:
-   ```
-   flutter build apk --dart-define=API_URL=http://192.168.1.241:8000/api/v1/
-   ```
-   Queda en `build/app/outputs/flutter-apk/app-release.apk`.
-3. Pasarla al celular (WhatsApp, Drive, cable) e instalarla aceptando
-   "instalar apps de origen desconocido".
+| | Producción | Local |
+|---|---|---|
+| Nombre en el aparato | Kairos TV | Kairos TV Local |
+| Habla con | `https://kairostv.grupokairosarg.com` (fijo: no se puede cambiar ni se ve en la app) | La PC (`192.168.1.241:8000`, o la que se le diga con `--dart-define=API_URL=...`) |
+| Se arma con | `flutter build apk --release` | `flutter build apk --release --flavor local` |
+| Archivo | `build/app/outputs/flutter-apk/app-produccion-release.apk` | `build/app/outputs/flutter-apk/app-local-release.apk` |
 
-Para producción es lo mismo, cambiando la dirección por la del dominio:
-```
-flutter build apk --release --dart-define=API_URL=https://kairostv.grupokairosarg.com/api/v1/
-```
-Antes de repartirla a clientes tiene que existir `android/key.properties` con la
-clave propia (ver `android/key.properties.ejemplo`): sin ella sale firmada con la
-clave de desarrollo y después no se puede actualizar sin desinstalar.
+Se pueden tener **las dos instaladas a la vez** en el mismo aparato: tienen
+distinto identificador, así que la local nunca reemplaza a la de producción ni
+recibe sus actualizaciones. Para probar en el celular conectado:
+`flutter run --flavor local`.
+
+**Para publicar se usa SIEMPRE la de producción** (la que sale sin `--flavor`).
+`test/config_test.dart` falla si alguna vez apunta a otro lado.
+
+## Generar la APK
+
+**Una sola vez:** crear la clave de firma y el archivo `android/key.properties`
+(copiando `android/key.properties.ejemplo`). La clave (`.jks`) se guarda **fuera
+del proyecto y con copia de seguridad**: todas las versiones de la app se firman
+con ella, y sin ella no se pueden publicar actualizaciones (sin `key.properties`
+sale firmada con la clave de desarrollo y después no se puede actualizar sin
+desinstalar).
+
 `usesCleartextTraffic` del `AndroidManifest.xml` se deja en `true` también en
 producción: muchas fuentes de canales son `http://` y sin eso no reproducen.
-Después se sube desde el panel (App Android) y se descarga en `/descargar/`.
-Cada versión nueva: subir `version:` en `pubspec.yaml` (ej. `1.0.1+2`).
 
 ## Publicar una versión nueva
 
@@ -120,15 +122,15 @@ Cada versión nueva: subir `version:` en `pubspec.yaml` (ej. `1.0.1+2`).
    - `1.0.1` es lo que ve la gente.
    - `+2` es el número interno: **tiene que ser mayor que el anterior** o
      Android no instala la actualización ("App no instalada").
-2. Compilar (en `app_movil/`):
+2. Compilar (en `app_movil/`), la de producción:
    ```
-   flutter build apk --release --dart-define=API_URL=https://kairostv.grupokairosarg.com/api/v1/
+   flutter build apk --release
    ```
 3. Verificar que salió firmada con la clave propia (tiene que decir `CN=marcos andres lopez`):
    ```
-   & "$env:LOCALAPPDATA\Android\Sdk\build-tools\36.0.0\apksigner.bat" verify --print-certs build\app\outputs\flutter-apk\app-release.apk
+   & "$env:LOCALAPPDATA\Android\Sdk\build-tools\36.0.0\apksigner.bat" verify --print-certs build\app\outputs\flutter-apk\app-produccion-release.apk
    ```
-4. Panel de producción → **App Android** → subir `build\app\outputs\flutter-apk\app-release.apk`
+4. Panel de producción → **App Android** → subir `build\app\outputs\flutter-apk\app-produccion-release.apk`
    con la misma versión del paso 1 (ej. `1.0.1`). **Tiene que ser exactamente la
    misma** (sin el `+2`): la app compara ese número con el suyo para avisar que hay
    una nueva. Lo que escribas en "qué cambió" aparece en el cartel.
@@ -147,8 +149,8 @@ desde `/descargar/` e instalándola encima.
 
 | Comando | Qué hace |
 |---|---|
-| `flutter run` | Instala y abre la app en el celular conectado |
-| `flutter build apk` | Genera la APK para instalar en cualquier Android (`build/app/outputs/flutter-apk/`) |
+| `flutter run --flavor local` | Instala y abre la versión local en el celular conectado |
+| `flutter build apk --release` | Genera la APK de producción (`build/app/outputs/flutter-apk/app-produccion-release.apk`) |
 | `flutter test` | Corre los tests |
 | `flutter analyze` | Revisa el código buscando errores |
 | `flutter pub get` | Instala los paquetes de `pubspec.yaml` (después de clonar el repo) |

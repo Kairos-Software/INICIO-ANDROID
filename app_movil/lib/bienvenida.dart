@@ -4,9 +4,17 @@
 /// Va ENCIMA de la app (ver main.dart): mientras se muestra, por debajo ya se
 /// carga la sesión y el catálogo, así no se pierde tiempo. Después se desvanece.
 ///
-///   assets/bienvenida/portada.jpg   la imagen (16:9; en un celular parado se
-///                                   ve entera, con el fondo oscuro arriba y abajo)
-///   assets/bienvenida/sonido.mp3    el sonido (4 s, de Pixabay: uso libre)
+///   assets/bienvenida/portada_tv.jpg        la imagen apaisada (TV, celular acostado)
+///   assets/bienvenida/portada_celular.jpg   la imagen parada (celular)
+///   assets/bienvenida/sonido.mp3            el sonido (7,8 s, de Pixabay: uso libre)
+///
+/// Las dos imágenes llenan toda la pantalla (si no tienen justo su forma, se
+/// recorta un poco de los bordes: lo importante tiene que ir al centro).
+///
+/// Para que al abrir se vea DIRECTAMENTE esta imagen (y no antes otra cosa),
+/// Android arranca con una pantalla lisa del mismo color de fondo (ver
+/// android/app/src/main/res: launch_background y values-v31/styles.xml), y
+/// Flutter no dibuja nada hasta que la imagen está lista ([_esperarLaImagen]).
 ///
 /// Solo al abrir la app de cero (no al volver a ella). Si el sonido no se puede
 /// reproducir, se muestra igual sin sonido.
@@ -17,35 +25,80 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import 'aparato.dart';
+
 class Bienvenida extends StatefulWidget {
-  const Bienvenida({super.key, required this.child});
+  const Bienvenida({super.key, required this.child, this.esperarLaImagen = true});
 
   final Widget child;
 
+  /// No dibujar nada hasta tener la imagen (en las pruebas, no hace falta).
+  final bool esperarLaImagen;
+
   /// Cuánto se ve (lo que dura el sonido) y cuánto tarda en desvanecerse.
-  static const duracion = Duration(milliseconds: 3600);
+  static const duracion = Duration(milliseconds: 7600);
   static const desvanecer = Duration(milliseconds: 700);
+
+  /// El color de fondo: el mismo de la pantalla de arranque de Android
+  /// (android/app/src/main/res/values/colors.xml -> fondo_arranque).
+  static const fondo = Color(0xFF07090C);
+
+  static const imagenTv = 'assets/bienvenida/portada_tv.jpg';
+  static const imagenCelular = 'assets/bienvenida/portada_celular.jpg';
 
   @override
   State<Bienvenida> createState() => _BienvenidaState();
 }
 
 class _BienvenidaState extends State<Bienvenida> {
-  // El color de los bordes de la imagen: rellena lo que sobra en pantallas que no son 16:9
-  static const _fondo = Color(0xFF07090C);
-
   VideoPlayerController? _sonido;
   bool _visible = true;
   bool _terminada = false;
   Timer? _reloj;
+  bool _primerCuadroDemorado = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.esperarLaImagen) {
+      WidgetsBinding.instance.deferFirstFrame();
+      _primerCuadroDemorado = true;
+    }
     _sonar();
     _reloj = Timer(Bienvenida.duracion, () {
       if (mounted) setState(() => _visible = false);
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_primerCuadroDemorado) _esperarLaImagen();
+  }
+
+  /// Baja la imagen a memoria y recién ahí deja dibujar el primer cuadro (como
+  /// mucho medio segundo: si tarda más, se dibuja igual).
+  Future<void> _esperarLaImagen() async {
+    try {
+      await precacheImage(AssetImage(_imagen(context)), context).timeout(const Duration(milliseconds: 500));
+    } catch (_) {
+      // Sin la imagen a tiempo, se sigue igual
+    }
+    _dejarDibujar();
+  }
+
+  void _dejarDibujar() {
+    if (!_primerCuadroDemorado) return;
+    _primerCuadroDemorado = false;
+    WidgetsBinding.instance.allowFirstFrame();
+  }
+
+  /// En la TV, siempre la apaisada; en el celular, según cómo se lo tenga.
+  static String _imagen(BuildContext context) {
+    // Va por encima de MaterialApp (no hay MediaQuery): se le pregunta a la pantalla
+    final tamanio = View.of(context).physicalSize;
+    final parada = tamanio.height > tamanio.width;
+    return Aparato.esTv || !parada ? Bienvenida.imagenTv : Bienvenida.imagenCelular;
   }
 
   Future<void> _sonar() async {
@@ -60,6 +113,7 @@ class _BienvenidaState extends State<Bienvenida> {
 
   @override
   void dispose() {
+    _dejarDibujar();
     _reloj?.cancel();
     _sonido?.dispose();
     super.dispose();
@@ -85,7 +139,10 @@ class _BienvenidaState extends State<Bienvenida> {
                   _sonido?.dispose();
                   _sonido = null;
                 },
-                child: const ColoredBox(color: _fondo, child: _Portada()),
+                child: ColoredBox(
+                  color: Bienvenida.fondo,
+                  child: _Portada(imagen: _imagen(context)),
+                ),
               ),
             ),
           ),
@@ -94,9 +151,11 @@ class _BienvenidaState extends State<Bienvenida> {
   }
 }
 
-/// La imagen, con un acercamiento muy lento (para que no se vea "quieta").
+/// La imagen a pantalla completa, con un acercamiento muy lento (para que no se vea "quieta").
 class _Portada extends StatelessWidget {
-  const _Portada();
+  const _Portada({required this.imagen});
+
+  final String imagen;
 
   @override
   Widget build(BuildContext context) {
@@ -105,18 +164,12 @@ class _Portada extends StatelessWidget {
       duration: Bienvenida.duracion + Bienvenida.desvanecer,
       curve: Curves.easeOut,
       builder: (_, escala, hijo) => Transform.scale(scale: escala, child: hijo),
-      child: LayoutBuilder(
-        builder: (context, medidas) {
-          // Apaisada (TV, celular acostado): la imagen llena la pantalla.
-          // Parada (celular): se ve entera, centrada, sin cortar el logo.
-          final apaisada = medidas.maxWidth >= medidas.maxHeight;
-          return Image.asset(
-            'assets/bienvenida/portada.jpg',
-            fit: apaisada ? BoxFit.cover : BoxFit.contain,
-            width: double.infinity,
-            height: double.infinity,
-          );
-        },
+      child: Image.asset(
+        imagen,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        gaplessPlayback: true,
       ),
     );
   }

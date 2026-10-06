@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pantalla de arranque (lo que se ve mientras Flutter carga): grafito con el símbolo de Kairos -->
+<!-- Pantalla de arranque (lo que se ve mientras Flutter carga): lisa, del mismo
+     color que el fondo de la bienvenida (lib/bienvenida.dart). Sin logo: así al
+     abrir se pasa directo a la imagen de bienvenida, sin "otra pantalla" antes. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/fondo_arranque" />
-    <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@drawable/arranque_simbolo" />
-    </item>
 </layer-list>

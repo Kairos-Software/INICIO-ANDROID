@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Android 12 o más nuevo: el sistema muestra el ícono de la app sobre este fondo -->
+    <!-- Android 12 o más nuevo: el sistema siempre pone un ícono sobre este fondo.
+         Se le da uno vacío: así al abrir se ve solo el fondo y enseguida la
+         bienvenida (lib/bienvenida.dart), sin el logo antes. -->
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowSplashScreenBackground">@color/fondo_arranque</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/transparente</item>
+        <item name="android:windowBackground">@color/fondo_arranque</item>
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">@color/fondo_arranque</item>

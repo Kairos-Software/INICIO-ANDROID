@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/cliente.dart';
 import '../api/modelos.dart';
 import '../campos.dart';
+import '../config.dart';
 import '../sesion.dart';
 import '../tema.dart';
 import '../utiles.dart';
@@ -100,11 +101,12 @@ class PantallaPerfil extends StatelessWidget {
               onPressed: () => preguntarYSalir(context),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Servidor: ${sesion.urlServidor}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colores.textoSuave, fontSize: 12),
-            ),
+            if (esVersionLocal)
+              Text(
+                'Versión local · $urlServidor',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colores.textoSuave, fontSize: 12),
+              ),
           ],
         ),
       ),

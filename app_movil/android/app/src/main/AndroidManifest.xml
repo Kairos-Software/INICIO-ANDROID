@@ -18,7 +18,7 @@
          tipo http://servidor:8080/...) solo se entregan por http. Sin esto, Android
          los bloquea y no se ven aunque en VLC anden. -->
     <application
-        android:label="Kairos TV"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"

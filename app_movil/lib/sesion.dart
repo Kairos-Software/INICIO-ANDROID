@@ -26,7 +26,9 @@ class Sesion extends ChangeNotifier {
   /// Guarda el token cifrado en el celular (en el Keystore de Android), no en texto plano.
   final FlutterSecureStorage _almacen = const FlutterSecureStorage();
   static const _claveToken = 'token';
-  static const _claveServidor = 'servidor';
+
+  /// Las versiones viejas guardaban acá un servidor elegido a mano: ya no se usa (se borra).
+  static const _claveServidorViejo = 'servidor';
 
   /// El último código con el que entró un cliente en este aparato. NO se
   /// borra al cerrar sesión: el login lo muestra ya escrito (por si lo olvida).
@@ -39,7 +41,7 @@ class Sesion extends ChangeNotifier {
   static const _cadaCuantoSenal = Duration(minutes: 5);
 
   late final ApiCliente api = ApiCliente(
-    urlBase: urlServidorPorDefecto,
+    urlBase: urlServidor,
     alPerderSesion: _sesionPerdida,
     alPerderServicio: _servicioPerdido,
   );
@@ -67,13 +69,12 @@ class Sesion extends ChangeNotifier {
   /// Se llama al cerrar la sesión, para volver a la primera pantalla (ver main.dart).
   VoidCallback? alSalir;
 
-  String get urlServidor => api.urlBase;
-
   bool get esCliente => (api.token ?? '').startsWith('c_');
 
   /// Al abrir la app: ¿quedó una sesión guardada de la vez anterior?
   Future<void> iniciar() async {
-    api.urlBase = await _almacen.read(key: _claveServidor) ?? urlServidorPorDefecto;
+    // El servidor es siempre el de esta versión de la app (config.dart)
+    await _almacen.delete(key: _claveServidorViejo);
     api.token = await _almacen.read(key: _claveToken);
     ultimoCodigo = await _almacen.read(key: _claveUltimoCodigo) ?? '';
     if (api.token == null) {
@@ -161,16 +162,6 @@ class Sesion extends ChangeNotifier {
 
   void actualizarPerfil(Perfil nuevo) {
     perfil = nuevo;
-    notifyListeners();
-  }
-
-  Future<void> cambiarServidor(String url) async {
-    var limpia = url.trim();
-    if (!limpia.endsWith('/')) {
-      limpia = '$limpia/';
-    }
-    api.urlBase = limpia;
-    await _almacen.write(key: _claveServidor, value: limpia);
     notifyListeners();
   }
 

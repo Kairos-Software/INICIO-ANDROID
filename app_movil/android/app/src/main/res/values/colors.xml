@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#131317</color>
-    <!-- Fondo de la app mientras arranca (el grafito de Tono.fondo, lib/movil/estilo.dart) -->
-    <color name="fondo_arranque">#131317</color>
+    <!-- Fondo mientras arranca: el mismo que la bienvenida (Bienvenida.fondo, lib/bienvenida.dart) -->
+    <color name="fondo_arranque">#07090C</color>
 </resources>

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets('la bienvenida se ve unos segundos encima de la app y se desvanece', (tester) async {
-    await tester.pumpWidget(const Bienvenida(child: MaterialApp(home: Text('la app'))));
+    await tester.pumpWidget(const Bienvenida(esperarLaImagen: false, child: MaterialApp(home: Text('la app'))));
     expect(find.byType(Image), findsOneWidget);
     expect(find.text('la app'), findsOneWidget); // por debajo ya está cargando
 
