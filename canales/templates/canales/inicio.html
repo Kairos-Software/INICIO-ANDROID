@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 {% load static %}
 {% comment %}
-    Canales: resumen, volver a verificar todas las fuentes (de a tandas, con
+    Contenido (canales en vivo, películas y series): resumen, volver a verificar todas las fuentes (de a tandas, con
     barra de avance), subir una lista y las importaciones anteriores.
     El detalle de cada lista está en importacion.html y los canales "como
     los ve la app" en catalogo.html.
 {% endcomment %}
 
-{% block titulo %}Canales{% endblock %}
+{% block titulo %}Contenido{% endblock %}
 
 {% block encabezado %}
 <div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
     <div>
-        <h1 class="pagina-titulo">Canales</h1>
-        <p class="pagina-bajada">Importá listas M3U: se verifican de a tandas y solo pasan las que funcionan. En el catálogo ves todos los canales como en la app y quitás los que no te sirven.</p>
+        <h1 class="pagina-titulo">Contenido</h1>
+        <p class="pagina-bajada">Canales en vivo, películas y series. Subí listas M3U: cada entrada se prueba a fondo y solo cargás las aptas. En el catálogo ves todo como en la app y quitás lo que no te sirve.</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
         {% if puede_importar %}
@@ -40,7 +40,7 @@
                     {% elif bloque.contenido == 'pelicula' %}<i class="bi bi-film"></i>
                     {% else %}<i class="bi bi-collection-play"></i>{% endif %}
                 </span>
-                <div><h3>{{ bloque.nombre }}</h3><strong class="dato">{{ bloque.cargados }}</strong> cargados</div>
+                <div><h3>{{ bloque.nombre }}</h3><strong class="dato">{{ bloque.cargados }}</strong> {{ bloque.unidad }}</div>
             </div>
             <dl class="resumen-contenido-datos">
                 <div><dt>Los ve la app</dt><dd class="dato">{{ bloque.en_la_app }}</dd></div>
@@ -84,10 +84,11 @@
 {% if puede_importar %}
 <section class="tarjeta mb-4">
     <h2 class="tarjeta-titulo">Importar una lista</h2>
-    <p class="texto-suave">Al subirla se analiza toda (idioma, país, si es en vivo o película, formato) y después se verifica de a tandas, mostrando el avance. Los canales nuevos se crean; si un canal ya existe, la dirección se suma como fuente alternativa. Lo que no funciona no se agrega, pero queda en el informe con el motivo.</p>
+    <p class="texto-suave">Al subirla se analiza toda (idioma, país, si es en vivo o película, formato) y después se <strong>prueba cada entrada</strong> de a tandas, mostrando el avance. Todavía no se carga nada: al terminar ves cuáles son aptas y por qué las demás no pasaron, y recién ahí cargás las aptas. Si un canal ya existe, la dirección se suma como fuente alternativa.</p>
     <form method="post" enctype="multipart/form-data" class="row g-3 align-items-start" novalidate id="form-importar">
         {% csrf_token %}
         {% include "parciales/_campo.html" with campo=form.archivo ancho="col-12" %}
+        {% include "parciales/_campo.html" with campo=form.a_fondo ancho="col-12" %}
         {% include "parciales/_campo.html" with campo=form.descartar_vod ancho="col-md-6 col-xl-3" %}
         {% include "parciales/_campo.html" with campo=form.solo_espanol ancho="col-md-6 col-xl-3" %}
         {% include "parciales/_campo.html" with campo=form.descartar_adultos ancho="col-md-6 col-xl-3" %}

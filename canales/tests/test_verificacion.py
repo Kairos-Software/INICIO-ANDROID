@@ -165,7 +165,7 @@ class VerificarUrlTests(TestCase):
         self.assertEqual(resuelto.cabeceras, {'User-Agent': 'UA', 'Referer': 'https://twitch.tv/'})
 
     def test_varias_a_la_vez(self):
-        with mock.patch.object(verificacion, 'verificar_url', side_effect=lambda url, tipo, *cabeceras: Resultado(FUNCIONA)):
+        with mock.patch.object(verificacion, 'verificar_url', side_effect=lambda url, tipo, *cabeceras, **_: Resultado(FUNCIONA)):
             resultados = verificacion.verificar_varias({'https://a': 'hls', 'https://b': 'hls'})
         self.assertEqual(set(resultados), {'https://a', 'https://b'})
 
@@ -258,8 +258,9 @@ class ImportarDeATandasTests(TestCase):
         self.assertEqual((avance['verificadas'], avance['pendientes'], avance['porcentaje'], avance['terminada']),
                          (2, 1, 67, False))
         avance = procesar_lote(importacion, verificador_falso, tamanio=2)
-        self.assertEqual((avance['porcentaje'], avance['terminada'], avance['agregadas'], avance['caidas']),
+        self.assertEqual((avance['porcentaje'], avance['terminada'], avance['aptas'], avance['caidas']),
                          (100, True, 2, 1))
+        self.assertEqual(Fuente.objects.count(), 0)   # probar no carga nada: hay que cargar las aptas
         importacion.refresh_from_db()
         self.assertIsNotNone(importacion.terminada)
 
@@ -336,17 +337,25 @@ class PantallaCanalesTests(TestCase):
         self.assertRedirects(respuesta, reverse('canales:importacion', args=[importacion.pk]) + '?empezar=1')
         self.assertEqual(Canal.objects.count(), 0)   # todavía no verificó nada
         pagina = self.client.get(reverse('canales:importacion', args=[importacion.pk]))
-        self.assertContains(pagina, 'Empezar a verificar')
+        self.assertContains(pagina, 'Empezar a probar')
         self.assertContains(pagina, 'Telemax')
 
     def test_las_tandas_responden_el_avance(self):
         self.subir()
         importacion = Importacion.objects.get()
         datos = self.client.post(reverse('canales:importacion_lote', args=[importacion.pk])).json()
-        self.assertEqual((datos['porcentaje'], datos['terminada'], datos['agregadas']), (100, True, 2))
+        self.assertEqual((datos['porcentaje'], datos['terminada'], datos['aptas']), (100, True, 2))
         pagina = self.client.get(reverse('canales:importacion', args=[importacion.pk]), {'estado': 'caida'})
         self.assertContains(pagina, 'No respondió a tiempo.')
-        self.assertContains(pagina, 'Reintentar los 1 que no funcionaron')
+        self.assertContains(pagina, 'Volver a probar las que fallaron')
+        # Probar no cargó nada: las aptas se cargan con otro botón
+        self.assertEqual(Canal.objects.count(), 0)
+        self.assertContains(pagina, 'Cargar las 2 aptas')
+        datos = self.client.post(reverse('canales:importacion_cargar', args=[importacion.pk])).json()
+        self.assertEqual((datos['aptas'], datos['agregadas']), (0, 2))
+        self.assertEqual(set(Canal.objects.values_list('nombre', flat=True)), {'Canal 26', 'Encuentro'})
+        pagina = self.client.get(reverse('canales:importacion', args=[importacion.pk]))
+        self.assertContains(pagina, 'Listo: se cargaron 2')
 
     def test_acepta_un_zip(self):
         import io
@@ -408,6 +417,17 @@ class CatalogoTests(TestCase):
         respuesta = self.client.get(self.URL, {'idioma': 'otro'})
         self.assertContains(respuesta, 'NBC')
         self.assertNotContains(respuesta, 'Canal 26')
+
+    def test_cada_pestana_ofrece_solo_sus_categorias(self):
+        from canales.models import Categoria
+        series = Categoria.objects.create(nombre='SERIES | NETFLIX')
+        Canal.objects.create(nombre='Lost S01 E01', contenido='serie', categoria=series)
+        borrado = Canal.objects.create(nombre='Viejo', categoria=Categoria.objects.create(nombre='Borrada'))
+        borrado.eliminar()
+        en_vivo = [c.nombre for c in self.client.get(self.URL).context['categorias']]
+        self.assertNotIn('SERIES | NETFLIX', en_vivo)
+        self.assertNotIn('Borrada', en_vivo)
+        self.assertIn('Noticias', en_vivo)
 
     def test_quitar_y_volver_a_mostrar(self):
         canal = Canal.objects.get(nombre='Canal 26')

@@ -218,6 +218,66 @@ def _borrar_archivos(nombres):
 
 
 # ══════════════════════════════════════════════════════════════════
+#  BORRAR EL CONTENIDO: canales, películas y series (no toca usuarios ni créditos)
+# ══════════════════════════════════════════════════════════════════
+
+# Qué se puede borrar: el valor del formulario -> (Canal.contenido o None = todo, nombre legible)
+QUE_BORRAR = {
+    'todo': (None, 'todo el contenido'),
+    'vivo': ('vivo', 'los canales en vivo'),
+    'pelicula': ('pelicula', 'las películas'),
+    'serie': ('serie', 'las series'),
+}
+
+
+def resumen_contenido():
+    """Cuánto hay de cada cosa: {'vivo': 243, 'pelicula': 1065, 'serie': 5954, 'importaciones': 4}."""
+    from django.db.models import Count
+
+    from canales.models import Canal, Importacion
+    cantidades = dict(Canal._base_manager.values_list('contenido').annotate(n=Count('pk')))
+    return {
+        'vivo': cantidades.get('vivo', 0),
+        'pelicula': cantidades.get('pelicula', 0),
+        'serie': cantidades.get('serie', 0),
+        'importaciones': Importacion.objects.count(),
+    }
+
+
+def borrar_contenido(usuario, que, confirmacion, password):
+    """
+    Borra de verdad (no a la papelera) los canales en vivo, las películas, las
+    series o todo, con sus fuentes. Con "todo", también las importaciones
+    (el historial de listas subidas) y las categorías. Con una parte, las
+    categorías que quedan vacías. Usuarios, clientes, créditos y la app no se
+    tocan. Pide escribir BORRAR y la contraseña. No se puede deshacer.
+    """
+    from canales.models import Canal, Categoria, Importacion
+
+    if que not in QUE_BORRAR:
+        raise HerramientaError('Elegí qué contenido borrar.')
+    _exigir_frase(confirmacion, FRASE_BORRAR)
+    if not usuario.check_password(password or ''):
+        raise HerramientaError('La contraseña no es correcta.')
+
+    contenido, nombre = QUE_BORRAR[que]
+    with transaction.atomic():
+        canales = Canal._base_manager.all()
+        if contenido:
+            canales = canales.filter(contenido=contenido)
+        cantidad = canales.count()
+        canales.delete()   # las fuentes se borran con su canal
+        if contenido is None:
+            Importacion.objects.all().delete()
+            Categoria._base_manager.all().delete()
+        else:
+            Categoria._base_manager.filter(canales__isnull=True).delete()
+    cache.clear()
+    _registrar(usuario, f'Borró {nombre} ({cantidad} en total)')
+    return f'Se borró {nombre}: {cantidad}.'
+
+
+# ══════════════════════════════════════════════════════════════════
 #  REINICIAR EL SISTEMA: borra todo menos los superusuarios
 # ══════════════════════════════════════════════════════════════════
 

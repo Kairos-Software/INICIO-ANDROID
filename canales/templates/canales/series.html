@@ -6,7 +6,7 @@
 {% block encabezado %}
 <div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
     <div>
-        <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Canales</a>
+        <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Contenido</a>
         <h1 class="pagina-titulo">Series</h1>
         <p class="pagina-bajada">Los capítulos están agrupados por serie y temporada para que encuentres rápido qué se ve y qué necesita atención.</p>
     </div>
@@ -27,13 +27,45 @@
         <input type="search" id="q" name="q" value="{{ filtros.texto }}" class="form-control" placeholder="Buscá por nombre">
     </div>
     <div>
+        <label for="categoria" class="visually-hidden">Categoría</label>
+        <select id="categoria" name="categoria" class="form-select">
+            <option value="">Todas las categorías</option>
+            {% for c in categorias %}
+            <option value="{{ c.pk }}" {% if filtros.categoria == c.pk|stringformat:"d" %}selected{% endif %}>{{ c.nombre }} ({{ c.cantidad }} cap.)</option>
+            {% endfor %}
+            <option value="ninguna" {% if filtros.categoria == 'ninguna' %}selected{% endif %}>Sin categoría</option>
+        </select>
+    </div>
+    <div>
+        <label for="idioma" class="visually-hidden">Idioma</label>
+        <select id="idioma" name="idioma" class="form-select">
+            <option value="">Todos los idiomas</option>
+            <option value="es" {% if filtros.idioma == 'es' %}selected{% endif %}>Español</option>
+            <option value="otro" {% if filtros.idioma == 'otro' %}selected{% endif %}>Otro idioma</option>
+            <option value="sin_dato" {% if filtros.idioma == 'sin_dato' %}selected{% endif %}>No se sabe</option>
+        </select>
+    </div>
+    <div>
+        <label for="origen" class="visually-hidden">Lista de origen</label>
+        <select id="origen" name="origen" class="form-select">
+            <option value="">Todas las listas</option>
+            {% for o in origenes %}
+            <option value="{{ o }}" {% if filtros.origen == o %}selected{% endif %}>{{ o }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
         <label for="estado" class="visually-hidden">Disponibilidad</label>
         <select id="estado" name="estado" class="form-select">
-            <option value="">Todas</option>
+            <option value="">En la app o no</option>
             <option value="en_app" {% if filtros.estado == 'en_app' %}selected{% endif %}>Las que muestra la app</option>
             <option value="incompleta" {% if filtros.estado == 'incompleta' %}selected{% endif %}>A medias (la app no las muestra)</option>
             <option value="fuera" {% if filtros.estado == 'fuera' %}selected{% endif %}>Sin ninguno que se vea</option>
         </select>
+    </div>
+    <div class="form-check d-flex align-items-center gap-2 mb-0">
+        <input class="form-check-input mt-0" type="checkbox" name="sin_logo" value="1" id="sin_logo" {% if filtros.sin_logo %}checked{% endif %}>
+        <label class="form-check-label" for="sin_logo">Solo sin portada</label>
     </div>
     <button type="submit" class="btn btn-primary">Filtrar</button>
     {% if hay_filtros %}<a href="{% url 'canales:series' %}" class="btn btn-link">Limpiar</a>{% endif %}

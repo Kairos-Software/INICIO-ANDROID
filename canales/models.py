@@ -117,6 +117,8 @@ class Fuente(models.Model):
     # El códec del video (h264, h265, mpeg2...): lo averigua la verificación.
     # La app lo compara con los que sabe mostrar su aparato (no todos leen todos).
     codec = models.CharField('códec', max_length=10, blank=True, help_text='Lo averigua la verificación.')
+    # Lo que encontró la prueba a fondo al importarla: '1080p · H.264 · audio AAC (es) · llega x3.2'
+    calidad = models.CharField(max_length=80, blank=True, help_text='Lo que encontró la prueba a fondo.')
     prioridad = models.PositiveIntegerField(default=0, help_text='Menor = se prueba primero.')
     activa = models.BooleanField(default=True, help_text='Apagarla a mano: la app no la usa aunque funcione.')
     estado = models.CharField(max_length=15, choices=Estado.choices, default=Estado.SIN_VERIFICAR,
@@ -169,10 +171,17 @@ class Fuente(models.Model):
 
 class Importacion(models.Model):
     """
-    Una lista M3U subida desde el panel. Se analiza toda al subirla (rápido)
-    y después se verifica de a tandas (TAMANIO_LOTE): la pantalla va pidiendo
-    tanda por tanda y muestra el avance. Así una lista de miles de canales no
-    traba el servidor, y si se cierra la página se puede seguir después.
+    Una lista M3U subida desde el panel, en tres pasos:
+
+      1. Se analiza toda al subirla (rápido): se descarta lo que ya se sabe
+         que no sirve (adultos, otro idioma, repetidos...).
+      2. Se PRUEBA de a tandas (TAMANIO_LOTE): la pantalla va pidiendo tanda
+         por tanda y muestra el avance. Lo que pasa todas las pruebas queda
+         "apta"; todavía no se carga nada.
+      3. Se CARGAN las aptas (otro botón), y recién ahí entran a la app.
+
+    Así una lista de miles de canales no traba el servidor, si se cierra la
+    página se puede seguir después, y solo entra lo que está bien.
     """
     archivo = models.CharField(max_length=150)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -188,6 +197,10 @@ class Importacion(models.Model):
     descartar_sin_logo = models.BooleanField(default=False)
     descartar_vod = models.BooleanField('descartar películas y series', default=False)
     descartar_adultos = models.BooleanField('descartar contenido para adultos', default=True)
+    # La prueba a fondo: sonido, idioma del audio, resolución, formato, si llega fluido y si avanza
+    a_fondo = models.BooleanField('prueba a fondo', default=False)
+    # Cuándo se cargaron las aptas (null = todavía no)
+    cargada = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'importación'
@@ -202,11 +215,23 @@ class EntradaImportada(models.Model):
     """Un canal de la lista importada y qué pasó con él (y por qué)."""
 
     class Estado(models.TextChoices):
-        PENDIENTE = 'pendiente', 'Por verificar'
-        AGREGADA = 'agregada', 'Agregada'
-        CAIDA = 'caida', 'No funciona'
+        PENDIENTE = 'pendiente', 'Por probar'
+        APTA = 'apta', 'Apta (falta cargar)'
+        AGREGADA = 'agregada', 'Cargada'
+        CAIDA = 'caida', 'No responde'
+        RECHAZADA = 'rechazada', 'No pasó la prueba'
         DESCARTADA = 'descartada', 'Descartada'
         REPETIDA = 'repetida', 'Ya estaba'
+
+    # Por qué no pasó la prueba (para agrupar en el informe)
+    class Causa(models.TextChoices):
+        FORMATO = 'formato', 'Formato que muchos aparatos no leen'
+        SIN_SONIDO = 'sin_sonido', 'Sin sonido'
+        IDIOMA = 'idioma', 'Audio en otro idioma'
+        BAJA_CALIDAD = 'baja_calidad', 'Imagen de baja calidad'
+        LENTA = 'lenta', 'Llega lenta (se cortaría)'
+        SE_CORTA = 'se_corta', 'Se corta o está congelada'
+        SERIE_INCOMPLETA = 'serie_incompleta', 'Serie incompleta'
 
     Contenido = Contenido
 
@@ -227,6 +252,11 @@ class EntradaImportada(models.Model):
     referer = models.CharField(max_length=500, blank=True)
     estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.PENDIENTE)
     motivo = models.CharField(max_length=200, blank=True)
+    causa = models.CharField(max_length=16, choices=Causa.choices, blank=True)
+    # Lo que dio la prueba (para cargarla después sin volver a probar)
+    estado_fuente = models.CharField(max_length=15, blank=True)
+    codec = models.CharField(max_length=10, blank=True)
+    calidad = models.CharField(max_length=80, blank=True)
     canal = models.ForeignKey(Canal, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
     class Meta:

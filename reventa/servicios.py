@@ -185,6 +185,7 @@ def pantalla_propia(revendedor, por=None):
     return cliente
 
 
+@transaction.atomic
 def renovar(cliente, dispositivos=1, monto_cobrado=None, por=None):
     """
     Activa o renueva al cliente: `dispositivos` aparatos a la vez durante

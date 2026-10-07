@@ -1,15 +1,21 @@
 """
 Lo que el sistema HACE con los canales (capa Base).
 
-Importar una lista es en dos pasos, para que una lista de miles de canales
-no trabe el servidor:
+Importar una lista es en tres pasos, para que una lista de miles de canales
+no trabe el servidor y para que SOLO ENTRE LO QUE ESTÁ BIEN:
 
     importacion = crear_importacion(texto, 'lista.m3u')   # analiza todo (rápido, no sale a internet)
-    procesar_lote(importacion, verificar_varias)          # verifica las próximas 50 y agrega las que andan
-    procesar_lote(importacion, verificar_varias)          # ...y así hasta que no quede ninguna pendiente
+    procesar_lote(importacion, verificar_varias)          # prueba las próximas 50: quedan "aptas" o no, con el motivo
+    ...                                                   # ...y así hasta que no quede ninguna por probar
+    cargar_lote(importacion)                              # carga las aptas (de a 200) y recién ahí entran a la app
 
-La pantalla del panel llama a procesar_lote una y otra vez y muestra el
-avance. `importar_m3u()` hace todo de una vez (para la consola y las pruebas).
+Qué pasa la prueba lo decide `juzgar` (formato, sonido, idioma del audio,
+resolución, si llega fluido y si avanza: ver verificacion.py). Al terminar
+de probar, `_revisar_series` saca las series que la app no podría mostrar
+enteras (sin el capítulo 1 o con muy pocos).
+
+La pantalla del panel llama a procesar_lote y cargar_lote una y otra vez y
+muestra el avance. `importar_m3u()` hace todo de una vez (consola y pruebas).
 
 La verificación se recibe como parámetro (`verificar`) en vez de llamarla
 directo: así los tests pasan una de mentira y no salen a internet.
@@ -22,22 +28,38 @@ from datetime import timedelta
 
 from django.core.cache import cache
 from django.db import DatabaseError, transaction
-from django.db.models import Count, Max
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 from actividad.models import Accion
 from actividad.registro import registrar
 
 from . import clasificar
+from .analisis import NOMBRES_DE_IDIOMAS
+from .consultas import MINIMO_DE_CAPITULOS, fuentes_usables
 from .m3u import leer_m3u, normalizar
-from .models import Canal, Categoria, EntradaImportada, Fuente, Importacion
+from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Importacion
+from .verificacion import NOMBRES_DE_CODECS, Resultado
 
 # De a cuántas se verifican, y cuánto puede tardar como máximo una tanda en
 # EMPEZAR verificaciones (las que no llegan quedan para la tanda siguiente).
 TAMANIO_LOTE = 50
 SEGUNDOS_POR_LOTE = 40
+# De a cuántas aptas se cargan (no sale a internet: es rápido)
+TAMANIO_CARGA = 200
 
 Estado = EntradaImportada.Estado
+Causa = EntradaImportada.Causa
+
+# ── Qué pasa la prueba ──
+# Formatos de video que muchos aparatos no leen (imagen verde, cortada o negra con sonido)
+CODECS_RECHAZADOS = {'mpeg2', 'vc1', 'h264_10'}
+# Sonido que casi ningún aparato reproduce (se ve, pero no se escucha)
+AUDIOS_QUE_NO_SE_ESCUCHAN = {'dts', 'truehd'}
+# Menos líneas que esto se ve mal en una TV (480 y 576 = SD común, pasan)
+ALTO_MINIMO = 360
+# Segundos de video que tienen que llegar por segundo (menos: se corta a cada rato)
+VELOCIDAD_MINIMA = 0.9
 
 
 @dataclass
@@ -102,7 +124,7 @@ def _motivo_de_descarte(entrada, importacion, contenido, tipo, idioma, pais, nom
 
 
 def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, descartar_sin_logo=False,
-                      descartar_vod=False, descartar_adultos=True):
+                      descartar_vod=False, descartar_adultos=True, a_fondo=False):
     """
     Lee la lista y guarda cada canal como una EntradaImportada, con lo que se
     sabe de él (idioma, país, si es en vivo o película, formato). Las que no
@@ -112,7 +134,7 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
     importacion = Importacion.objects.create(
         archivo=archivo[:150], usuario=usuario if getattr(usuario, 'pk', None) else None,
         solo_espanol=solo_espanol, descartar_sin_logo=descartar_sin_logo, descartar_vod=descartar_vod,
-        descartar_adultos=descartar_adultos,
+        descartar_adultos=descartar_adultos, a_fondo=a_fondo,
     )
     ya_guardadas = set(Fuente.objects.values_list('url', flat=True))
     vistas = set()
@@ -156,7 +178,100 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
     return importacion
 
 
-# ── Paso 2: verificar de a tandas y agregar las que andan ────────────
+# ── Paso 2: probar de a tandas ───────────────────────────────────────
+
+def juzgar(resultado, importacion):
+    """
+    ¿La fuente que respondió está bien? (causa, motivo) si no pasa; ('', '')
+    si pasa. Lo que la prueba no pudo averiguar no se cuenta en contra.
+    """
+    if resultado.codec in CODECS_RECHAZADOS:
+        return Causa.FORMATO, (f'El video es {NOMBRES_DE_CODECS[resultado.codec]}: muchos aparatos lo muestran '
+                               f'verde, cortado o no lo muestran.')
+    if not resultado.a_fondo:
+        return '', ''
+    if resultado.con_audio is False:
+        return Causa.SIN_SONIDO, 'No tiene sonido: el video no trae ninguna pista de audio.'
+    if resultado.audios and set(resultado.audios) <= AUDIOS_QUE_NO_SE_ESCUCHAN:
+        return Causa.SIN_SONIDO, (f'El sonido es {"/".join(a.upper() for a in resultado.audios)}: casi ningún '
+                                  f'aparato lo reproduce.')
+    if importacion.solo_espanol and resultado.idiomas and 'es' not in resultado.idiomas:
+        idiomas = ', '.join(NOMBRES_DE_IDIOMAS.get(i, i) for i in resultado.idiomas)
+        return Causa.IDIOMA, f'El audio está en {idiomas} (no trae español).'
+    if 0 < resultado.alto < ALTO_MINIMO:
+        return Causa.BAJA_CALIDAD, f'La imagen es de {resultado.alto}p: en una TV se ve muy mal.'
+    if resultado.congelada:
+        return Causa.SE_CORTA, 'La señal está congelada: la lista no avanza (no llegan pedazos nuevos).'
+    if resultado.se_corto:
+        return Causa.SE_CORTA, 'El video dejó de llegar mientras se probaba.'
+    if resultado.velocidad and resultado.velocidad < VELOCIDAD_MINIMA:
+        return Causa.LENTA, (f'Llega más lento de lo que se reproduce (x{resultado.velocidad:.1f}): '
+                             f'se cortaría a cada rato.')
+    return '', ''
+
+
+def _anotar_prueba(entrada, resultado):
+    """Guarda en la entrada lo que dio la prueba (para cargarla después sin volver a probar)."""
+    entrada.tipo = resultado.tipo or entrada.tipo
+    entrada.codec = resultado.codec
+    entrada.calidad = resultado.calidad() if resultado.a_fondo else ''
+    entrada.estado_fuente = resultado.estado
+    if resultado.user_agent and not entrada.user_agent:
+        entrada.user_agent = resultado.user_agent
+    # El idioma del audio manda sobre lo que se dedujo del nombre
+    if resultado.idiomas:
+        entrada.idioma = 'es' if 'es' in resultado.idiomas else 'otro'
+
+
+def _motivo_apta(resultado):
+    if resultado is None:
+        return 'Sin probar.'
+    motivos = ['Pasó todas las pruebas.' if resultado.a_fondo else 'Responde.']
+    if resultado.user_agent:
+        motivos.append('Anda presentándose como VLC.')
+    if resultado.estado == Fuente.Estado.SIN_VERIFICAR:
+        motivos = [resultado.error or 'No se pudo verificar.']
+    return ' '.join(motivos)
+
+
+def _revisar_series(importacion):
+    """
+    Al terminar de probar: las series que la app no mostraría (como
+    consultas.Serie.completa: hace falta el capítulo 1 de la temporada 1 y
+    al menos MINIMO_DE_CAPITULOS) no pasan. Cuentan los capítulos aptos de
+    esta lista más los que ya están cargados y se ven.
+    """
+    aptas = list(importacion.entradas.filter(estado=Estado.APTA, contenido=Contenido.SERIE))
+    if not aptas:
+        return 0
+    ya_cargados = {}
+    for nombre in (Canal.objects.filter(contenido=Contenido.SERIE, activo=True,
+                                        pk__in=fuentes_usables().values('canal'))
+                   .values_list('nombre', flat=True)):
+        serie, temporada, numero, _ = clasificar.episodio(nombre)
+        ya_cargados.setdefault(serie.lower(), set()).add((temporada, numero))
+    por_serie = {}
+    for entrada in aptas:
+        serie, temporada, numero, _ = clasificar.episodio(entrada.nombre)
+        por_serie.setdefault(serie.lower(), (serie, []))[1].append((entrada, temporada, numero))
+
+    rechazadas = []
+    for clave, (serie, capitulos) in por_serie.items():
+        todos = ya_cargados.get(clave, set()) | {(temporada, numero) for _, temporada, numero in capitulos}
+        if (1, 1) in todos and len(todos) >= MINIMO_DE_CAPITULOS:
+            continue
+        falta = ('el capítulo 1 de la temporada 1' if (1, 1) not in todos
+                 else f'tener al menos {MINIMO_DE_CAPITULOS} capítulos')
+        for entrada, _, _ in capitulos:
+            entrada.estado, entrada.causa = Estado.RECHAZADA, Causa.SERIE_INCOMPLETA
+            entrada.motivo = (f'Serie incompleta: de "{serie}" pasaron {len(capitulos)} capítulo(s) y le falta '
+                              f'{falta}. La app no la mostraría.')[:200]
+            rechazadas.append(entrada)
+    EntradaImportada.objects.bulk_update(rechazadas, ['estado', 'causa', 'motivo'])
+    return len(rechazadas)
+
+
+# ── Paso 3: cargar las aptas ─────────────────────────────────────────
 
 class _IndiceDeCanales:
     """
@@ -180,6 +295,13 @@ class _IndiceDeCanales:
             if not (canal.pais and pais and canal.pais != pais):
                 return canal
         return None
+
+
+def _resultado_guardado(entrada):
+    """Lo que dio la prueba, guardado en la entrada (None = no se probó)."""
+    if not entrada.estado_fuente:
+        return None
+    return Resultado(entrada.estado_fuente, tipo=entrada.tipo, codec=entrada.codec)
 
 
 def _agregar(entrada, resultado, indice, categorias, origen, usuario, ahora):
@@ -209,11 +331,12 @@ def _agregar(entrada, resultado, indice, categorias, origen, usuario, ahora):
         canal=canal, url=entrada.url, tipo=tipo, prioridad=prioridad, origen=origen[:150],
         user_agent=user_agent, referer=entrada.referer, estado=estado, codec=resultado.codec if resultado else '',
         error=resultado.error[:200] if resultado else '', verificada=ahora if resultado else None,
+        calidad=entrada.calidad,
     )
 
     motivos = ['Canal nuevo.' if nuevo else f'Se sumó como fuente alternativa de "{canal.nombre}".']
-    if resultado and resultado.user_agent:
-        motivos.append('Anda presentándose como VLC.')
+    if entrada.calidad:
+        motivos.append(entrada.calidad + '.')
     if resultado and resultado.estado == Fuente.Estado.SIN_VERIFICAR:
         motivos.append(resultado.error or 'No se pudo verificar.')
     elif not resultado:
@@ -222,22 +345,32 @@ def _agregar(entrada, resultado, indice, categorias, origen, usuario, ahora):
     return nuevo
 
 
+def _bloquear(importacion):
+    """Si otra pestaña ya está trabajando con esta importación, False (hay que esperar)."""
+    try:
+        Importacion.objects.select_for_update(nowait=True).get(pk=importacion.pk)
+    except DatabaseError:
+        return False
+    return True
+
+
+CAMPOS_DE_LA_PRUEBA = ['estado', 'motivo', 'causa', 'canal', 'tipo', 'codec', 'calidad', 'estado_fuente',
+                       'user_agent', 'idioma']
+
+
 def procesar_lote(importacion, verificar=None, tamanio=TAMANIO_LOTE, segundos=SEGUNDOS_POR_LOTE):
     """
-    Verifica las próximas `tamanio` entradas pendientes y agrega las que
-    funcionan (las que no, quedan como "No funciona" con el motivo). Sin
-    `verificar`, las agrega sin probar. Devuelve el avance (ver `progreso`),
-    más cuántos canales nuevos se crearon en esta tanda.
+    Prueba las próximas `tamanio` entradas pendientes: las que pasan quedan
+    "aptas" (todavía no se cargan: ver cargar_lote); las que no, "no
+    responde" o "no pasó la prueba", con el motivo. Sin `verificar`, quedan
+    aptas sin probar. Devuelve el avance (ver `progreso`).
 
     Si otra pestaña ya está procesando esta misma importación, no hace nada
     y devuelve el avance con "ocupada": la pantalla espera y vuelve a pedir.
     """
-    canales_nuevos = 0
     with transaction.atomic():
-        try:
-            Importacion.objects.select_for_update(nowait=True).get(pk=importacion.pk)
-        except DatabaseError:
-            return {**progreso(importacion), 'ocupada': True, 'canales_nuevos': 0}
+        if not _bloquear(importacion):
+            return {**progreso(importacion), 'ocupada': True}
 
         pendientes = list(importacion.entradas.filter(estado=Estado.PENDIENTE).order_by('posicion')[:tamanio])
         indice = _IndiceDeCanales()
@@ -262,8 +395,6 @@ def procesar_lote(importacion, verificar=None, tamanio=TAMANIO_LOTE, segundos=SE
                 hasta=hasta,
             )
 
-        ahora = timezone.now()
-        categorias = {}
         for entrada in a_verificar:
             resultado = resultados.get(entrada.url)
             if verificar and resultado is None:
@@ -272,19 +403,60 @@ def procesar_lote(importacion, verificar=None, tamanio=TAMANIO_LOTE, segundos=SE
                 entrada.estado, entrada.motivo = Estado.CAIDA, resultado.error[:200]
                 entrada.tipo = resultado.tipo or entrada.tipo
                 continue
-            canales_nuevos += _agregar(entrada, resultado, indice, categorias, importacion.archivo,
-                                       importacion.usuario, ahora)
+            if resultado:
+                _anotar_prueba(entrada, resultado)
+                causa, motivo = juzgar(resultado, importacion)
+                if causa:
+                    entrada.estado, entrada.causa, entrada.motivo = Estado.RECHAZADA, causa, motivo[:200]
+                    continue
+            entrada.estado, entrada.causa, entrada.motivo = Estado.APTA, '', _motivo_apta(resultado)[:200]
 
-        EntradaImportada.objects.bulk_update(pendientes, ['estado', 'motivo', 'canal', 'tipo'])
+        EntradaImportada.objects.bulk_update(pendientes, CAMPOS_DE_LA_PRUEBA)
 
         if not importacion.entradas.filter(estado=Estado.PENDIENTE).exists():
-            importacion.terminada = ahora
+            _revisar_series(importacion)
+            importacion.terminada = timezone.now()
             importacion.save(update_fields=['terminada'])
             avance = progreso(importacion)
             registrar(importacion.usuario, Accion.CREAR,
-                      f'Terminó de importar "{importacion.archivo}": {avance["agregadas"]} agregada(s), '
-                      f'{avance["caidas"]} no funcionan, {avance["descartadas"]} descartada(s), '
-                      f'{avance["repetidas"]} ya estaban.', modulo='canales')
+                      f'Terminó de probar "{importacion.archivo}": {avance["aptas"]} apta(s), '
+                      f'{avance["rechazadas"]} no pasaron la prueba, {avance["caidas"]} no responden, '
+                      f'{avance["descartadas"]} descartada(s), {avance["repetidas"]} ya estaban.', modulo='canales')
+    return progreso(importacion)
+
+
+def cargar_lote(importacion, tamanio=TAMANIO_CARGA):
+    """
+    Carga las próximas `tamanio` aptas: crea el canal (si no existe) o suma
+    la dirección como fuente alternativa. Devuelve el avance, más cuántos
+    canales nuevos se crearon en esta tanda.
+    """
+    canales_nuevos = 0
+    with transaction.atomic():
+        if not _bloquear(importacion):
+            return {**progreso(importacion), 'ocupada': True, 'canales_nuevos': 0}
+        aptas = list(importacion.entradas.filter(estado=Estado.APTA).order_by('posicion')[:tamanio])
+        indice = _IndiceDeCanales()
+        categorias = {}
+        ahora = timezone.now()
+        for entrada in aptas:
+            canal = indice.buscar(entrada.nombre, entrada.pais, entrada.contenido)
+            if canal is not None and not canal.activo:
+                entrada.estado, entrada.canal = Estado.DESCARTADA, canal
+                entrada.motivo = f'El canal "{canal.nombre}" está quitado ({canal.motivo_quitado or "a mano"}).'[:200]
+            elif Fuente.objects.filter(url=entrada.url).exists():
+                entrada.estado, entrada.motivo = Estado.REPETIDA, 'Esta dirección ya estaba cargada.'
+            else:
+                canales_nuevos += _agregar(entrada, _resultado_guardado(entrada), indice, categorias,
+                                           importacion.archivo, importacion.usuario, ahora)
+        EntradaImportada.objects.bulk_update(aptas, ['estado', 'motivo', 'canal', 'tipo'])
+
+        if aptas and not importacion.entradas.filter(estado=Estado.APTA).exists():
+            importacion.cargada = ahora
+            importacion.save(update_fields=['cargada'])
+            avance = progreso(importacion)
+            registrar(importacion.usuario, Accion.CREAR,
+                      f'Cargó las aptas de "{importacion.archivo}": {avance["agregadas"]} en total.', modulo='canales')
     return {**progreso(importacion), 'canales_nuevos': canales_nuevos}
 
 
@@ -299,7 +471,9 @@ def progreso(importacion):
         'para_verificar': base,
         'verificadas': base - pendientes,
         'pendientes': pendientes,
+        'aptas': por_estado.get(Estado.APTA, 0),
         'agregadas': por_estado.get(Estado.AGREGADA, 0),
+        'rechazadas': por_estado.get(Estado.RECHAZADA, 0),
         'caidas': por_estado.get(Estado.CAIDA, 0),
         'descartadas': por_estado.get(Estado.DESCARTADA, 0),
         'repetidas': por_estado.get(Estado.REPETIDA, 0),
@@ -308,12 +482,32 @@ def progreso(importacion):
     }
 
 
+def por_causa(importacion):
+    """Las que no pasaron la prueba, por causa: [(causa, 'Sin sonido', 12), ...] de la que más hay a la que menos."""
+    cantidades = (importacion.entradas.filter(estado=Estado.RECHAZADA).order_by().values_list('causa')
+                  .annotate(cantidad=Count('pk')).order_by('-cantidad'))
+    nombres = dict(Causa.choices)
+    return [(causa, nombres.get(causa, 'Otra'), cantidad) for causa, cantidad in cantidades]
+
+
+# Lo que puede ser algo del momento (y vale la pena volver a probar)
+CAUSAS_PASAJERAS = [Causa.LENTA, Causa.SE_CORTA]
+
+
 def reintentar_caidas(importacion, usuario=None):
-    """Las que no funcionaron vuelven a quedar pendientes (a veces es algo del momento)."""
-    cantidad = importacion.entradas.filter(estado=Estado.CAIDA).update(estado=Estado.PENDIENTE, motivo='')
+    """
+    Las que no respondieron, llegaron lentas o se cortaron vuelven a quedar
+    pendientes (a veces es algo del momento). Los capítulos que no pasaron por
+    "serie incompleta" vuelven a aptos: al terminar se revisan de nuevo.
+    """
+    cantidad = (importacion.entradas.filter(Q(estado=Estado.CAIDA)
+                                            | Q(estado=Estado.RECHAZADA, causa__in=CAUSAS_PASAJERAS))
+                .update(estado=Estado.PENDIENTE, motivo='', causa=''))
     if cantidad:
-        importacion.para_verificar, importacion.terminada = cantidad, None
-        importacion.save(update_fields=['para_verificar', 'terminada'])
+        importacion.entradas.filter(estado=Estado.RECHAZADA, causa=Causa.SERIE_INCOMPLETA).update(
+            estado=Estado.APTA, motivo='Pasó la prueba (falta revisar la serie).', causa='')
+        importacion.para_verificar, importacion.terminada, importacion.cargada = cantidad, None, None
+        importacion.save(update_fields=['para_verificar', 'terminada', 'cargada'])
         registrar(usuario, Accion.EDITAR, f'Reintenta {cantidad} canal(es) de "{importacion.archivo}".',
                   modulo='canales')
     return cantidad
@@ -321,29 +515,32 @@ def reintentar_caidas(importacion, usuario=None):
 
 def importar_m3u(texto, origen='', usuario=None, verificar=None, **opciones):
     """
-    Todo de una vez (consola y pruebas): crea la importación y la procesa
-    entera. Nunca pisa lo que ya existe:
+    Todo de una vez (consola y pruebas): crea la importación, la prueba
+    entera y carga las aptas. Nunca pisa lo que ya existe:
       - canal nuevo            -> se crea (con su categoría, logo y número)
       - canal que ya existía   -> la dirección se agrega como fuente alternativa
       - dirección repetida     -> se ignora
       - no funciona            -> no se agrega (queda en el informe de la importación, con el motivo)
     """
     importacion = crear_importacion(texto, origen, usuario, **opciones)
-    nuevos = 0
     pendientes_antes = None
     while True:
         avance = procesar_lote(importacion, verificar, segundos=None)
-        nuevos += avance['canales_nuevos']
         if avance['terminada'] or avance['pendientes'] == pendientes_antes:   # no avanzó: no insistir
             break
         pendientes_antes = avance['pendientes']
+    nuevos = 0
+    while avance['aptas']:
+        avance = cargar_lote(importacion)
+        nuevos += avance['canales_nuevos']
     agregadas = importacion.entradas.filter(estado=Estado.AGREGADA).values('url')
     por_estado = dict(Fuente.objects.filter(url__in=agregadas).order_by().values_list('estado')
                       .annotate(cantidad=Count('pk')))
     return ResultadoImportacion(
         canales_nuevos=nuevos, fuentes_nuevas=avance['agregadas'], repetidas=avance['repetidas'],
         funcionan=por_estado.get(Fuente.Estado.FUNCIONA, 0), caidas=avance['caidas'],
-        sin_verificar=por_estado.get(Fuente.Estado.SIN_VERIFICAR, 0), descartadas=avance['descartadas'],
+        sin_verificar=por_estado.get(Fuente.Estado.SIN_VERIFICAR, 0),
+        descartadas=avance['descartadas'] + avance['rechazadas'],
     )
 
 
@@ -626,4 +823,3 @@ def registrar_falla_en_aparato(fuente, quien, motivo, detalle=''):
                   modulo='canales')
     fuente.save(update_fields=['avisos_de_aparatos', 'primer_aviso', 'falla_en_aparatos', 'oculta_desde'])
     return fuente.oculta_desde is not None and fuente.oculta_por_aparatos
-

@@ -6,9 +6,9 @@ HTML generales, compartidos por todo el sistema.
 
 | Archivo | Qué es |
 |---|---|
-| `base_html.html` | Esqueleto HTML común: fuentes, Bootstrap, íconos, `sistema.css` y `sistema.js`. Todos los demás lo extienden. |
+| `base_html.html` | Esqueleto HTML común: fuentes, Bootstrap (modo oscuro), íconos, `kairos.css` y `sistema.js`. Todos los demás lo extienden. |
 | `base.html` | Layout de las pantallas **con sesión**: menú lateral + contenido. Las páginas completan `titulo`, `encabezado` y `contenido`. |
-| `base_acceso.html` | Layout de las pantallas **sin sesión** (login, recuperar contraseña): el "momento" a la izquierda y el formulario a la derecha. |
+| `base_acceso.html` | Layout de las pantallas **sin sesión** (login, recuperar contraseña), como el acceso de la app: la marca a la izquierda y el formulario a la derecha. |
 | `parciales/_campanita.html` | Campanita de notificaciones de la barra superior. |
 | `parciales/_menu.html` | Menú lateral. Cada opción se muestra según los permisos del usuario. |
 | `parciales/_mensajes.html` | Mensajes de éxito, error o aviso (`messages` de Django). |

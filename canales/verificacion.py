@@ -29,6 +29,19 @@ También distingue el video de 10 BITS (h264_10: H.264 "Hi10P", muy común en
 anime; h265_10: H.265 "Main 10"): casi ningún TV box decodifica H.264 de 10
 bits, y lo muestra con franjas verdes y la imagen rota (ver perfil_10_bits).
 
+PRUEBA A FONDO (a_fondo=True, la usa la importación): además de ver que
+responda, baja hasta BYTES_A_FONDO del video y averigua (ver analisis.py):
+
+  - si tiene SONIDO, de qué tipo y en qué IDIOMA (si el video lo dice);
+  - la RESOLUCIÓN (cuántas líneas: 1080, 720...);
+  - si llega FLUIDO: cuántos segundos de video llegan por segundo
+    (`velocidad`: 1 = justo, menos de 1 = se va a cortar);
+  - en vivo por HLS, si la señal AVANZA: vuelve a pedir la lista después de
+    un rato y mira que tenga pedazos nuevos (si no, está CONGELADA).
+
+Esta capa solo junta los datos; qué se acepta y qué no lo decide
+servicios.juzgar (según lo que se eligió al subir la lista).
+
 YouTube y las páginas de video (Twitch, Dailymotion...) se comprueban con
 yt-dlp (ver paginas.py). Si una dirección cualquiera responde con una página
 web, también se prueba si adentro hay un video. RTSP se comprueba con un
@@ -40,6 +53,7 @@ paneles IPTV cortan si una misma cuenta abre muchas conexiones).
 
     from canales.verificacion import verificar_url, verificar_varias
     verificar_url('https://.../playlist.m3u8')        -> Resultado('funciona', tipo='hls')
+    verificar_url(url, a_fondo=True)                  -> ... alto=1080, con_audio=True, idiomas=('es',), velocidad=3.2
     verificar_varias({url: 'hls', url2: 'youtube'})   -> {url: Resultado, ...}
 """
 
@@ -55,12 +69,26 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 
+from . import analisis
+
 TIEMPO_MAXIMO = 9         # segundos por pedido (el HTML usa 9)
 HILOS = 10                # fuentes verificadas a la vez
 POR_SERVIDOR = 2          # ...pero como mucho estas al mismo servidor
 BYTES_INICIALES = 64 * 1024   # para saber qué es alcanza con el principio
 MAX_BYTES = 512 * 1024    # una lista .m3u8 pesa pocos KB: no hace falta leer más
 BYTES_DE_VIDEO = 32 * 1024    # del pedazo de video alcanza con ver que empieza a llegar
+
+# Prueba a fondo: cuánto video se baja de cada fuente (como mucho), y cuánto
+# tiempo se mira una señal en vivo "directa" (que llega a la velocidad en
+# que se reproduce). Con menos de BYTES_PARA_MEDIR no se juzga la velocidad.
+BYTES_A_FONDO = 1024 * 1024
+SEGUNDOS_DE_MUESTRA = 6
+BYTES_PARA_MEDIR = 192 * 1024
+# Una película de la que no se sabe la calidad tiene que llegar al menos a
+# esta velocidad (bits por segundo): la de un 1080p común.
+VELOCIDAD_DE_UNA_PELICULA = 3_000_000
+# Cuánto se espera, como máximo, para ver si una señal en vivo avanza.
+ESPERA_MAXIMA_EN_VIVO = 10
 
 # Cómo se presenta el reproductor de la app (la API se lo manda junto con
 # cada fuente). Como un navegador de celular: hay servidores de canales que
@@ -86,6 +114,46 @@ class Resultado:
     titulo: str = ''      # YouTube / páginas: el título del video o canal (para sugerir el nombre)
     imagen: str = ''      # ...y su miniatura (para sugerir el logo)
     codec: str = ''       # el códec del video: h264, h265, h264_10, h265_10, mpeg2, mpeg4, vc1, av1, vp9 ('' = no se sabe)
+    # Lo que averigua la prueba a fondo (vacío o None = no se sabe)
+    a_fondo: bool = False  # se hizo la prueba a fondo
+    alto: int = 0          # líneas de la imagen: 1080, 720...
+    con_audio: bool | None = None
+    audios: tuple = ()     # códecs de audio: aac, ac3...
+    idiomas: tuple = ()    # idiomas del audio: es, en...
+    velocidad: float = 0   # segundos de video que llegan por segundo (menos de 1: se corta)
+    se_corto: bool = False  # dejó de llegar mientras se bajaba
+    congelada: bool = False  # en vivo: la lista no avanza
+
+    def calidad(self):
+        """Lo que se sabe de la imagen y el sonido, para el panel: '1080p · H.264 · audio AAC (es, en) · fluido'."""
+        partes = []
+        if self.alto:
+            partes.append(f'{self.alto}p')
+        if self.codec:
+            partes.append(NOMBRES_DE_CODECS.get(self.codec, self.codec.upper()))
+        if self.con_audio is False:
+            partes.append('sin sonido')
+        elif self.audios or self.idiomas:
+            audio = 'audio ' + '/'.join(a.upper() for a in self.audios) if self.audios else 'audio'
+            partes.append(f'{audio} ({", ".join(self.idiomas)})' if self.idiomas else audio)
+        if self.velocidad:
+            partes.append(f'llega x{self.velocidad:.1f}')
+        return ' · '.join(partes)[:80]
+
+
+NOMBRES_DE_CODECS = {'h264': 'H.264', 'h265': 'H.265', 'h264_10': 'H.264 10 bits', 'h265_10': 'H.265 10 bits',
+                     'mpeg2': 'MPEG-2', 'mpeg4': 'MPEG-4', 'vc1': 'VC-1', 'av1': 'AV1', 'vp9': 'VP9'}
+
+
+@dataclass
+class Bajada:
+    """Un pedazo de video bajado, y cuánto tardó en llegar."""
+    datos: bytes
+    final: str              # la dirección después de las redirecciones
+    tipo_contenido: str
+    largo: int = 0          # lo que dice el servidor que mide todo (Content-Length; 0 = no lo dice)
+    segundos: float = 0     # lo que tardó en llegar (desde que empezó a responder)
+    se_corto: bool = False  # dejó de llegar a mitad de camino
 
 
 def cabeceras_para(user_agent='', referer=''):
@@ -103,6 +171,39 @@ def _descargar(url, cabeceras, maximo=MAX_BYTES):
         return respuesta.read(maximo), respuesta.geturl(), respuesta.headers.get('Content-Type', '') or ''
 
 
+def _bajar(url, cabeceras, maximo=BYTES_A_FONDO, segundos=SEGUNDOS_DE_MUESTRA):
+    """
+    Baja hasta `maximo` bytes (o lo que llegue en `segundos`) midiendo cuánto
+    tarda. Si deja de llegar a mitad de camino, lo marca (`se_corto`).
+    """
+    pedido = urllib.request.Request(url, headers=cabeceras)
+    with urllib.request.urlopen(pedido, timeout=TIEMPO_MAXIMO) as respuesta:
+        inicio = time.monotonic()
+        partes, total, se_corto = [], 0, False
+        while total < maximo and time.monotonic() - inicio < segundos:
+            try:
+                parte = respuesta.read(min(64 * 1024, maximo - total))
+            except (TimeoutError, socket.timeout):
+                if not total:
+                    raise
+                se_corto = True
+                break
+            if not parte:
+                break
+            partes.append(parte)
+            total += len(parte)
+        try:
+            largo = int(respuesta.headers.get('Content-Length') or 0)
+        except ValueError:
+            largo = 0
+        return Bajada(b''.join(partes), respuesta.geturl(), respuesta.headers.get('Content-Type', '') or '',
+                      largo, time.monotonic() - inicio, se_corto)
+
+
+def _esperar(segundos):
+    time.sleep(segundos)
+
+
 def _texto(datos):
     return datos.decode('utf-8', errors='replace')
 
@@ -112,12 +213,7 @@ def _es_lista_hls(datos):
 
 
 def _es_mpeg_ts(datos):
-    """Los paquetes MPEG-TS miden 188 bytes y empiezan con 0x47."""
-    for inicio in range(min(188, len(datos))):
-        if datos[inicio] == 0x47 and all(
-                inicio + 188 * k < len(datos) and datos[inicio + 188 * k] == 0x47 for k in (1, 2)):
-            return True
-    return False
+    return analisis.es_mpeg_ts(datos)
 
 
 def detectar_formato(datos, tipo_contenido=''):
@@ -143,9 +239,6 @@ def detectar_formato(datos, tipo_contenido=''):
 
 # ── Códec del video ──────────────────────────────────────────────────
 
-# MPEG-TS: el "stream_type" de cada pista en la tabla PMT (solo las de video)
-_TIPOS_TS = {0x01: 'mpeg2', 0x02: 'mpeg2', 0x10: 'mpeg4', 0x1B: 'h264', 0x24: 'h265', 0xEA: 'vc1'}
-
 # MKV (CodecID) y MP4 / HLS con fMP4 (nombre de la "caja" de la pista de video)
 _MARCAS_DE_CODEC = [
     (b'V_MPEGH/ISO/HEVC', 'h265'), (b'V_MPEG4/ISO/AVC', 'h264'), (b'V_MPEG2', 'mpeg2'),
@@ -160,48 +253,8 @@ _PREFIJOS_HLS = [('hvc1', 'h265'), ('hev1', 'h265'), ('avc1', 'h264'), ('avc3', 
 
 
 def _codec_mpeg_ts(datos):
-    """Lee las tablas PAT y PMT del MPEG-TS y devuelve el códec de la primera pista de video."""
-    inicio = next((i for i in range(min(188, len(datos))) if datos[i] == 0x47), None)
-    if inicio is None:
-        return ''
-    paquetes = [datos[i:i + 188] for i in range(inicio, len(datos) - 187, 188) if datos[i] == 0x47]
-
-    def seccion(paquete):
-        """Los datos de una tabla (PAT/PMT) dentro del paquete, o None."""
-        if not paquete[1] & 0x40:      # no empieza una tabla en este paquete
-            return None
-        cuerpo = 4
-        if paquete[3] & 0x20:          # hay "adaptation field": se saltea
-            cuerpo += 1 + paquete[4]
-        if cuerpo >= 188:
-            return None
-        cuerpo += 1 + paquete[cuerpo]  # pointer field
-        return paquete[cuerpo:]
-
-    pids_pmt = set()
-    for paquete in paquetes:
-        if ((paquete[1] & 0x1F) << 8 | paquete[2]) == 0:   # PAT
-            tabla = seccion(paquete)
-            if not tabla or len(tabla) < 12:
-                continue
-            largo = (tabla[1] & 0x0F) << 8 | tabla[2]
-            for i in range(8, min(3 + largo - 4, len(tabla) - 3), 4):
-                if tabla[i] << 8 | tabla[i + 1]:            # programa 0 = red, no sirve
-                    pids_pmt.add((tabla[i + 2] & 0x1F) << 8 | tabla[i + 3])
-    for paquete in paquetes:
-        if ((paquete[1] & 0x1F) << 8 | paquete[2]) not in pids_pmt:
-            continue
-        tabla = seccion(paquete)
-        if not tabla or len(tabla) < 12 or tabla[0] != 0x02:
-            continue
-        largo = (tabla[1] & 0x0F) << 8 | tabla[2]
-        i = 12 + ((tabla[10] & 0x0F) << 8 | tabla[11])
-        fin = min(3 + largo - 4, len(tabla))
-        while i + 5 <= fin:
-            if tabla[i] in _TIPOS_TS:
-                return _TIPOS_TS[tabla[i]]
-            i += 5 + ((tabla[i + 3] & 0x0F) << 8 | tabla[i + 4])
-    return ''
+    """El códec de la primera pista de video, según las tablas PAT y PMT del MPEG-TS."""
+    return next((pista.codec for pista in analisis.pistas_ts(datos) if pista.clase == 'video'), '')
 
 
 # Los "perfiles" de 10 bits (o más). H.264: High 10 (110), High 4:2:2 (122), High 4:4:4 (244).
@@ -294,6 +347,74 @@ def codec_de_hls(texto):
     return ''
 
 
+def _duracion_del_ultimo(texto):
+    """Cuántos segundos dura el último pedazo de una lista HLS (#EXTINF:6.0,)."""
+    duraciones = re.findall(r'#EXTINF:\s*([\d.]+)', texto)
+    try:
+        return float(duraciones[-1]) if duraciones else 0
+    except ValueError:
+        return 0
+
+
+def _marca_de_la_lista(texto):
+    """Lo que cambia cuando una lista en vivo avanza: su número de secuencia y el último pedazo."""
+    secuencia = re.search(r'#EXT-X-MEDIA-SEQUENCE:\s*(\d+)', texto)
+    pedazos = _direcciones(texto)
+    return (secuencia.group(1) if secuencia else '', pedazos[-1] if pedazos else '')
+
+
+def _sigue_avanzando(url, texto, cabeceras, desde):
+    """
+    En vivo: vuelve a pedir la lista cuando ya tendría que haber un pedazo
+    nuevo (#EXT-X-TARGETDURATION después de la primera vez) y mira si cambió.
+    Si no se puede pedir, no se juzga (True).
+    """
+    objetivo = re.search(r'#EXT-X-TARGETDURATION:\s*(\d+)', texto)
+    espera = min(max(int(objetivo.group(1)) if objetivo else 6, 2), ESPERA_MAXIMA_EN_VIVO) + 1
+    _esperar(max(0, desde + espera - time.monotonic()))
+    try:
+        datos, _, _ = _descargar(url, cabeceras, MAX_BYTES)
+    except (OSError, ValueError, http.client.HTTPException):
+        return True
+    return _marca_de_la_lista(_texto(datos)) != _marca_de_la_lista(texto)
+
+
+def _velocidad(analizado, bajada, duracion=0):
+    """
+    Cuántos segundos de video llegan por cada segundo de espera (1 = justo;
+    menos de 1 = se va a cortar). 0 = no se pudo medir.
+      - MPEG-TS: por las marcas de tiempo del video que llegó (lo más preciso).
+      - Si se sabe cuánto dura (el pedazo de HLS, o la película) y cuánto pesa:
+        lo que llega por segundo contra lo que hace falta por segundo.
+      - Una película de la que no se sabe nada: contra VELOCIDAD_DE_UNA_PELICULA.
+    """
+    llegaron = len(bajada.datos)
+    if llegaron < BYTES_PARA_MEDIR and not (bajada.se_corto and llegaron):
+        return 0
+    segundos = max(bajada.segundos, 0.05)
+    if analizado.segundos >= 0.5:
+        return round(analizado.segundos / segundos, 2)
+    duracion = duracion or analizado.duracion
+    if duracion and bajada.largo:
+        return round((llegaron / segundos) / (bajada.largo / duracion), 2)
+    if bajada.largo > 50 * 1024 * 1024:   # un archivo grande: una película
+        return round((llegaron / segundos) / (VELOCIDAD_DE_UNA_PELICULA / 8), 2)
+    return 0
+
+
+def _completar(resultado, bajada, duracion=0, maestra=None):
+    """Le suma al resultado lo que dice el pedazo de video (y la lista maestra, si hay)."""
+    analizado = analisis.analizar(bajada.datos, resultado.codec)
+    resultado.a_fondo = True
+    resultado.alto = (maestra.alto if maestra else 0) or analizado.alto
+    resultado.con_audio = True if maestra and maestra.audio_aparte else analizado.con_audio
+    resultado.audios = tuple(analizado.audios)
+    resultado.idiomas = tuple(dict.fromkeys([*(maestra.idiomas if maestra else []), *analizado.idiomas]))
+    resultado.velocidad = _velocidad(analizado, bajada, duracion)
+    resultado.se_corto = bajada.se_corto
+    return resultado
+
+
 def _direcciones(texto):
     return [linea.strip() for linea in texto.splitlines() if linea.strip() and not linea.strip().startswith('#')]
 
@@ -316,16 +437,21 @@ def _error_http(error, que):
                      rechazo=400 <= error.code < 500)
 
 
-def _probar(url, cabeceras):
-    """Una prueba completa con estas cabeceras."""
+def _probar(url, cabeceras, a_fondo=False):
+    """Una prueba completa con estas cabeceras (a fondo: ver el principio)."""
     que = 'la lista'
     try:
-        datos, final, tipo_contenido = _descargar(url, cabeceras, BYTES_INICIALES)
+        if a_fondo:
+            bajada = _bajar(url, cabeceras)
+            datos, final, tipo_contenido = bajada.datos, bajada.final, bajada.tipo_contenido
+        else:
+            datos, final, tipo_contenido = _descargar(url, cabeceras, BYTES_INICIALES)
         tipo = detectar_formato(datos, tipo_contenido)
         if tipo == 'directo':
             if not datos:
                 return Resultado(CAIDA, 'No llegó video.')
-            return Resultado(FUNCIONA, tipo='directo', codec=detectar_codec(datos))
+            resultado = Resultado(FUNCIONA, tipo='directo', codec=detectar_codec(datos))
+            return _completar(resultado, bajada) if a_fondo else resultado
         if tipo == 'dash':
             return Resultado(FUNCIONA, tipo='dash')
         if tipo != 'hls':
@@ -334,10 +460,11 @@ def _probar(url, cabeceras):
                                  es_pagina=True)
             return Resultado(CAIDA, 'Responde, pero no es un formato de video conocido.', rechazo=True)
 
-        if len(datos) >= BYTES_INICIALES:   # una lista larga: se pide entera
+        if not a_fondo and len(datos) >= BYTES_INICIALES:   # una lista larga: se pide entera
             datos, final, _ = _descargar(url, cabeceras, MAX_BYTES)
         texto = _texto(datos)
         codec = codec_de_hls(texto)
+        maestra = analisis.de_la_maestra(texto) if a_fondo else None
         calidad = _primera_calidad(texto, final)
         if calidad:
             datos, final, _ = _descargar(calidad, cabeceras, MAX_BYTES)
@@ -348,10 +475,20 @@ def _probar(url, cabeceras):
         if not pedazos:
             return Resultado(CAIDA, 'La lista no tiene video (está vacía).', tipo='hls')
         que = 'el video'
-        pedazo, _, _ = _descargar(urljoin(final, pedazos[-1]), cabeceras, BYTES_DE_VIDEO)   # el más reciente
-        if not pedazo:
+        lista, cuando = final, time.monotonic()
+        if not a_fondo:
+            pedazo, _, _ = _descargar(urljoin(final, pedazos[-1]), cabeceras, BYTES_DE_VIDEO)   # el más reciente
+            if not pedazo:
+                return Resultado(CAIDA, 'La lista responde, pero no llega video.', tipo='hls')
+            return Resultado(FUNCIONA, tipo='hls', codec=codec or detectar_codec(pedazo))
+        bajada = _bajar(urljoin(final, pedazos[-1]), cabeceras)
+        if not bajada.datos:
             return Resultado(CAIDA, 'La lista responde, pero no llega video.', tipo='hls')
-        return Resultado(FUNCIONA, tipo='hls', codec=codec or detectar_codec(pedazo))
+        resultado = Resultado(FUNCIONA, tipo='hls', codec=codec or detectar_codec(bajada.datos))
+        _completar(resultado, bajada, _duracion_del_ultimo(texto), maestra)
+        if '#EXT-X-ENDLIST' not in texto:   # en vivo: ¿avanza?
+            resultado.congelada = not _sigue_avanzando(lista, texto, cabeceras, cuando)
+        return resultado
     except urllib.error.HTTPError as error:
         return _error_http(error, que)
     except urllib.error.URLError as error:
@@ -391,7 +528,7 @@ def _verificar_rtsp(url):
                      tipo='rtsp')
 
 
-def verificar_url(url, tipo='hls', user_agent='', referer=''):
+def verificar_url(url, tipo='hls', user_agent='', referer='', a_fondo=False):
     if tipo in ('youtube', 'pagina'):
         from . import paginas
         return paginas.verificar(url, youtube=tipo == 'youtube')
@@ -401,9 +538,9 @@ def verificar_url(url, tipo='hls', user_agent='', referer=''):
     if esquema in ('rtsp', 'rtsps'):
         return _verificar_rtsp(url)
 
-    resultado = _probar(url, cabeceras_para(user_agent, referer))
+    resultado = _probar(url, cabeceras_para(user_agent, referer), a_fondo)
     if resultado.estado == CAIDA and resultado.rechazo and not user_agent:
-        como_vlc = _probar(url, cabeceras_para(USER_AGENT_VLC, referer))
+        como_vlc = _probar(url, cabeceras_para(USER_AGENT_VLC, referer), a_fondo)
         if como_vlc.estado == FUNCIONA:
             como_vlc.user_agent = USER_AGENT_VLC
             return como_vlc
@@ -416,13 +553,14 @@ def verificar_url(url, tipo='hls', user_agent='', referer=''):
     return resultado
 
 
-def verificar_varias(fuentes, cabeceras=None, hasta=None):
+def verificar_varias(fuentes, cabeceras=None, hasta=None, a_fondo=False):
     """
     {url: tipo} -> {url: Resultado}. Verifica varias a la vez.
     `cabeceras`: {url: (user_agent, referer)} para las fuentes que tienen las suyas.
     `hasta`: momento (time.monotonic()) a partir del cual no se empieza ninguna
     más; las que no llegaron a probarse NO vienen en el resultado (quedan para
     la próxima tanda). Así un pedido del panel nunca tarda demasiado.
+    `a_fondo`: la prueba a fondo (ver el principio).
     """
     if not fuentes:
         return {}
@@ -440,7 +578,7 @@ def verificar_varias(fuentes, cabeceras=None, hasta=None):
         with turno(url):
             if hasta is not None and time.monotonic() >= hasta:
                 return None
-            return verificar_url(url, tipo, *cabeceras.get(url, ('', '')))
+            return verificar_url(url, tipo, *cabeceras.get(url, ('', '')), a_fondo=a_fondo)
 
     with ThreadPoolExecutor(max_workers=HILOS) as hilos:
         resultados = dict(zip(fuentes, hilos.map(una, fuentes.items())))

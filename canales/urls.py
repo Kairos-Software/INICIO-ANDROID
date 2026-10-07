@@ -9,6 +9,7 @@ urlpatterns = [
     path('verificar/lote/', views.verificar_lote, name='verificar_lote'),
     path('importaciones/<int:pk>/', views.importacion, name='importacion'),
     path('importaciones/<int:pk>/lote/', views.importacion_lote, name='importacion_lote'),
+    path('importaciones/<int:pk>/cargar/', views.importacion_cargar, name='importacion_cargar'),
     path('importaciones/<int:pk>/reintentar/', views.importacion_reintentar, name='importacion_reintentar'),
     path('importaciones/<int:pk>/borrar/', views.importacion_borrar, name='importacion_borrar'),
     path('catalogo/', views.catalogo, name='catalogo'),

@@ -30,9 +30,9 @@ MODULOS_PERMISOS = [
         ('editar_roles', 'Editar roles existentes'),
         ('eliminar_roles', 'Eliminar roles'),
     ]),
-    ('Canales', [
-        ('ver_canales', 'Ver los canales y el estado de sus fuentes'),
-        ('importar_canales', 'Importar listas de canales (M3U), verificar las fuentes y editar o quitar canales'),
+    ('Contenido', [
+        ('ver_canales', 'Ver el contenido (canales, películas y series) y el estado de sus fuentes'),
+        ('importar_canales', 'Importar listas (M3U), verificar las fuentes y editar o quitar contenido'),
     ]),
     ('Reventa', [
         ('administrar_reventa', 'Ver y gestionar a todos los revendedores y sus clientes; regalar y ajustar créditos'),

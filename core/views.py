@@ -68,6 +68,7 @@ HERRAMIENTAS = {
     'borrar_demo': (herramientas_dev.borrar_demo, []),
     'borrar_actividad': (herramientas_dev.borrar_actividad, ['confirmacion']),
     'borrar_notificaciones': (herramientas_dev.borrar_notificaciones, ['confirmacion']),
+    'borrar_contenido': (herramientas_dev.borrar_contenido, ['que', 'confirmacion', 'password']),
     'reiniciar': (herramientas_dev.reiniciar_sistema, ['confirmacion', 'password']),
 }
 
@@ -97,6 +98,7 @@ def herramientas(request):
     return render(request, 'core/herramientas.html', {
         'estado': herramientas_dev.estado_del_sistema(),
         'resumen_reinicio': herramientas_dev.resumen_reinicio(),
+        'contenido': herramientas_dev.resumen_contenido(),
         'FRASE_BORRAR': herramientas_dev.FRASE_BORRAR,
         'FRASE_REINICIO': herramientas_dev.FRASE_REINICIO,
     })

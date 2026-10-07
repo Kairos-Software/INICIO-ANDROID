@@ -48,7 +48,7 @@
             <tbody>
             {% for f in filas %}
                 <tr>
-                    <td>{{ f.nombre|capfirst }}</td>
+                    <td class="text-nowrap">{{ f.nombre|capfirst }}</td>
                     <td class="dato text-end">{{ f.clientes_nuevos }}</td>
                     <td class="dato text-end">{{ f.renovaciones }}</td>
                     <td class="dato text-end">{{ f.creditos_usados }}</td>
@@ -106,7 +106,7 @@
             {% for n in ranking %}
                 <tr>
                     <td class="texto-suave">{{ forloop.counter }}</td>
-                    <td><a href="{% url 'reventa:revendedor' n.revendedor.pk %}">{{ n.revendedor }}</a></td>
+                    <td class="text-nowrap"><a href="{% url 'reventa:revendedor' n.revendedor.pk %}">{{ n.revendedor }}</a></td>
                     <td class="dato text-end">{{ n.usados }}</td>
                     <td class="dato text-end">{{ n.usados_este_mes }}</td>
                     <td class="dato text-end">{{ n.saldo }}</td>

@@ -38,10 +38,16 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
         label='Descartar películas y series', required=False, initial=False,
         help_text='Sin marcar se importa todo. Ojo: hay listas con miles y verificarlas tarda horas.',
     )
+    a_fondo = forms.BooleanField(
+        label='Prueba a fondo (recomendado)', required=False, initial=True,
+        help_text='Además de ver si responde: que tenga sonido, el idioma del audio, la resolución, un formato que '
+                  'lean todos los aparatos, que llegue fluido y, en vivo, que no esté congelada. Baja hasta 1 MB '
+                  'de cada una y tarda más.',
+    )
     solo_espanol = forms.BooleanField(
-        label='Solo canales en español', required=False, initial=True,
-        help_text='Descarta los que se sabe que son de otro idioma (por país, categoría o prefijo). '
-                  'Los que no se puede saber, se verifican igual.',
+        label='Solo en español', required=False, initial=True,
+        help_text='Descarta lo que se sabe que es de otro idioma (por país, categoría o prefijo) y, con la prueba '
+                  'a fondo, lo que tiene el audio en otro idioma (si trae español entre varios, pasa).',
     )
     descartar_adultos = forms.BooleanField(label='Descartar contenido para adultos', required=False, initial=True,
                                            help_text='XXX / +18, por el nombre o la categoría.')
@@ -61,7 +67,7 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
 
     def opciones(self):
         return {campo: self.cleaned_data[campo] for campo in ('descartar_vod', 'solo_espanol', 'descartar_adultos',
-                                                              'descartar_sin_logo')}
+                                                              'descartar_sin_logo', 'a_fondo')}
 
 
 class QuitarCanalesForm(forms.Form):

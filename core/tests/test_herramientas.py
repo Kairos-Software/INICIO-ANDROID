@@ -143,3 +143,54 @@ class ReiniciarSistemaTests(TestCase):
         self.assertEqual(RegistroActividad.objects.get().usuario, self.dueno)
         # Y sigo con la sesión abierta
         self.assertEqual(self.client.get(URL).status_code, 200)
+
+
+class BorrarContenidoTests(TestCase):
+
+    def setUp(self):
+        from canales.models import Canal, Categoria, Fuente, Importacion
+        self.dueno = Usuario.objects.create_superuser('dueno', 'dueno@test.com', 'Clave-dueno-1')
+        self.empleado = Usuario.objects.create_user('empleado', None, 'x')
+        self.client.force_login(self.dueno)
+        noticias = Categoria.objects.create(nombre='Noticias')
+        cine = Categoria.objects.create(nombre='Cine')
+        canal = Canal.objects.create(nombre='Canal 26', categoria=noticias)
+        Fuente.objects.create(canal=canal, url='https://x/26.m3u8')
+        pelicula = Canal.objects.create(nombre='Matrix (1999)', contenido='pelicula', categoria=cine)
+        Fuente.objects.create(canal=pelicula, url='https://x/matrix.mkv')
+        Canal.objects.create(nombre='Lost S01 E01', contenido='serie', categoria=cine)
+        Importacion.objects.create(archivo='lista.m3u')
+
+    def borrar(self, que, confirmacion='BORRAR', password='Clave-dueno-1'):
+        return self.client.post(URL, {'herramienta': 'borrar_contenido', 'que': que, 'confirmacion': confirmacion,
+                                      'password': password}, follow=True)
+
+    def test_muestra_cuanto_hay(self):
+        respuesta = self.client.get(URL)
+        self.assertContains(respuesta, 'Borrar el contenido')
+        self.assertEqual(respuesta.context['contenido'], {'vivo': 1, 'pelicula': 1, 'serie': 1, 'importaciones': 1})
+
+    def test_borra_solo_las_peliculas(self):
+        from canales.models import Canal, Categoria, Fuente
+        self.assertContains(self.borrar('pelicula'), 'Se borró las películas: 1')
+        self.assertEqual(set(Canal._base_manager.values_list('contenido', flat=True)), {'vivo', 'serie'})
+        self.assertEqual(Fuente.objects.count(), 1)
+        self.assertEqual(Categoria._base_manager.count(), 2)   # "Cine" sigue: la usa la serie
+
+    def test_todo_borra_tambien_listas_y_categorias_pero_no_usuarios(self):
+        from canales.models import Canal, Categoria, Fuente, Importacion
+        self.borrar('todo')
+        self.assertFalse(Canal._base_manager.exists())
+        self.assertFalse(Fuente.objects.exists())
+        self.assertFalse(Importacion.objects.exists())
+        self.assertFalse(Categoria._base_manager.exists())
+        self.assertTrue(Usuario.objects.filter(username='empleado').exists())
+        registros = RegistroActividad.objects.filter(usuario=self.dueno, descripcion__startswith='Borró todo')
+        self.assertTrue(registros.exists())
+
+    def test_sin_frase_o_contraseña_no_borra(self):
+        from canales.models import Canal
+        self.assertContains(self.borrar('todo', confirmacion='borrar'), 'tenés que escribir BORRAR')
+        self.assertContains(self.borrar('todo', password='mala'), 'La contraseña no es correcta')
+        self.assertContains(self.borrar(''), 'Elegí qué contenido borrar')
+        self.assertEqual(Canal._base_manager.count(), 3)

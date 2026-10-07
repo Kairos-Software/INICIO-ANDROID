@@ -28,12 +28,13 @@ siguiente. Si una fuente se cae, el canal sigue andando.
 | `clasificar.py` | Base | Conclusiones sobre cada entrada: idioma y país, si es en vivo / película / serie, si es para adultos, el formato que parece y el nombre limpio (`ES: (HD REPUESTO) DAZN F1` → `DAZN F1`). `episodio()`: "Arrow S02 E05" → serie, temporada y capítulo (la misma regla que la app). |
 | `paginas.py` | Base | YouTube y páginas de video (Twitch, Dailymotion, Vimeo, Kick...) con **yt-dlp**: `verificar()` (¿hay video?) y `resolver()` (la dirección real en este momento). |
 | `verificacion.py` | Base | Prueba si una fuente responde y **qué formato es** mirando los bytes (como VLC): HLS, DASH, video directo (MPEG-TS/MP4/MKV) o RTSP. Si el servidor rechaza al "navegador", reintenta como VLC. Además averigua el **códec** del video (h264, h265, mpeg2...) por la lista HLS o los primeros bytes (`Fuente.codec`), y si es de **10 bits** (`h264_10` / `h265_10`, mirando el perfil: la mayoría de los TV box no leen H.264 de 10 bits y lo muestran con franjas verdes). La app lo compara con lo que sabe mostrar su aparato y no muestra lo que no puede ver. Máximo 2 pedidos a la vez al mismo servidor y un tiempo límite por tanda. |
-| `servicios.py` | Base | `crear_importacion()` (analiza la lista, rápido), `procesar_lote()` (verifica las próximas 50 y agrega las que andan), `verificar_lote_de_fuentes()` (vuelve a probar las guardadas de a 50), `quitar_canales()` / `mostrar_canales()` e `importar_m3u()` (todo de una vez, para la consola). |
+| `analisis.py` | Base | Qué trae un video mirando sus primeros bytes (MPEG-TS, MKV, MP4 y la lista HLS maestra): si tiene **sonido** y de qué tipo, el **idioma del audio**, la **resolución** (leyendo el SPS de H.264 / H.265), cuántos segundos de video hay en esos bytes y cuánto dura la película. Lo usa la prueba a fondo. |
+| `servicios.py` | Base | `crear_importacion()` (analiza la lista, rápido), `procesar_lote()` (prueba las próximas 50: quedan aptas o no, con el motivo), `juzgar()` (qué pasa la prueba), `cargar_lote()` (carga las aptas), `verificar_lote_de_fuentes()` (vuelve a probar las guardadas de a 50), `quitar_canales()` / `mostrar_canales()` e `importar_m3u()` (todo de una vez, para la consola). |
 | `consultas.py` | Base | `canales_disponibles(tipos)` (lo que ve la app, según los formatos que sabe reproducir), `resumen()` (los números sueltos son solo de en vivo; `por_contenido` trae en vivo, películas y series por separado), `series()` (los capítulos agrupados por serie y temporada, con cuántos ve la app; `Serie.completa` / `por_que_no_se_ve`: como la app, una serie se muestra solo si entre los capítulos que se ven está el T1:E1 y son al menos 3), `catalogo(filtros)` y `por_que_no_se_ve(canal)`. |
 | `views.py`, `urls.py`, `forms.py`, `templates/` | Panel | `/canales/` (resumen separado de en vivo, películas y series), `/canales/importaciones/<id>/` (avance e informe), `/canales/catalogo/` (pestañas En vivo / Películas), `/canales/series/` (series agrupadas y paginadas), `/canales/series/detalle/?nombre=...` (temporadas, capítulos y fuentes) y `/canales/canal/<id>/editar/`. Permisos `ver_canales` e `importar_canales`. |
 | `templatetags/canales_extras.py` | Panel | Filtro `iniciales` (lo que muestra la app cuando un canal no tiene logo). |
 | `admin.py` | Técnica | Editar canales, fuentes y categorías puntuales desde `/admin/`. |
-| `management/commands/importar_m3u.py` | Técnica | `python manage.py importar_m3u <archivo> [--sin-verificar] [--solo-espanol] [--descartar-sin-logo] [--con-peliculas] [--con-adultos]` |
+| `management/commands/importar_m3u.py` | Técnica | `python manage.py importar_m3u <archivo> [--sin-verificar] [--a-fondo] [--solo-espanol] [--descartar-sin-logo] [--con-peliculas] [--con-adultos]` |
 | `management/commands/verificar_fuentes.py` | Técnica | `python manage.py verificar_fuentes` (para programarlo con cron en producción). |
 | `datos/canales_prueba.m3u8` | Datos | 3 canales públicos para probar (Canal 26, Telemax, TV Universidad). |
 | `tests/` | Técnica | Pruebas de las herramientas (probar un link, limpiar nombres), del lector, el clasificador, la verificación, las tandas, las pantallas y la API. |
@@ -42,28 +43,57 @@ La API para la app está en `api/v1/canales.py` (`GET /api/v1/canales/?formatos=
 
 ## Importar una lista (desde el panel)
 
-Menú **Kairos TV → Canales → Importar una lista**. Acepta `.m3u`, `.m3u8` o
-un `.zip` que la contenga (hasta 20 MB). Es en dos pasos, para que una lista
-de miles de canales no sature el servidor:
+Menú **Kairos TV → Contenido → Importar una lista**. Acepta `.m3u`, `.m3u8`
+o un `.zip` que la contenga (hasta 20 MB). Es en tres pasos, para que una
+lista de miles de canales no sature el servidor y para que **solo entre lo
+que está bien** (no la lista entera: se descarta la basura de cada lista):
 
-1. **Subir y analizar** (segundos, no sale a internet). Cada canal de la
-   lista queda guardado con su idioma, país, categoría, formato y si es en
-   vivo o película. Según lo que se elija, se descartan desde ya (con el
-   motivo): películas y series (por defecto se importan), otro idioma,
-   adultos, sin logo. Siempre se
-   descartan los que no tienen nombre y los RTMP. Las direcciones repetidas
-   o ya cargadas quedan como "Ya estaba".
-2. **Verificar de a tandas.** La pantalla de la importación le pide al
-   servidor que verifique las próximas 50 (cada pedido dura menos de 1
-   minuto), muestra la barra "35 % completado", cuánto falta y los
+1. **Subir y analizar** (segundos, no sale a internet). Cada entrada de la
+   lista queda guardada con su idioma, país, categoría, formato y si es en
+   vivo, película o serie. Según lo que se elija, se descartan desde ya (con
+   el motivo): películas y series (por defecto se importan), otro idioma,
+   adultos, sin logo. Siempre se descartan los que no tienen nombre y los
+   RTMP. Las direcciones repetidas o ya cargadas quedan como "Ya estaba".
+2. **Probar de a tandas.** La pantalla de la importación le pide al
+   servidor que pruebe las próximas 50 (cada pedido dura menos de 2
+   minutos), muestra la barra "35 % completado", cuánto falta y los
    contadores, y repite hasta terminar. Se puede pausar; si se cierra la
-   página, después se sigue con "Continuar". Las que funcionan se agregan al
-   momento; las que no, quedan en el informe con el motivo (y se pueden
-   reintentar).
+   página, después se sigue con "Continuar". **Todavía no se carga nada**:
+   lo que pasa queda "Apta"; lo que no, "No responde" o "No pasó la
+   prueba", con el motivo y agrupado por causa ("Audio en otro idioma: 600").
+   "Volver a probar las que fallaron" reintenta las que no respondieron,
+   llegaron lentas o se cortaron (a veces es algo del momento).
+3. **Cargar las aptas.** Un botón "Cargar las N aptas" (de a 200, con
+   avance). Recién ahí entran a la app.
+
+### La prueba a fondo (recomendada, viene marcada)
+
+Además de ver que responda, baja hasta 1 MB de cada entrada y revisa:
+
+| Prueba | No pasa si... |
+|---|---|
+| Formato | El video es MPEG-2, VC-1 o H.264 de 10 bits: muchos aparatos lo muestran verde, cortado o no lo muestran. (Esto se revisa siempre, también sin la prueba a fondo.) |
+| Sonido | No trae ninguna pista de audio, o solo DTS / TrueHD (casi ningún aparato lo reproduce). |
+| Idioma | Con "Solo en español": el audio dice que está en otro idioma. Si trae español entre varios, pasa. Si el video no dice el idioma, se guía por el nombre y la categoría (paso 1). |
+| Imagen | Tiene menos de 360 líneas (240p, 288p): en una TV se ve muy mal. 480 y 576 (SD común) pasan. |
+| Fluidez | Llega más lento de lo que se reproduce (menos de x0.9): se cortaría a cada rato. Se mide con las marcas de tiempo del video, o con lo que pesa y lo que dura. |
+| En vivo | La señal está congelada: se vuelve a pedir la lista después de un pedazo (6 a 10 s) y no tiene nada nuevo. O el video deja de llegar mientras se prueba. |
+| Series | Al terminar: si de una serie no pasó el capítulo 1 de la temporada 1, o pasaron menos de 3 capítulos (contando los ya cargados), no pasa ninguno: la app no la mostraría. |
+
+Lo que la prueba no puede averiguar (un MP4 con el índice al final, un
+video que no dice su idioma) no se cuenta en contra. La calidad que
+encontró ("1080p · H.264 · audio AAC (es) · llega x3.2") queda en el
+informe y en la fuente (`Fuente.calidad`). Gasta hasta 1 MB por entrada
+(una lista de 1.000 entradas: hasta 1 GB, una sola vez) y en vivo tarda
+unos segundos más por canal (espera a que avance).
+
+Ninguna prueba garantiza que un canal no se corte en dos horas: lo que pasa
+después lo cuidan la verificación automática (cron cada 6 horas) y los
+avisos de los aparatos (ver "Estado de una fuente").
 
 Si un canal ya existe (mismo nombre limpio y país compatible), la dirección se
 suma como fuente alternativa. Si el canal está **quitado**, no se vuelve a
-agregar. Borrar el informe no borra los canales.
+agregar. Borrar el informe no borra lo que ya se cargó.
 
 Por consola (todo de una vez, sin barra):
 

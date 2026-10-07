@@ -1,22 +1,23 @@
 # assets/bienvenida/
 
-La presentación que aparece al abrir la app, en la TV y en el celular (`lib/bienvenida.dart`).
+La presentación en video que aparece al abrir la app (`lib/bienvenida.dart`).
 
 | Archivo | Qué es |
 |---|---|
-| `portada_tv.jpg` | La imagen **apaisada** (16:9, ideal 1920×1080). Se usa en la TV y en el celular acostado. |
-| `portada_celular.jpg` | La imagen **parada** (9:16 o 9:20, ideal 1080×2400). Se usa en el celular parado. |
-| `sonido.mp3` | El sonido (7,8 s). Es *"Epic Cinematic Logo Reveal"* de breakzstudios, de [Pixabay](https://pixabay.com/): uso libre en apps, sin pagar ni nombrar al autor. |
+| `intro_tv.mp4` | Video horizontal 16:9 para Android TV y celulares acostados (1920×1080). |
+| `intro_celular.mp4` | Video vertical 9:16 para celulares parados (1080×1920). |
 
-Las dos imágenes **llenan toda la pantalla**: si la pantalla no tiene justo su
-forma, se recorta un poco de los bordes. Por eso el logo y lo importante tienen
-que ir al centro, con margen.
+Los dos videos duran ocho segundos e incluyen su propia pista de audio. No debe
+agregarse ni reproducirse un archivo de sonido separado.
 
-Para cambiarlas, se reemplaza el archivo por otro **con el mismo nombre** (JPG,
-menos de 500 KB cada una para que la app abra rápido). Si el sonido nuevo dura
-distinto, se ajusta `Bienvenida.duracion` en `lib/bienvenida.dart`.
+La presentación llena toda la pantalla con `BoxFit.cover`; si la relación de
+aspecto del aparato difiere ligeramente, se recortan solamente los bordes. El
+logo y la información importante deben permanecer dentro del área central.
 
-Mientras arranca, Android muestra una pantalla lisa de color `#07090C` (sin logo),
-así se pasa directo a esta imagen. Si las imágenes nuevas tienen otro color de
-fondo, conviene cambiar ese color en `Bienvenida.fondo` y en
-`android/app/src/main/res/values/colors.xml` (`fondo_arranque`).
+Mientras Flutter prepara el primer cuadro, Android muestra una pantalla lisa de
+color `#07090C` (sin otro logo). Así la app pasa directamente al video y evita
+mostrar dos presentaciones distintas durante el arranque.
+
+Si se reemplazan los videos, deben mantenerse los nombres, la duración y las
+relaciones de aspecto. `Bienvenida.duracion` y `Bienvenida.desvanecer` controlan
+la salida hacia la aplicación.

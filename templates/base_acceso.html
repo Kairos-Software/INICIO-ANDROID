@@ -1,32 +1,23 @@
 {% extends "base_html.html" %}
-{% load static momento %}
+{% load static %}
 {% comment %}
-    Layout de las pantallas sin sesión (login, recuperar contraseña).
-    Izquierda: el momento (saludo + hora). Derecha: el formulario.
+    Layout de las pantallas sin sesión (login, recuperar contraseña), como el
+    acceso de la app (diseno_kairos_tv/images/tv-02-login-panel.png):
+    izquierda, la marca sobre la grilla de luz; derecha, el formulario.
     Las páginas completan {% block formulario %}.
 {% endcomment %}
 
 {% block cuerpo %}
 <div class="acceso">
-    <section class="acceso-momento" aria-label="Bienvenida">
+    <section class="acceso-momento" aria-label="Kairos TV">
         <div class="acceso-marca">
             <img class="acceso-logo" src="{% static 'img/kairos-tv-logo-v2.png' %}" alt="Kairos TV">
-            <div>
-                <span class="acceso-panel">Panel de gestión</span>
-                <span class="marca-empresa d-block">{{ NOMBRE_EMPRESA }}</span>
-            </div>
         </div>
 
-        <div class="acceso-momento-centro">
-            <span class="acceso-estado"><i aria-hidden="true"></i> Centro de operaciones</span>
-            <time class="momento-hora d-block" data-momento="hora">{% now "H:i" %}</time>
-            <p class="acceso-saludo"><span data-momento="saludo">{% saludo %}</span>.</p>
-            <p class="acceso-fecha">{% now "l j \d\e F" %}</p>
-            <p class="acceso-manifiesto">Todo lo que necesitás para operar Kairos TV, en un solo lugar.</p>
-            <div class="linea-dia" data-momento="linea" style="--avance-dia: {% avance_dia %}" aria-hidden="true"></div>
-            <div class="linea-dia-marcas" aria-hidden="true">
-                <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
-            </div>
+        <div class="acceso-manifiesto">
+            <span class="seccion-sobrelinea">Kairos TV · Panel de gestión</span>
+            <h2>Todo lo que querés ver, en el momento indicado.</h2>
+            <p>Clientes, revendedores, créditos y contenido: todo Kairos TV desde un solo lugar.</p>
         </div>
 
         <p class="acceso-pie">{{ NOMBRE_EMPRESA }} · {% now "Y" %}</p>

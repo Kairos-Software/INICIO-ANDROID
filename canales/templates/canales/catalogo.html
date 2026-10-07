@@ -12,7 +12,7 @@
 {% block encabezado %}
 <div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
     <div>
-        <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Canales</a>
+        <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Contenido</a>
         <h1 class="pagina-titulo">Catálogo</h1>
         <p class="pagina-bajada">Así ven los canales en la app. Los punteados no se ven (sus fuentes no andan) y los rojos están quitados a mano. Elegí los que no te sirven y quitalos, o editalos para ponerles nombre y logo.</p>
     </div>
@@ -42,7 +42,7 @@
     <div>
         <label for="estado" class="visually-hidden">En la app</label>
         <select id="estado" name="estado" class="form-select">
-            <option value="">Todos</option>
+            <option value="">Todos los estados</option>
             <option value="en_app" {% if filtros.estado == 'en_app' %}selected{% endif %}>Se ven en la app</option>
             <option value="fuera" {% if filtros.estado == 'fuera' %}selected{% endif %}>No se ven (fuentes caídas)</option>
             <option value="quitados" {% if filtros.estado == 'quitados' %}selected{% endif %}>Quitados a mano</option>

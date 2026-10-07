@@ -55,6 +55,26 @@ class SeriesPanelTests(TestCase):
         self.assertContains(respuesta, 'Lucifer')
         self.assertNotContains(respuesta, 'Arrow')
 
+    def test_filtra_por_categoria_idioma_y_lista(self):
+        netflix = Categoria.objects.create(nombre='SERIES | NETFLIX')
+        Canal.objects.filter(nombre__startswith='Lucifer').update(categoria=netflix, idioma='otro')
+        Fuente.objects.filter(canal=self.lucifer).update(origen='netflix.m3u')
+        Canal.objects.create(nombre='Canal en vivo', categoria=Categoria.objects.create(nombre='Noticias'))
+
+        respuesta = self.client.get(reverse('canales:series'), {'categoria': netflix.pk})
+        self.assertContains(respuesta, 'Lucifer')
+        self.assertNotContains(respuesta, 'Arrow')
+        # Solo se ofrecen las categorías y listas que tienen series
+        self.assertEqual([c.nombre for c in respuesta.context['categorias']], ['Acción', 'SERIES | NETFLIX'])
+        self.assertEqual(list(respuesta.context['origenes']), ['netflix.m3u'])
+
+        respuesta = self.client.get(reverse('canales:series'), {'idioma': 'otro'})
+        self.assertContains(respuesta, 'Lucifer')
+        self.assertNotContains(respuesta, 'Arrow')
+        respuesta = self.client.get(reverse('canales:series'), {'origen': 'netflix.m3u'})
+        self.assertContains(respuesta, 'Lucifer')
+        self.assertNotContains(respuesta, 'Arrow')
+
     def test_detalle_muestra_temporadas_fuentes_y_motivo(self):
         respuesta = self.client.get(reverse('canales:serie_detalle'), {'nombre': 'Arrow'})
         self.assertEqual(respuesta.status_code, 200)

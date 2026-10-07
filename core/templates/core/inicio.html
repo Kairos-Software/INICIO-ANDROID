@@ -4,55 +4,21 @@
 {% block titulo %}Inicio{% endblock %}
 
 {% block contenido %}
-<section class="inicio-momento">
+<section class="inicio-encabezado">
     <div>
-        <p class="texto-suave mb-1">{% now "l j \d\e F" %}</p>
+        <span class="seccion-sobrelinea">Inicio · {% now "l j \d\e F" %}</span>
         <h1><span data-momento="saludo">{% saludo %}</span>, {{ user.get_short_name }}.</h1>
+        <p>{% if user.revendedor %}Tus clientes, tus créditos y la app, a mano.{% else %}Todo Kairos TV desde un solo lugar.{% endif %}</p>
     </div>
     <time class="momento-hora" data-momento="hora">{% now "H:i" %}</time>
 </section>
 
-<div class="inicio-linea">
-    <div class="linea-dia" data-momento="linea" style="--avance-dia: {% avance_dia %}" aria-hidden="true"></div>
-</div>
-
 <div class="tablero-grid">
-    <section class="cuenta-panel">
-        <div class="cuenta-identidad">
-            {% include "parciales/_avatar.html" with u=user clase="avatar-cuenta" %}
-            <div>
-                <span class="cuenta-etiqueta">Tu cuenta</span>
-                <h2>{{ user.get_full_name }}</h2>
-                <span class="cuenta-rol">{% if user.is_superuser %}Superusuario · acceso total{% else %}{{ user.descripcion_rol }}{% endif %}</span>
-            </div>
-        </div>
-
-        <dl class="cuenta-detalles">
-            <div>
-                <dt><i class="bi bi-at" aria-hidden="true"></i> Usuario</dt>
-                <dd class="dato">{{ user.username }}</dd>
-            </div>
-            <div>
-                <dt><i class="bi bi-envelope" aria-hidden="true"></i> Email</dt>
-                <dd>{{ user.email|default:"Sin email cargado" }}</dd>
-            </div>
-            <div>
-                <dt><i class="bi bi-clock-history" aria-hidden="true"></i> Ingreso anterior</dt>
-                <dd>{{ ingreso_anterior|date:"j/m/Y H:i"|default:"Es tu primer ingreso" }}</dd>
-            </div>
-        </dl>
-
-        <a href="{% url 'usuarios:perfil' %}" class="cuenta-enlace">
-            Administrar mi perfil <i class="bi bi-arrow-right" aria-hidden="true"></i>
-        </a>
-    </section>
-
     <section class="modulos-panel">
         <header class="seccion-encabezado">
             <div>
-                <span class="seccion-sobrelinea">Panel de gestión</span>
                 <h2>Tus herramientas</h2>
-                <p>Entrá directamente al área que necesitás administrar.</p>
+                <p>Entrá directamente al área que necesitás.</p>
             </div>
         </header>
 
@@ -72,7 +38,7 @@
             {% if permisos.ver_canales %}
             <a href="{% url 'canales:inicio' %}" class="acceso-rapido acceso-canales">
                 <span class="acceso-rapido-icono"><i class="bi bi-broadcast" aria-hidden="true"></i></span>
-                <span class="acceso-rapido-texto"><strong>Canales</strong><span>Fuentes, señales y disponibilidad</span></span>
+                <span class="acceso-rapido-texto"><strong>Contenido</strong><span>Canales, películas y series</span></span>
                 <i class="bi bi-arrow-up-right acceso-rapido-flecha" aria-hidden="true"></i>
             </a>
             {% endif %}
@@ -104,6 +70,36 @@
             </div>
             {% endif %}
         </div>
+    </section>
+
+    <section class="cuenta-panel">
+        <div class="cuenta-identidad">
+            {% include "parciales/_avatar.html" with u=user clase="avatar-cuenta" %}
+            <div>
+                <span class="cuenta-etiqueta">Tu cuenta</span>
+                <h2>{{ user.get_full_name }}</h2>
+                <span class="cuenta-rol">{% if user.is_superuser %}Superusuario · acceso total{% else %}{{ user.descripcion_rol }}{% endif %}</span>
+            </div>
+        </div>
+
+        <dl class="cuenta-detalles">
+            <div>
+                <dt><i class="bi bi-at" aria-hidden="true"></i> Usuario</dt>
+                <dd class="dato">{{ user.username }}</dd>
+            </div>
+            <div>
+                <dt><i class="bi bi-envelope" aria-hidden="true"></i> Email</dt>
+                <dd>{{ user.email|default:"Sin email cargado" }}</dd>
+            </div>
+            <div>
+                <dt><i class="bi bi-clock-history" aria-hidden="true"></i> Ingreso anterior</dt>
+                <dd>{{ ingreso_anterior|date:"j/m/Y H:i"|default:"Es tu primer ingreso" }}</dd>
+            </div>
+        </dl>
+
+        <a href="{% url 'usuarios:perfil' %}" class="cuenta-enlace">
+            Administrar mi perfil <i class="bi bi-arrow-right" aria-hidden="true"></i>
+        </a>
     </section>
 </div>
 {% endblock %}

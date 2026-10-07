@@ -24,7 +24,7 @@
     <div>
         <label for="estado" class="visually-hidden">Estado</label>
         <select id="estado" name="estado" class="form-select">
-            <option value="">Todos</option>
+            <option value="">Todos los estados</option>
             <option value="vigentes" {% if filtros.estado == 'vigentes' %}selected{% endif %}>Vigentes</option>
             <option value="por_vencer" {% if filtros.estado == 'por_vencer' %}selected{% endif %}>Por vencer (7 días)</option>
             <option value="vencidos" {% if filtros.estado == 'vencidos' %}selected{% endif %}>Vencidos</option>

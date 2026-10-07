@@ -62,6 +62,10 @@ def agrupar_por_categoria(canales):
     return list(grupos.values())
 
 
+# Cómo se llama cada tipo de contenido en el resumen (en plural)
+NOMBRES_EN_PLURAL = {Contenido.VIVO: 'En vivo', Contenido.PELICULA: 'Películas', Contenido.SERIE: 'Series'}
+
+
 def resumen_de(contenido):
     """
     Los números de un tipo de contenido (en vivo, películas o series):
@@ -72,7 +76,8 @@ def resumen_de(contenido):
     por_estado = dict(fuentes.values_list('estado').annotate(cantidad=Count('pk')))
     return {
         'contenido': contenido,
-        'nombre': Contenido(contenido).label,
+        'nombre': NOMBRES_EN_PLURAL[contenido],
+        'unidad': 'capítulos' if contenido == Contenido.SERIE else 'cargados',
         'cargados': Canal.objects.filter(contenido=contenido).count(),
         'en_la_app': canales_disponibles(contenido=contenido).count(),
         'quitados': Canal.objects.filter(contenido=contenido, activo=False).count(),
@@ -170,15 +175,17 @@ class Serie:
         return sorted(self.temporadas)
 
 
-def series(texto='', estado=''):
+def series(texto='', estado='', categoria='', idioma='', origen='', sin_logo=False):
     """
     Las series armadas a partir de los capítulos sueltos ("Show S01 E02"),
     con la misma regla que la app (clasificar.episodio). Cada capítulo trae
     los números del catálogo (fuentes, cuáles andan, si la app lo ve).
       estado: 'en_app' (la app la muestra: ver Serie.completa) | 'incompleta' (se ven
               capítulos, pero la app no la muestra) | 'fuera' (no se ve ninguno) | '' (todas)
+      categoria, idioma, origen, sin_logo: como en el catálogo (se aplican a los capítulos)
     """
-    capitulos = catalogo(texto=texto, contenido=Contenido.SERIE).prefetch_related(None)
+    capitulos = catalogo(texto=texto, contenido=Contenido.SERIE, categoria=categoria, idioma=idioma,
+                         origen=origen, sin_logo=sin_logo).prefetch_related(None)
     por_nombre = {}
     for canal in capitulos:
         nombre, temporada, numero, titulo = clasificar.episodio(canal.nombre)
@@ -269,10 +276,21 @@ def por_que_no_se_ve(canal):
     return 'Sus fuentes están apagadas a mano o son de un formato que la app no reproduce.'
 
 
-def categorias_con_canales():
-    return Categoria.objects.annotate(cantidad=Count('canales')).filter(cantidad__gt=0)
+def categorias_con_canales(contenido=''):
+    """
+    Las categorías que tienen algo (sin contar lo borrado), con cuántos.
+    Con `contenido`, solo las de ese contenido: en la pestaña "En vivo" no
+    aparece "SERIES | NETFLIX" (no tiene ningún canal en vivo).
+    """
+    filtro = Q(canales__eliminado_en__isnull=True)
+    if contenido:
+        filtro &= Q(canales__contenido=contenido)
+    return Categoria.objects.annotate(cantidad=Count('canales', filter=filtro)).filter(cantidad__gt=0)
 
 
-def origenes():
-    """De qué listas vinieron las fuentes (para filtrar el catálogo)."""
-    return (Fuente.objects.exclude(origen='').order_by('origen').values_list('origen', flat=True).distinct())
+def origenes(contenido=''):
+    """De qué listas vinieron las fuentes (para filtrar el catálogo); con `contenido`, solo las que trajeron eso."""
+    fuentes = Fuente.objects.exclude(origen='').filter(canal__eliminado_en__isnull=True)
+    if contenido:
+        fuentes = fuentes.filter(canal__contenido=contenido)
+    return fuentes.order_by('origen').values_list('origen', flat=True).distinct()

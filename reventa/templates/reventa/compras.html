@@ -14,7 +14,7 @@
     <div>
         <label for="estado" class="visually-hidden">Estado</label>
         <select id="estado" name="estado" class="form-select">
-            <option value="">Todas</option>
+            <option value="">Todos los estados</option>
             {% for valor, texto in estados %}
             <option value="{{ valor }}" {% if estado == valor %}selected{% endif %}>{{ texto }}</option>
             {% endfor %}

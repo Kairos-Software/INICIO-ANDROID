@@ -29,7 +29,7 @@ Future<void> main() async {
     SesionScope(
       sesion: sesion,
       // El aviso "Hay una versión nueva" (lib/actualizacion.dart)
-      // La presentación con sonido al abrir (lib/bienvenida.dart), encima de todo
+      // La presentación en video al abrir (lib/bienvenida.dart), encima de todo
       child: Bienvenida(
         child: VigilarActualizacion(sesion: sesion, navegador: claveNavegador, child: const App()),
       ),

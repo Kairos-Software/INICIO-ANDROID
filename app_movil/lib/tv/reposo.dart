@@ -15,8 +15,15 @@
 ///   - enVivo:    los logos de los canales.
 ///   - series:    los pósters de algunas series.
 ///
-/// Todas llevan el logo. Las que no tienen con qué armarse (ej: sin canales
-/// con logo) se saltean. Cambia cada [_cadaCuanto] con un fundido.
+/// Todas llevan el logo. Las de la marca (logo, cifras, grupos) van sobre el
+/// escenario de neón DIBUJADO (tv/escenario.dart): nítido en cualquier TV.
+///
+/// Calidad: las imágenes del catálogo (las que traen las listas) muchas veces
+/// son chicas. Antes de usarlas se mide cada una ([_PantallaReposoTvState._medir]):
+/// en grande (escena "titulo") solo van las que tienen buena resolución, y en
+/// los grupos, las que alcanzan para su tamaño. Si no hay suficientes, la
+/// escena se saltea: mejor no mostrarla que mostrarla pixelada. Cambia cada
+/// [_cadaCuanto] con un fundido.
 ///
 /// Cualquier botón la cierra y se vuelve a donde se estaba (esa tecla no hace
 /// nada más). Mantiene la pantalla encendida [_encendidaHasta]; después deja
@@ -35,16 +42,28 @@ import '../api/modelos.dart';
 import '../marca.dart';
 import '../movil/datos.dart';
 import '../movil/estilo.dart';
+import 'escenario.dart';
 
 const _cadaCuanto = Duration(seconds: 9);
 const _fundido = Duration(milliseconds: 1400);
 const _encendidaHasta = Duration(minutes: 30);
-const _maximoTitulos = 18;
+const _maximoTitulos = 30;
 
 /// Cuántos pósters o logos van en las escenas de grupo, y cuántos hacen falta para armarlas.
 const _porGrupo = 5;
 const _logosEnVivo = 12;
 const _minimoGrupo = 4;
+
+/// Se eligen el triple de candidatos: después se descartan los de mala calidad.
+const _candidatos = 3;
+
+/// El ancho mínimo (en píxeles de la imagen original) para que se vea bien:
+/// un póster en grande (380 px de ancho en la TV), un póster en un grupo
+/// (~300 px), un logo en grande y un logo en la grilla.
+const _minimoPosterGrande = 340.0;
+const _minimoPosterGrupo = 220.0;
+const _minimoLogoGrande = 240.0;
+const _minimoLogoGrupo = 120.0;
 
 enum Escena { logo, titulo, estrenos, cifras, enVivo, series }
 
@@ -131,21 +150,21 @@ class Vidriera {
     // Estrenos: de las 15 más nuevas, 5 al azar (así cambian de una vez a la otra)
     final conAnio = peliculas.where((p) => anioDe(p.nombre) != null).toList()
       ..sort((a, b) => anioDe(b.nombre)!.compareTo(anioDe(a.nombre)!));
-    final nuevas = algunos(conAnio.take(15), _porGrupo);
+    final nuevas = algunos(conAnio.take(20), _porGrupo * _candidatos);
     final masNueva = nuevas.isEmpty ? 0 : nuevas.map((p) => anioDe(p.nombre)!).reduce(max);
 
     final titulos = [
-      for (final p in algunos(peliculas, 8)) dePelicula(p),
-      for (final s in algunos(series, 6)) deSerie(s),
-      for (final c in algunos(canales, 4)) deCanal(c),
+      for (final p in algunos(peliculas, 14)) dePelicula(p),
+      for (final s in algunos(series, 10)) deSerie(s),
+      for (final c in algunos(canales, 6)) deCanal(c),
     ]..shuffle(azar);
 
     return Vidriera(
       titulos: titulos.take(_maximoTitulos).toList(),
       estrenos: [for (final p in nuevas) dePelicula(p)],
       sonEstrenos: masNueva >= anioActual - 1,
-      canales: [for (final c in algunos(canales, _logosEnVivo)) deCanal(c)],
-      series: [for (final s in algunos(series, _porGrupo)) deSerie(s)],
+      canales: [for (final c in algunos(canales, _logosEnVivo * 2)) deCanal(c)],
+      series: [for (final s in algunos(series, _porGrupo * _candidatos)) deSerie(s)],
       peliculas: catalogo.peliculas.length,
       cantidadSeries: catalogo.series.length,
       cantidadCanales: catalogo.canales.length,
@@ -170,16 +189,18 @@ class Vidriera {
     ];
   }
 
-  /// Todas las imágenes de las escenas de grupo (para bajarlas de antemano).
-  Iterable<String> get imagenesDeGrupos => [...estrenos, ...canales, ...series].map((d) => d.imagen);
+  /// Todas las imágenes (para medirlas y bajarlas de antemano).
+  Iterable<String> get imagenes => {...titulos, ...estrenos, ...canales, ...series}.map((d) => d.imagen).toSet();
 }
 
-/// "Más de 700": redondea para abajo (a 10 o a 50/100), así la cifra nunca promete de más.
+/// "+700", "+1.000": redondea para abajo (a 10 o a 50/100), así la cifra nunca
+/// promete de más. Si es justa, sin el "+".
 String cifraRedonda(int cantidad) {
   if (cantidad < 10) return '$cantidad';
   final paso = cantidad < 100 ? 10 : (cantidad < 1000 ? 50 : 100);
   final redondo = cantidad ~/ paso * paso;
-  return redondo == cantidad ? '$cantidad' : 'Más de $redondo';
+  final conPuntos = '$redondo'.replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]}.');
+  return redondo == cantidad ? conPuntos : '+$conPuntos';
 }
 
 class PantallaReposoTv extends StatefulWidget {
@@ -195,70 +216,107 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
   late final List<Escena> _recorrido = widget.vidriera.recorrido;
   int _paso = 0;
 
-  /// El título que se muestra ahora y el próximo (salteando los que no cargaron).
+  /// El título que se muestra ahora y el próximo.
   Diapositiva? _titulo;
   int _siguienteTitulo = 0;
   Timer? _reloj;
   Timer? _apagar;
-  final _malas = <String>{};
+
+  /// El ancho de cada imagen ya medida (0 = no cargó).
+  final _anchos = <String, double>{};
+  final _escuchas = <(ImageStream, ImageStreamListener)>[];
 
   Escena get _escena => _recorrido[_paso];
 
   @override
   void initState() {
     super.initState();
-    unawaited(WakelockPlus.enable());
-    _apagar = Timer(_encendidaHasta, () => unawaited(WakelockPlus.disable()));
+    WakelockPlus.enable().catchError((Object _) {});
+    _apagar = Timer(_encendidaHasta, () => WakelockPlus.disable().catchError((Object _) {}));
     _reloj = Timer.periodic(_cadaCuanto, (_) => _avanzar());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      for (final url in widget.vidriera.imagenesDeGrupos) {
-        precacheImage(NetworkImage(url), context, onError: (_, _) {});
-      }
-      _precargarTitulo();
+      if (mounted) _medir();
     });
   }
 
   @override
   void dispose() {
+    for (final (flujo, escucha) in _escuchas) {
+      flujo.removeListener(escucha);
+    }
     _reloj?.cancel();
     _apagar?.cancel();
-    unawaited(WakelockPlus.disable());
+    WakelockPlus.disable().catchError((Object _) {});
     super.dispose();
   }
 
-  /// El próximo título que se puede mostrar (salteando los que no cargaron), o null.
+  /// Baja todas las imágenes y anota de qué tamaño es cada una (la escena del
+  /// logo, que va primero, da tiempo de sobra).
+  void _medir() {
+    for (final url in widget.vidriera.imagenes) {
+      final flujo = NetworkImage(url).resolve(createLocalImageConfiguration(context));
+      late final (ImageStream, ImageStreamListener) par;
+      void anotar(double ancho) {
+        _anchos[url] = ancho;
+        // Ya se sabe: se suelta (y se saca de la lista, para no soltarla dos veces al cerrar)
+        if (_escuchas.remove(par)) flujo.removeListener(par.$2);
+      }
+
+      par = (
+        flujo,
+        ImageStreamListener((info, _) => anotar(info.image.width.toDouble()), onError: (_, _) => anotar(0)),
+      );
+      _escuchas.add(par);
+      flujo.addListener(par.$2);
+    }
+  }
+
+  /// ¿Se ve bien a este tamaño? (las que todavía no se midieron, no)
+  bool _sirve(Diapositiva diapositiva, {required bool grande}) {
+    final ancho = _anchos[diapositiva.imagen] ?? 0;
+    final minimo = diapositiva.poster
+        ? (grande ? _minimoPosterGrande : _minimoPosterGrupo)
+        : (grande ? _minimoLogoGrande : _minimoLogoGrupo);
+    return ancho >= minimo;
+  }
+
+  List<Diapositiva> _buenas(List<Diapositiva> lista, int cuantas) =>
+      lista.where((d) => _sirve(d, grande: false)).take(cuantas).toList();
+
+  /// El próximo título que se ve bien en grande, o null.
   int? _proximoTitulo() {
     final lista = widget.vidriera.titulos;
     for (var i = 0; i < lista.length; i++) {
       final indice = (_siguienteTitulo + i) % lista.length;
-      if (!_malas.contains(lista[indice].imagen)) return indice;
+      if (_sirve(lista[indice], grande: true)) return indice;
     }
     return null;
   }
 
-  /// Baja de antemano la imagen del próximo título, así entra ya cargada (y si falla, se saltea).
-  void _precargarTitulo() {
-    final indice = _proximoTitulo();
-    if (indice == null || !mounted) return;
-    final url = widget.vidriera.titulos[indice].imagen;
-    precacheImage(NetworkImage(url), context, onError: (_, _) => _malas.add(url));
+  /// ¿Esta escena tiene con qué armarse bien ahora?
+  bool _sePuede(Escena escena) {
+    final vidriera = widget.vidriera;
+    return switch (escena) {
+      Escena.logo || Escena.cifras => true,
+      Escena.titulo => _proximoTitulo() != null,
+      Escena.estrenos => _buenas(vidriera.estrenos, _porGrupo).length >= _minimoGrupo,
+      Escena.series => _buenas(vidriera.series, _porGrupo).length >= _minimoGrupo,
+      Escena.enVivo => _buenas(vidriera.canales, _logosEnVivo).length >= _minimoGrupo,
+    };
   }
 
   void _avanzar() {
     if (!mounted) return;
     setState(() {
-      _paso = (_paso + 1) % _recorrido.length;
+      // La siguiente que se pueda armar (el logo siempre se puede)
+      do {
+        _paso = (_paso + 1) % _recorrido.length;
+      } while (!_sePuede(_escena));
       if (_escena != Escena.titulo) return;
-      final indice = _proximoTitulo();
-      if (indice == null) {
-        _paso = (_paso + 1) % _recorrido.length; // ninguno cargó: se saltea
-        return;
-      }
+      final indice = _proximoTitulo()!;
       _titulo = widget.vidriera.titulos[indice];
       _siguienteTitulo = indice + 1;
     });
-    if (_escena == Escena.titulo) _precargarTitulo();
   }
 
   void _salir() {
@@ -274,15 +332,18 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
         sobretitulo: vidriera.sonEstrenos ? 'Recién llegadas' : 'Para ver hoy',
         titulo: vidriera.sonEstrenos ? 'Estrenos' : 'Películas destacadas',
         bajada: vidriera.sonEstrenos ? 'Las películas más nuevas, ya en Kairos TV' : 'Elegí la tuya en Kairos TV',
-        diapositivas: vidriera.estrenos,
+        diapositivas: _buenas(vidriera.estrenos, _porGrupo),
       ),
       Escena.series => _PantallaGrupo(
         sobretitulo: 'Series',
         titulo: 'Temporadas completas',
         bajada: 'Seguí tus series capítulo a capítulo',
-        diapositivas: vidriera.series,
+        diapositivas: _buenas(vidriera.series, _porGrupo),
       ),
-      Escena.enVivo => _PantallaEnVivo(canales: vidriera.canales, cantidad: vidriera.cantidadCanales),
+      Escena.enVivo => _PantallaEnVivo(
+        canales: _buenas(vidriera.canales, _logosEnVivo),
+        cantidad: vidriera.cantidadCanales,
+      ),
       Escena.cifras => _PantallaCifras(vidriera: vidriera),
     };
   }
@@ -299,8 +360,8 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
       },
       child: GestureDetector(
         onTap: _salir,
-        child: ColoredBox(
-          color: Tono.fondo,
+        child: Material(
+          color: Colors.black,
           child: AnimatedSwitcher(
             duration: _fundido,
             switchInCurve: Curves.easeOut,
@@ -328,22 +389,32 @@ class _Pie extends StatelessWidget {
   }
 }
 
-/// El fondo de las escenas de grupo: el brillo celeste de la marca sobre el grafito.
+/// El fondo de las escenas de grupo: el escenario de neón, tenue y oscurecido
+/// arriba a la izquierda (donde va el texto) para que se lea bien.
 class _FondoMarca extends StatelessWidget {
-  const _FondoMarca({this.color = Tono.celeste});
+  const _FondoMarca({this.centrado = false});
 
-  final Color color;
+  /// El texto va al centro (las cifras): se oscurece el medio en vez de la izquierda.
+  final bool centrado;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: RadialGradient(
-          center: const Alignment(.7, -.6),
-          radius: 1.1,
-          colors: [color.withValues(alpha: .16), Tono.fondo],
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const EscenarioNeon(intensidad: .7, puntoRubi: false),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: centrado
+                ? const RadialGradient(radius: .6, colors: [Color(0xB3040507), Color(0x00040507)])
+                : const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [Color(0xCC040507), Color(0x66040507), Color(0x33040507)],
+                  ),
+          ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -390,45 +461,26 @@ class _PantallaLogo extends StatefulWidget {
   State<_PantallaLogo> createState() => _PantallaLogoState();
 }
 
-class _PantallaLogoState extends State<_PantallaLogo> with SingleTickerProviderStateMixin {
-  // Un "respirar" lento del brillo detrás del logo
-  late final AnimationController _pulso = AnimationController(vsync: this, duration: const Duration(seconds: 4))
-    ..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _pulso.dispose();
-    super.dispose();
-  }
-
+class _PantallaLogoState extends State<_PantallaLogo> {
   @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        AnimatedBuilder(
-          animation: _pulso,
-          builder: (_, _) => DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                radius: .75 + _pulso.value * .15,
-                colors: [
-                  Tono.celeste.withValues(alpha: .10 + _pulso.value * .06),
-                  Tono.fondo,
-                ],
-              ),
-            ),
-          ),
-        ),
-        Center(
+        const EscenarioNeon(),
+        // El logo, un poco arriba del centro (sobre el punto de fuga del pasillo)
+        const Align(alignment: Alignment(0, -.12), child: LogoKairos(tamanio: 150)),
+        Align(
+          alignment: const Alignment(0, .62),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const LogoKairos(tamanio: 96),
-              const SizedBox(height: 40),
               const _Hora(grande: true),
-              const SizedBox(height: 18),
-              Text('Apretá cualquier botón para volver', style: LetraTv.ayuda.copyWith(fontSize: 18)),
+              const SizedBox(height: 10),
+              Text(
+                'Apretá cualquier botón para volver',
+                style: LetraTv.ayuda.copyWith(fontSize: 18, color: Tono.textoSuave),
+              ),
             ],
           ),
         ),
@@ -607,7 +659,7 @@ class _PantallaEnVivo extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const _FondoMarca(color: Tono.rubi),
+        const _FondoMarca(),
         Padding(
           padding: const EdgeInsets.fromLTRB(120, 110, 120, 150),
           child: Row(
@@ -683,7 +735,7 @@ class _PantallaCifras extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const _FondoMarca(),
+        const _FondoMarca(centrado: true),
         Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -696,25 +748,28 @@ class _PantallaCifras extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   for (var i = 0; i < cifras.length; i++) ...[
-                    if (i > 0) Container(width: 2, height: 120, color: Tono.bordeSuave),
+                    if (i > 0) Container(width: 1, height: 110, color: Tono.bordeSuave.withValues(alpha: .7)),
                     _Entrada(
                       orden: i,
                       paso: const Duration(milliseconds: 250),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 64),
+                        padding: const EdgeInsets.symmetric(horizontal: 72),
                         child: Column(
                           children: [
                             Text(
                               cifras[i].$1,
                               style: TextStyle(
                                 fontFamily: Letra.titulos,
-                                fontSize: 72,
+                                fontSize: 96,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: -1.5,
                                 color: cifras[i].$3,
                               ),
                             ),
-                            Text(cifras[i].$2, style: LetraTv.cuerpo.copyWith(fontSize: 26)),
+                            Text(
+                              cifras[i].$2.toUpperCase(),
+                              style: LetraTv.cuerpo.copyWith(fontSize: 20, letterSpacing: 4, color: Tono.textoSuave),
+                            ),
                           ],
                         ),
                       ),

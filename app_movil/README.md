@@ -152,6 +152,7 @@ desde `/descargar/` e instalándola encima.
 | `flutter run --flavor local` | Instala y abre la versión local en el celular conectado |
 | `flutter build apk --release` | Genera la APK de producción (`build/app/outputs/flutter-apk/app-produccion-release.apk`) |
 | `flutter test` | Corre los tests |
+| `flutter test test_vista/vista_test.dart` | Dibuja pantallas a PNG en `build/vista/` para mirarlas sin instalar (ver `test_vista/README.md`) |
 | `flutter analyze` | Revisa el código buscando errores |
 | `flutter pub get` | Instala los paquetes de `pubspec.yaml` (después de clonar el repo) |
 | `flutter doctor` | Revisa que las herramientas estén bien instaladas |

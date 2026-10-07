@@ -69,6 +69,15 @@ android {
         resValues = true
     }
 
+    // Solo procesadores ARM (todos los celulares y TV box). La versión x86_64
+    // (emuladores y algunas PC) sumaba 22 MB: sin ella la APK pesa ~40 MB en
+    // vez de ~62, y se baja e instala más rápido en TVs con poco espacio.
+    packaging {
+        jniLibs {
+            excludes += "lib/x86_64/**"
+        }
+    }
+
     signingConfigs {
         create("release") {
             if (archivoClave.exists()) {

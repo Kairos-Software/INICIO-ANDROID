@@ -26,47 +26,33 @@ se genera sola y no va al repo.
 
 | Archivo | Qué contiene |
 |---|---|
-| `css/sistema.css` | Base estructural histórica del panel: layout, componentes y compatibilidad de las pantallas existentes. Se carga primero. |
-| `css/panel-kairos.css` | Capa visual final de Kairos TV. Contiene los tokens activos del tema oscuro y normaliza navegación, encabezados, tarjetas, métricas, filtros, tablas, formularios, estados vacíos, acceso y responsive. Se carga después de `sistema.css`. |
+| `css/kairos.css` | **El único CSS del panel.** El mismo sistema de diseño que la app (`diseno_kairos_tv/DESIGN.md`): colores, letras, radios y todas las piezas de las pantallas. |
 | `js/sistema.js` | Comportamiento general: menú en celulares, mostrar/ocultar contraseña, el "momento" (hora en vivo, saludo y línea del día) y las iniciales cuando el logo de un canal no carga. |
 | `js/tandas.js` | Corre una tarea larga de a tandas (llama al servidor una y otra vez y pinta el avance). Lo usan las pantallas de canales para verificar listas grandes sin saturar el servidor. |
 
 Librerías externas (se cargan desde CDN en `templates/base_html.html`):
-Bootstrap 5.3, Bootstrap Icons y las fuentes Plus Jakarta Sans, Inter y
-JetBrains Mono.
+Bootstrap 5.3 (en modo oscuro: `data-bs-theme="dark"`), Bootstrap Icons y las
+fuentes Plus Jakarta Sans (títulos) e Inter (todo lo demás), las mismas de la app.
 
-## Organización del CSS del panel
+## El CSS del panel (`css/kairos.css`)
 
-La responsabilidad está dividida en dos capas y el orden de carga es
-importante:
+Hasta octubre de 2026 había dos hojas (`sistema.css` y `panel-kairos.css`)
+con varios rediseños apilados que se pisaban entre sí (textos ilegibles,
+datos cortados letra por letra, campos gigantes). Se reemplazaron por esta
+sola hoja, ordenada por secciones (el índice está al principio del archivo):
 
-1. `sistema.css` conserva la estructura y las clases que usan las plantillas.
-2. `panel-kairos.css` aplica la identidad visual de Kairos TV y es la fuente de
-   verdad para el aspecto final.
-
-En `panel-kairos.css`, el bloque `:root` concentra la paleta, tipografías,
-radios, espaciado, tamaños de controles, sombras y transiciones. Después se
-ordenan los estilos por familia de componentes: controles, navegación,
-superficies, datos, tablas y formularios, módulos específicos y acceso. La
-sección **Auditoría visual integral** cierra la cascada con las reglas comunes
-de densidad, accesibilidad y adaptación a celular que deben prevalecer sobre
-la base histórica.
+1. Colores y medidas: los tokens de la app en `:root` (fondo `#131317`,
+   capas, celeste `#00F0FF`, rubí, dorado), y Bootstrap teñido con ellos.
+2. Base · 3. Estructura (menú, barra superior) · 4. Encabezado de página ·
+   5. Tarjetas y datos · 6. Botones · 7. Formularios · 8. Tablas y filtros ·
+   9. Chips, estados y alertas · 10. Inicio · 11. Acceso · 12. Contenido ·
+   13. Reventa, usuarios, actividad... · 14. Celular.
 
 Para sumar una pantalla:
 
 - reutilizá primero `pagina-encabezado`, `tarjeta`, `tarjeta-titulo`,
-  `filtros`, `tabla`, `formulario-seccion`, `formulario-acciones`, `vacio` y
-  los chips de estado;
-- agregá una clase específica solo cuando la información necesite una
-  composición propia;
-- evitá colores, radios y separaciones nuevos dentro de la regla: agregá el
-  token correspondiente en `:root`;
-- mantené las tablas dentro de `table-responsive` y comprobá la pantalla a
-  375 px;
-- conservá un foco visible y un nombre accesible en controles que solo tengan
-  ícono.
-
-## Contenido actual
-
-`sistema.css`, `panel-kairos.css`, `sistema.js`, `tandas.js` y los recursos de
-marca dentro de `img/`.
+  `ficha-datos` (etiqueta arriba, dato abajo), `resumen-metricas`, `filtros`,
+  `tabla`, `formulario-seccion`, `formulario-acciones`, `vacio` y los chips;
+- no inventes colores ni radios: usá las variables de `:root`;
+- las tablas, siempre dentro de `table-responsive`;
+- revisá la pantalla en celular (390 px) y en escritorio.

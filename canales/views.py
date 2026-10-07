@@ -2,7 +2,7 @@
 Pantallas de canales del panel:
 
   /canales/                         resumen, subir una lista, verificar todas (de a tandas) e importaciones anteriores
-  /canales/importaciones/<id>/      el avance y el detalle de una lista: qué se agregó, qué no y por qué
+  /canales/importaciones/<id>/      la prueba de una lista: el avance, qué es apto, qué no y por qué, y cargar las aptas
   /canales/catalogo/                canales en vivo y películas, con filtros para quitar los que no sirven
   /canales/series/                  series agrupadas, con búsqueda, filtros y paginación
   /canales/series/detalle/          temporadas, capítulos, disponibilidad y fuentes de una serie
@@ -12,6 +12,8 @@ Pantallas de canales del panel:
 Lo que tarda (verificar) se hace de a tandas: la página llama una y otra
 vez a las direcciones ".../lote/" (responden JSON) y va mostrando el avance.
 """
+
+from functools import partial
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
@@ -77,6 +79,7 @@ def importacion(request, pk):
     filtros = {
         'texto': request.GET.get('q', '').strip(),
         'estado': request.GET.get('estado', ''),
+        'causa': request.GET.get('causa', ''),
         'idioma': request.GET.get('idioma', ''),
         'contenido': request.GET.get('contenido', ''),
     }
@@ -86,6 +89,8 @@ def importacion(request, pk):
                                    | Q(categoria__icontains=filtros['texto']))
     if filtros['estado'] in EntradaImportada.Estado.values:
         entradas = entradas.filter(estado=filtros['estado'])
+    if filtros['causa'] in EntradaImportada.Causa.values:
+        entradas = entradas.filter(estado=EntradaImportada.Estado.RECHAZADA, causa=filtros['causa'])
     if filtros['idioma'] == 'sin_dato':
         entradas = entradas.filter(idioma='')
     elif filtros['idioma'] in ('es', 'otro'):
@@ -96,11 +101,13 @@ def importacion(request, pk):
     return render(request, 'canales/importacion.html', {
         'importacion': importacion,
         'avance': servicios.progreso(importacion),
+        'por_causa': servicios.por_causa(importacion),
         'pagina': Paginator(entradas, ENTRADAS_POR_PAGINA).get_page(request.GET.get('pagina')),
         'filtros': filtros,
         'hay_filtros': any(filtros.values()),
         'parametros': _parametros_sin_pagina(request),
         'estados': EntradaImportada.Estado.choices,
+        'causas': EntradaImportada.Causa.choices,
         'contenidos': EntradaImportada.Contenido.choices,
         'puede_importar': chequear_permiso(request.user, 'importar_canales'),
         'empezar': request.GET.get('empezar') == '1',
@@ -111,9 +118,18 @@ def importacion(request, pk):
 @require_POST
 @requiere_permiso('importar_canales')
 def importacion_lote(request, pk):
-    """Verifica la próxima tanda y responde el avance (JSON). La pantalla la llama en bucle."""
+    """Prueba la próxima tanda y responde el avance (JSON). La pantalla la llama en bucle."""
     importacion = get_object_or_404(Importacion, pk=pk)
-    return JsonResponse(servicios.procesar_lote(importacion, verificar_varias))
+    verificar = partial(verificar_varias, a_fondo=True) if importacion.a_fondo else verificar_varias
+    return JsonResponse(servicios.procesar_lote(importacion, verificar))
+
+
+@require_POST
+@requiere_permiso('importar_canales')
+def importacion_cargar(request, pk):
+    """Carga la próxima tanda de aptas y responde el avance (JSON). La pantalla la llama en bucle."""
+    importacion = get_object_or_404(Importacion, pk=pk)
+    return JsonResponse(servicios.cargar_lote(importacion))
 
 
 @require_POST
@@ -122,7 +138,7 @@ def importacion_reintentar(request, pk):
     importacion = get_object_or_404(Importacion, pk=pk)
     cantidad = servicios.reintentar_caidas(importacion, request.user)
     if not cantidad:
-        messages.info(request, 'No hay canales que no hayan funcionado para reintentar.')
+        messages.info(request, 'No hay nada para volver a probar.')
         return redirect(importacion_url(importacion))
     return redirect(f'{importacion_url(importacion)}?empezar=1')
 
@@ -177,8 +193,8 @@ def catalogo(request):
         'filtros': filtros,
         'hay_filtros': any(valor for clave, valor in filtros.items() if clave != 'contenido'),
         'parametros': _parametros_sin_pagina(request),
-        'categorias': consultas.categorias_con_canales(),
-        'origenes': consultas.origenes(),
+        'categorias': consultas.categorias_con_canales(filtros['contenido']),
+        'origenes': consultas.origenes(filtros['contenido']),
         'idiomas': Idioma.choices,
         'contenidos': Contenido.choices,
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
@@ -189,17 +205,18 @@ def catalogo(request):
 @requiere_permiso('ver_canales')
 def series(request):
     """Series agrupadas, sin repetir un bloque por cada capítulo importado."""
-    estado = request.GET.get('estado', '')
-    filtros = {
-        'texto': request.GET.get('q', '').strip(),
-        'estado': estado if estado in ('en_app', 'incompleta', 'fuera') else '',
-    }
+    filtros = _filtros_catalogo(request.GET)
+    del filtros['contenido']
+    if filtros['estado'] not in ('en_app', 'incompleta', 'fuera'):
+        filtros['estado'] = ''
     pagina = Paginator(consultas.series(**filtros), SERIES_POR_PAGINA).get_page(request.GET.get('pagina'))
     return render(request, 'canales/series.html', {
         'pagina': pagina,
         'filtros': filtros,
         'hay_filtros': any(filtros.values()),
         'parametros': _parametros_sin_pagina(request),
+        'categorias': consultas.categorias_con_canales(Contenido.SERIE),
+        'origenes': consultas.origenes(Contenido.SERIE),
     })
 
 
@@ -311,6 +328,7 @@ def probar(request):
     """
     prueba = ProbarLinkForm(request.POST if request.POST.get('paso') == 'probar' else None)
     resultado = canal_form = None
+    motivo = ''
     ya_cargada = None
 
     if request.POST.get('paso') == 'agregar':
@@ -329,7 +347,9 @@ def probar(request):
     elif prueba.is_bound and prueba.is_valid():
         datos = prueba.cleaned_data
         ya_cargada = Fuente.objects.filter(url=datos['url'], canal__eliminado_en__isnull=True).select_related('canal').first()
-        resultado = verificar_url(datos['url'], formato(datos['url']) or 'hls', datos['user_agent'], datos['referer'])
+        resultado = verificar_url(datos['url'], formato(datos['url']) or 'hls', datos['user_agent'], datos['referer'],
+                                  a_fondo=True)
+        causa, motivo = servicios.juzgar(resultado, Importacion(solo_espanol=True))
         # Sugerencias para el canal: lo que dijo YouTube / la página, o lo que se deduce de la dirección
         nombre = limpiar_nombre(resultado.titulo) if resultado.titulo else ''
         idioma, pais = idioma_y_pais(nombre)
@@ -342,6 +362,7 @@ def probar(request):
         'canal_form': canal_form,
         'ya_cargada': ya_cargada,
         'tipo_texto': dict(Fuente.Tipo.choices).get(resultado.tipo, resultado.tipo) if resultado else '',
+        'no_pasa': motivo if prueba.is_bound and resultado and resultado.estado != Fuente.Estado.CAIDA else '',
     })
 
 

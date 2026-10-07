@@ -5,11 +5,11 @@
     si anda, se agrega como canal nuevo con nombre, logo, categoría...
 {% endcomment %}
 
-{% block titulo %}Probar un link · Canales{% endblock %}
+{% block titulo %}Probar un link · Contenido{% endblock %}
 
 {% block encabezado %}
 <div class="pagina-encabezado">
-    <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Canales</a>
+    <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Contenido</a>
     <h1 class="pagina-titulo">Probar un link</h1>
     <p class="pagina-bajada">Pegá una dirección para saber si tiene señal y de qué tipo es. Si anda, la agregás como canal con su nombre, logo y categoría.</p>
 </div>
@@ -52,6 +52,8 @@
         {% if resultado.user_agent %}<span class="chip">Anda presentándose como VLC</span>{% endif %}
     </div>
     {% if resultado.error %}<p class="mb-2">{{ resultado.error }}</p>{% endif %}
+    {% if resultado.calidad %}<p class="mb-2"><strong>Prueba a fondo:</strong> {{ resultado.calidad }}</p>{% endif %}
+    {% if no_pasa %}<div class="alert alert-warning mb-2">No pasaría la prueba al importar: {{ no_pasa }}</div>{% endif %}
     {% if resultado.estado == 'funciona' %}
     <p class="texto-suave small mb-0">La app 1.1.0 la puede reproducir.{% if resultado.tipo != 'hls' %} La 1.0.0 no (solo reproduce HLS).{% endif %}</p>
     {% elif resultado.estado == 'caida' %}

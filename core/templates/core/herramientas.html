@@ -131,6 +131,35 @@
         </div>
     </form>
 
+    <form method="post" class="herramienta tarjeta herramienta-peligro herramienta-reinicio" id="borrar_contenido">
+        {% csrf_token %}<input type="hidden" name="herramienta" value="borrar_contenido">
+        <div class="herramienta-texto">
+            <h3>Borrar el contenido</h3>
+            <p>Borra los canales en vivo, las películas o las series (o todo) con sus fuentes, para volver a importar de cero. <strong>No toca</strong> usuarios, clientes, créditos ni la app. Con "Todo" también se borran las listas subidas y las categorías.</p>
+            <ul class="lista-reinicio">
+                <li>Canales en vivo: <span class="dato">{{ contenido.vivo }}</span></li>
+                <li>Películas: <span class="dato">{{ contenido.pelicula }}</span></li>
+                <li>Capítulos de series: <span class="dato">{{ contenido.serie }}</span></li>
+                <li>Listas subidas: <span class="dato">{{ contenido.importaciones }}</span></li>
+            </ul>
+        </div>
+        <div class="herramienta-accion herramienta-accion-columna">
+            <label for="que-contenido" class="form-label">Qué borrar</label>
+            <select id="que-contenido" name="que" class="form-select">
+                <option value="">Elegí…</option>
+                <option value="vivo">Canales en vivo</option>
+                <option value="pelicula">Películas</option>
+                <option value="serie">Series</option>
+                <option value="todo">Todo el contenido</option>
+            </select>
+            <label for="conf-contenido" class="form-label">Escribí {{ FRASE_BORRAR }}</label>
+            <input type="text" id="conf-contenido" name="confirmacion" class="form-control" autocomplete="off">
+            <label for="password-contenido" class="form-label">Tu contraseña</label>
+            <input type="password" id="password-contenido" name="password" class="form-control" autocomplete="current-password">
+            <button type="submit" class="btn btn-danger">Borrar el contenido</button>
+        </div>
+    </form>
+
     <form method="post" class="herramienta tarjeta herramienta-peligro herramienta-reinicio" id="reiniciar">
         {% csrf_token %}<input type="hidden" name="herramienta" value="reiniciar">
         <div class="herramienta-texto">

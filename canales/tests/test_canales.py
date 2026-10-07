@@ -163,6 +163,8 @@ class ImportarTests(TestCase):
     def test_por_defecto_importa_peliculas_y_series(self):
         lista = ('#EXTM3U\n#EXTINF:-1 group-title="VOD | SPAIN",6 Guns (2010)\nhttp://x/movie/u/p/1.mkv\n'
                  '#EXTINF:-1 group-title="SERIES | HBO",Show S01 E01\nhttp://x/series/u/p/2.mkv\n'
+                 '#EXTINF:-1 group-title="SERIES | HBO",Show S01 E02\nhttp://x/series/u/p/4.mkv\n'
+                 '#EXTINF:-1 group-title="SERIES | HBO",Show S01 E03\nhttp://x/series/u/p/5.mkv\n'
                  '#EXTINF:-1,6 Guns (2010)\nhttp://x/u/p/3\n')
         importar_m3u(lista)
         contenidos = dict(Canal.objects.values_list('nombre', 'contenido'))

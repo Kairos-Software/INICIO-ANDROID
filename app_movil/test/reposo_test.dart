@@ -43,9 +43,9 @@ void main() {
       Escena.titulo,
       Escena.series,
     ]);
-    // Estrenos: de las 15 más nuevas
+    // Estrenos: de las 20 más nuevas
     for (final estreno in vidriera.estrenos) {
-      expect(int.parse(estreno.detalle), greaterThanOrEqualTo(2026 - 14));
+      expect(int.parse(estreno.detalle), greaterThanOrEqualTo(2026 - 19));
     }
     expect(vidriera.sonEstrenos, isTrue);
     expect(vidriera.peliculas, 30);
@@ -67,10 +67,10 @@ void main() {
   test('las cifras se redondean para abajo', () {
     expect(cifraRedonda(7), '7');
     expect(cifraRedonda(70), '70');
-    expect(cifraRedonda(77), 'Más de 70');
-    expect(cifraRedonda(419), 'Más de 400');
+    expect(cifraRedonda(77), '+70');
+    expect(cifraRedonda(419), '+400');
     expect(cifraRedonda(700), '700');
-    expect(cifraRedonda(1065), 'Más de 1000');
+    expect(cifraRedonda(1065), '+1.000');
   });
 
   testWidgets('cada escena se dibuja en la TV sin desbordarse, y todas llevan el logo', (tester) async {
