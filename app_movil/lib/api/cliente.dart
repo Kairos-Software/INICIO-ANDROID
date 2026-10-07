@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 
@@ -134,16 +135,15 @@ class ApiCliente {
     if (respuesta.statusCode == 204) {
       return null;
     }
-    // Siempre UTF-8 (si no, los acentos y la ñ se ven mal)
-    final texto = utf8.decode(respuesta.bodyBytes);
+    final bytes = respuesta.bodyBytes;
     Object? datos;
     try {
-      datos = texto.isEmpty ? null : jsonDecode(texto);
+      datos = await _leerJson(bytes);
     } on FormatException {
       datos = null;
     }
 
-    if (respuesta.statusCode >= 400 || (datos == null && texto.isNotEmpty)) {
+    if (respuesta.statusCode >= 400 || (datos == null && bytes.isNotEmpty)) {
       final error = ApiError.desdeRespuesta(respuesta.statusCode, datos);
       if (error.sesionVencida && token != null) {
         alPerderSesion?.call();
@@ -153,6 +153,19 @@ class ApiCliente {
       throw error;
     }
     return datos;
+  }
+
+  /// Las respuestas más grandes que esto (el catálogo: miles de películas y
+  /// capítulos) se leen en otro hilo: leerlas en el principal congelaba la
+  /// pantalla un momento (y trababa el video de la presentación, que se ve
+  /// justo mientras se carga el catálogo).
+  static const _grandeDesde = 64 * 1024;
+
+  /// El JSON de la respuesta (siempre UTF-8: si no, los acentos y la ñ se ven mal).
+  static Future<Object?> _leerJson(List<int> bytes) async {
+    if (bytes.isEmpty) return null;
+    if (bytes.length < _grandeDesde) return jsonDecode(utf8.decode(bytes));
+    return Isolate.run(() => jsonDecode(utf8.decode(bytes)));
   }
 
   ApiError _errorConexion(String detalle) => ApiError(

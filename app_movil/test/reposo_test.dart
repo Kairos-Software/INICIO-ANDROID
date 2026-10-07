@@ -1,10 +1,12 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:app_movil/api/cliente.dart';
 import 'package:app_movil/api/modelos.dart';
 import 'package:app_movil/marca.dart';
 import 'package:app_movil/movil/datos.dart';
 import 'package:app_movil/tv/reposo.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -78,12 +80,92 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final vidriera = Vidriera.delCatalogo(_catalogo(peliculas: 30, capitulos: 10, canales: 20), azar: Random(2));
-    await tester.pumpWidget(MaterialApp(home: PantallaReposoTv(vidriera: vidriera)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PantallaReposoTv(vidriera: vidriera, imagenDe: (url) => _ImagenDePrueba(url, ancho: 500)),
+      ),
+    );
+    final vistas = <String>{};
     for (var i = 0; i < vidriera.recorrido.length; i++) {
       await tester.pump(const Duration(seconds: 3)); // el fundido y las entradas
       expect(tester.takeException(), isNull);
       expect(find.byType(SimboloKairos), findsWidgets);
-      await tester.pump(const Duration(seconds: 6)); // la siguiente
+      for (final texto in [
+        'Disponible en Kairos TV',
+        'Estrenos',
+        'Todo en un solo lugar',
+        '20 canales',
+        'Temporadas completas',
+      ]) {
+        if (find.text(texto).evaluate().isNotEmpty) vistas.add(texto);
+      }
+      await tester.pump(const Duration(seconds: 9)); // la siguiente
     }
+    // Con imágenes buenas aparecen todas las escenas
+    expect(vistas, {
+      'Disponible en Kairos TV',
+      'Estrenos',
+      'Todo en un solo lugar',
+      '20 canales',
+      'Temporadas completas',
+    });
+    // Y nunca se baja nada al aparecer una escena: todo sale de lo preparado al entrar
+    expect(find.byType(Image), findsNothing);
   });
+
+  testWidgets('las imágenes chicas no se muestran (se verían pixeladas)', (tester) async {
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    // Las películas pares tienen buena imagen; las impares, de 100 px
+    final vidriera = Vidriera.delCatalogo(_catalogo(peliculas: 30), azar: Random(3));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PantallaReposoTv(
+          vidriera: vidriera,
+          imagenDe: (url) => _ImagenDePrueba(
+            url,
+            ancho: int.parse(RegExp(r'(\d+)\.jpg').firstMatch(url)!.group(1)!).isEven ? 500 : 100,
+          ),
+        ),
+      ),
+    );
+    var titulos = 0;
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(seconds: 12));
+      await tester.pump(const Duration(seconds: 1));
+      for (final texto in tester.widgetList<Text>(find.byType(Text))) {
+        final numero = RegExp(r'^Película (\d+)$').firstMatch(texto.data ?? '')?.group(1);
+        if (numero == null) continue;
+        titulos++;
+        expect(int.parse(numero).isEven, isTrue, reason: 'Película $numero tiene una imagen de 100 px');
+      }
+    }
+    expect(titulos, greaterThan(0));
+  });
+}
+
+/// Una imagen armada en memoria, del ancho pedido (como un póster: 2:3).
+class _ImagenDePrueba extends ImageProvider<_ImagenDePrueba> {
+  const _ImagenDePrueba(this.url, {required this.ancho});
+
+  final String url;
+  final int ancho;
+
+  @override
+  Future<_ImagenDePrueba> obtainKey(ImageConfiguration configuration) => SynchronousFuture(this);
+
+  @override
+  ImageStreamCompleter loadImage(_ImagenDePrueba key, ImageDecoderCallback decode) {
+    final grabadora = ui.PictureRecorder();
+    Canvas(grabadora).drawColor(const Color(0xFF336699), BlendMode.src);
+    final imagen = grabadora.endRecording().toImageSync(ancho, ancho * 3 ~/ 2);
+    return OneFrameImageStreamCompleter(SynchronousFuture(ImageInfo(image: imagen)));
+  }
+
+  @override
+  bool operator ==(Object other) => other is _ImagenDePrueba && other.url == url && other.ancho == ancho;
+
+  @override
+  int get hashCode => Object.hash(url, ancho);
 }

@@ -14,21 +14,24 @@
 ///
 /// Solo se muestra al abrir la app de cero, no al volver a ella. Si el video no
 /// se puede iniciar, se deja pasar a la app inmediatamente.
+///
+/// Fluidez: mientras el video tapa todo, la app de abajo se arma (carga la
+/// sesión y el catálogo) pero NO se dibuja ([Offstage]): si no, la placa de
+/// video de un TV box tendría que pintar las dos cosas en cada cuadro y el
+/// video se trababa. Los botones del control tampoco le llegan (si no,
+/// tocarían a ciegas el login de abajo).
 library;
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import 'aparato.dart';
 
 class Bienvenida extends StatefulWidget {
-  const Bienvenida({
-    super.key,
-    required this.child,
-    this.esperarElVideo = true,
-  });
+  const Bienvenida({super.key, required this.child, this.esperarElVideo = true});
 
   final Widget child;
 
@@ -57,6 +60,10 @@ class _BienvenidaState extends State<Bienvenida> {
   bool _preparando = false;
   bool _primerCuadroDemorado = false;
 
+  /// Las teclas que se apretaron durante el video: también se descarta su
+  /// "soltar", aunque llegue cuando el video ya terminó.
+  final _tragadas = <PhysicalKeyboardKey>{};
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +71,20 @@ class _BienvenidaState extends State<Bienvenida> {
       WidgetsBinding.instance.deferFirstFrame();
       _primerCuadroDemorado = true;
     }
+    HardwareKeyboard.instance.addHandler(_tecla);
+  }
+
+  /// Mientras se ve el video, el control no hace nada.
+  bool _tecla(KeyEvent evento) {
+    if (evento is KeyDownEvent && _visible && !_terminada) {
+      _tragadas.add(evento.physicalKey);
+      return true;
+    }
+    if (_tragadas.contains(evento.physicalKey)) {
+      if (evento is KeyUpEvent) _tragadas.remove(evento.physicalKey);
+      return true;
+    }
+    return false;
   }
 
   @override
@@ -77,9 +98,7 @@ class _BienvenidaState extends State<Bienvenida> {
   static String _asset(BuildContext context) {
     final tamanio = View.of(context).physicalSize;
     final vertical = tamanio.height > tamanio.width;
-    return Aparato.esTv || !vertical
-        ? Bienvenida.videoTv
-        : Bienvenida.videoCelular;
+    return Aparato.esTv || !vertical ? Bienvenida.videoTv : Bienvenida.videoCelular;
   }
 
   Future<void> _prepararVideo() async {
@@ -128,6 +147,7 @@ class _BienvenidaState extends State<Bienvenida> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_tecla);
     _dejarDibujar();
     _reloj?.cancel();
     _video?.dispose();
@@ -136,10 +156,12 @@ class _BienvenidaState extends State<Bienvenida> {
 
   @override
   Widget build(BuildContext context) {
+    // La app no se dibuja mientras el video la tapa entero (sí cuando se desvanece)
+    final tapada = _visible && _video != null;
     return Stack(
       textDirection: TextDirection.ltr,
       children: [
-        widget.child,
+        Offstage(offstage: tapada, child: widget.child),
         if (!_terminada)
           Positioned.fill(
             child: AbsorbPointer(
@@ -150,16 +172,18 @@ class _BienvenidaState extends State<Bienvenida> {
                 curve: Curves.easeOut,
                 onEnd: () {
                   if (!_visible && mounted) {
-                    setState(() => _terminada = true);
-                    _video?.dispose();
-                    _video = null;
+                    // Primero se saca el video de la pantalla, después se suelta el reproductor
+                    final video = _video;
+                    setState(() {
+                      _terminada = true;
+                      _video = null;
+                    });
+                    WidgetsBinding.instance.addPostFrameCallback((_) => video?.dispose());
                   }
                 },
                 child: ColoredBox(
                   color: Bienvenida.fondo,
-                  child: _video == null
-                      ? const SizedBox.expand()
-                      : _VideoPantalla(controlador: _video!),
+                  child: _video == null ? const SizedBox.expand() : _VideoPantalla(controlador: _video!),
                 ),
               ),
             ),
@@ -181,11 +205,7 @@ class _VideoPantalla extends StatelessWidget {
       child: SizedBox.expand(
         child: FittedBox(
           fit: BoxFit.cover,
-          child: SizedBox(
-            width: tamanio.width,
-            height: tamanio.height,
-            child: VideoPlayer(controlador),
-          ),
+          child: SizedBox(width: tamanio.width, height: tamanio.height, child: VideoPlayer(controlador)),
         ),
       ),
     );

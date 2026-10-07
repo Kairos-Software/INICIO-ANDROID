@@ -147,7 +147,7 @@ class _PantallaMovilState extends State<PantallaMovil> {
                         biblioteca: _biblioteca,
                         child: Theme(
                           data: temaMovil(),
-                          child: PantallaBuscar(irA: _irA),
+                          child: PantallaBuscar(irA: _irA, que: PantallaBuscar.queDesde(_seccion)),
                         ),
                       ),
                     ),

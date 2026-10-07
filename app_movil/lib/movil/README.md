@@ -26,7 +26,8 @@ están fuera del repo, en `D:\Desktop\diseños app pv\stitch\`. Los valores
 | `reproductor_vod.dart` | Reproductor de películas y capítulos: controles, barra para adelantar, velocidad, Ajustes (calidad, idioma, imagen, fuente), siguiente capítulo, girar a pantalla completa. Guarda por dónde vas. | `(3).zip` |
 | `grilla.dart` | Secciones Películas y Series (grilla de pósters con chips de categoría). | grilla de "Tendencias" |
 | `mi_espacio.dart` | Cuenta (código, vencimiento, pantallas, vendedor), Continuar viendo, "volver al último canal al abrir" y, para usuarios del panel, sus herramientas. | armada con sus piezas |
-| `buscar.dart` | Buscar canales, películas y series. | campo de búsqueda del `DESIGN.md` |
+| `buscar.dart` | Buscar canales, películas y series, con los chips Todo / En vivo / Películas / Series (cuántos encontró cada uno). Arranca en el de la sección desde donde se abrió: desde Series busca series. | campo de búsqueda del `DESIGN.md` |
+| `busqueda.dart` | La búsqueda en sí, la misma en el celular y en la TV: sin tildes ni mayúsculas, primero lo que empieza con lo escrito (o tiene una palabra que empieza así) y después lo que solo lo contiene. En la TV, el número del canal también lo encuentra. | — |
 
 ## Lo que el diseño muestra y todavía no tenemos
 

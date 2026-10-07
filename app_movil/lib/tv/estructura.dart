@@ -83,6 +83,9 @@ class _PantallaTvState extends State<PantallaTv> {
   late final Catalogo _catalogo = widget.catalogo ?? Catalogo(SesionScope.leer(context).api);
   late final Biblioteca _biblioteca = widget.biblioteca ?? Biblioteca();
   late SeccionTv _seccion = widget.seccionInicial;
+
+  /// Dónde se estaba antes de ir a Buscar: desde Series se buscan series.
+  SeccionTv _antesDeBuscar = SeccionTv.inicio;
   final _contenido = FocusScopeNode(debugLabel: 'contenido');
   final _menu = FocusScopeNode(debugLabel: 'menú');
   final _opcionesDelMenu = {for (final s in SeccionTv.values) s: FocusNode(debugLabel: 'menú: ${s.name}')};
@@ -151,6 +154,7 @@ class _PantallaTvState extends State<PantallaTv> {
 
   void _irA(SeccionTv seccion) {
     setState(() {
+      if (seccion == SeccionTv.buscar && _seccion != SeccionTv.buscar) _antesDeBuscar = _seccion;
       _seccion = seccion;
       _menuAbierto = false;
     });
@@ -280,7 +284,7 @@ class _PantallaTvState extends State<PantallaTv> {
       SeccionTv.guia => const GuiaTv(),
       SeccionTv.peliculas => const GrillaTv(contenido: 'pelicula', key: ValueKey('peliculas')),
       SeccionTv.series => const GrillaTv(contenido: 'serie', key: ValueKey('series')),
-      SeccionTv.buscar => const BuscarTv(),
+      SeccionTv.buscar => BuscarTv(que: BuscarTv.queDesde(_antesDeBuscar)),
       SeccionTv.favoritos => const FavoritosTv(),
       SeccionTv.cuenta => const CuentaTv(),
     };

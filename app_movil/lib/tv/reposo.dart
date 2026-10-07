@@ -19,11 +19,17 @@
 /// escenario de neón DIBUJADO (tv/escenario.dart): nítido en cualquier TV.
 ///
 /// Calidad: las imágenes del catálogo (las que traen las listas) muchas veces
-/// son chicas. Antes de usarlas se mide cada una ([_PantallaReposoTvState._medir]):
-/// en grande (escena "titulo") solo van las que tienen buena resolución, y en
-/// los grupos, las que alcanzan para su tamaño. Si no hay suficientes, la
-/// escena se saltea: mejor no mostrarla que mostrarla pixelada. Cambia cada
-/// [_cadaCuanto] con un fundido.
+/// son chicas. Al entrar se bajan TODAS y se mide cada una
+/// ([_PantallaReposoTvState._preparar]): en grande (escena "titulo") solo van
+/// las que tienen buena resolución, y en los grupos, las que alcanzan para su
+/// tamaño. Si no hay suficientes, la escena se saltea: mejor no mostrarla que
+/// mostrarla pixelada.
+///
+/// Fluidez (los TV box son lentos): cambia cada [_cadaCuanto]. Las escenas
+/// solo muestran imágenes YA bajadas y decodificadas (nunca cargan nada al
+/// aparecer), el escenario de fondo es uno solo para todas, y en el cambio la
+/// escena que se va se apaga antes de que aparezca la nueva (nunca se dibujan
+/// dos a la vez).
 ///
 /// Cualquier botón la cierra y se vuelve a donde se estaba (esa tecla no hace
 /// nada más). Mantiene la pantalla encendida [_encendidaHasta]; después deja
@@ -32,7 +38,7 @@ library;
 
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -44,18 +50,22 @@ import '../movil/datos.dart';
 import '../movil/estilo.dart';
 import 'escenario.dart';
 
-const _cadaCuanto = Duration(seconds: 9);
+const _cadaCuanto = Duration(seconds: 12);
 const _fundido = Duration(milliseconds: 1400);
 const _encendidaHasta = Duration(minutes: 30);
-const _maximoTitulos = 30;
+const _maximoTitulos = 20;
 
 /// Cuántos pósters o logos van en las escenas de grupo, y cuántos hacen falta para armarlas.
 const _porGrupo = 5;
 const _logosEnVivo = 12;
 const _minimoGrupo = 4;
 
-/// Se eligen el triple de candidatos: después se descartan los de mala calidad.
-const _candidatos = 3;
+/// Se eligen el doble de candidatos: después se descartan los de mala calidad.
+const _candidatos = 2;
+
+/// Las imágenes se guardan achicadas a este ancho (más no hace falta para la
+/// TV, y así entran todas en la memoria de un TV box).
+const _anchoDecodificado = 400;
 
 /// El ancho mínimo (en píxeles de la imagen original) para que se vea bien:
 /// un póster en grande (380 px de ancho en la TV), un póster en un grupo
@@ -154,9 +164,9 @@ class Vidriera {
     final masNueva = nuevas.isEmpty ? 0 : nuevas.map((p) => anioDe(p.nombre)!).reduce(max);
 
     final titulos = [
-      for (final p in algunos(peliculas, 14)) dePelicula(p),
-      for (final s in algunos(series, 10)) deSerie(s),
-      for (final c in algunos(canales, 6)) deCanal(c),
+      for (final p in algunos(peliculas, 9)) dePelicula(p),
+      for (final s in algunos(series, 7)) deSerie(s),
+      for (final c in algunos(canales, 4)) deCanal(c),
     ]..shuffle(azar);
 
     return Vidriera(
@@ -188,9 +198,6 @@ class Vidriera {
       if (grupos.isEmpty && titulos.isNotEmpty) ...List.filled(3, Escena.titulo),
     ];
   }
-
-  /// Todas las imágenes (para medirlas y bajarlas de antemano).
-  Iterable<String> get imagenes => {...titulos, ...estrenos, ...canales, ...series}.map((d) => d.imagen).toSet();
 }
 
 /// "+700", "+1.000": redondea para abajo (a 10 o a 50/100), así la cifra nunca
@@ -204,12 +211,26 @@ String cifraRedonda(int cantidad) {
 }
 
 class PantallaReposoTv extends StatefulWidget {
-  const PantallaReposoTv({super.key, required this.vidriera});
+  const PantallaReposoTv({super.key, required this.vidriera, this.imagenDe = imagenDeInternet});
 
   final Vidriera vidriera;
 
+  /// De dónde sale cada imagen (en las pruebas, imágenes armadas en memoria).
+  final ImageProvider Function(String url) imagenDe;
+
+  /// La imagen ya achicada a [_anchoDecodificado] (o menos, si es más chica).
+  static ImageProvider imagenDeInternet(String url) => ResizeImage(NetworkImage(url), width: _anchoDecodificado);
+
   @override
   State<PantallaReposoTv> createState() => _PantallaReposoTvState();
+}
+
+/// Una diapositiva con su imagen ya bajada y lista para dibujarse.
+class _Lista {
+  const _Lista(this.diapositiva, this.imagen);
+
+  final Diapositiva diapositiva;
+  final ui.Image imagen;
 }
 
 class _PantallaReposoTvState extends State<PantallaReposoTv> {
@@ -217,13 +238,15 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
   int _paso = 0;
 
   /// El título que se muestra ahora y el próximo.
-  Diapositiva? _titulo;
+  _Lista? _titulo;
   int _siguienteTitulo = 0;
   Timer? _reloj;
   Timer? _apagar;
 
-  /// El ancho de cada imagen ya medida (0 = no cargó).
-  final _anchos = <String, double>{};
+  /// Las imágenes que ya se bajaron, se midieron y alcanzan para mostrarse
+  /// (url → imagen). Las escenas solo usan estas: así al cambiar de escena
+  /// no hay nada que bajar ni que decodificar, y no se traba.
+  final _listas = <String, ui.Image>{};
   final _escuchas = <(ImageStream, ImageStreamListener)>[];
 
   Escena get _escena => _recorrido[_paso];
@@ -235,7 +258,7 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
     _apagar = Timer(_encendidaHasta, () => WakelockPlus.disable().catchError((Object _) {}));
     _reloj = Timer.periodic(_cadaCuanto, (_) => _avanzar());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _medir();
+      if (mounted) _preparar();
     });
   }
 
@@ -244,51 +267,68 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
     for (final (flujo, escucha) in _escuchas) {
       flujo.removeListener(escucha);
     }
+    for (final imagen in _listas.values) {
+      imagen.dispose();
+    }
     _reloj?.cancel();
     _apagar?.cancel();
     WakelockPlus.disable().catchError((Object _) {});
     super.dispose();
   }
 
-  /// Baja todas las imágenes y anota de qué tamaño es cada una (la escena del
-  /// logo, que va primero, da tiempo de sobra).
-  void _medir() {
-    for (final url in widget.vidriera.imagenes) {
-      final flujo = NetworkImage(url).resolve(createLocalImageConfiguration(context));
+  /// Baja y decodifica todas las imágenes mientras se ve la escena del logo
+  /// (que va primero y da tiempo de sobra). Se quedan las que tienen buena
+  /// resolución; las chicas se sueltan enseguida (se verían pixeladas).
+  void _preparar() {
+    final vidriera = widget.vidriera;
+    // El mínimo para entrar en alguna escena (en un grupo, que es lo más chico)
+    final minimos = <String, double>{
+      for (final d in [...vidriera.titulos, ...vidriera.estrenos, ...vidriera.series, ...vidriera.canales])
+        d.imagen: d.poster ? _minimoPosterGrupo : _minimoLogoGrupo,
+    };
+    final configuracion = createLocalImageConfiguration(context);
+    for (final MapEntry(key: url, value: minimo) in minimos.entries) {
+      final flujo = widget.imagenDe(url).resolve(configuracion);
       late final (ImageStream, ImageStreamListener) par;
-      void anotar(double ancho) {
-        _anchos[url] = ancho;
-        // Ya se sabe: se suelta (y se saca de la lista, para no soltarla dos veces al cerrar)
+      void soltar() {
         if (_escuchas.remove(par)) flujo.removeListener(par.$2);
       }
 
       par = (
         flujo,
-        ImageStreamListener((info, _) => anotar(info.image.width.toDouble()), onError: (_, _) => anotar(0)),
+        ImageStreamListener((info, _) {
+          soltar();
+          if (mounted && info.image.width >= minimo && !_listas.containsKey(url)) {
+            _listas[url] = info.image;
+          } else {
+            info.dispose();
+          }
+        }, onError: (_, _) => soltar()),
       );
       _escuchas.add(par);
       flujo.addListener(par.$2);
     }
   }
 
-  /// ¿Se ve bien a este tamaño? (las que todavía no se midieron, no)
-  bool _sirve(Diapositiva diapositiva, {required bool grande}) {
-    final ancho = _anchos[diapositiva.imagen] ?? 0;
+  /// La imagen lista, si se ve bien a este tamaño.
+  _Lista? _lista(Diapositiva diapositiva, {required bool grande}) {
+    final imagen = _listas[diapositiva.imagen];
+    if (imagen == null) return null;
     final minimo = diapositiva.poster
         ? (grande ? _minimoPosterGrande : _minimoPosterGrupo)
         : (grande ? _minimoLogoGrande : _minimoLogoGrupo);
-    return ancho >= minimo;
+    return imagen.width >= minimo ? _Lista(diapositiva, imagen) : null;
   }
 
-  List<Diapositiva> _buenas(List<Diapositiva> lista, int cuantas) =>
-      lista.where((d) => _sirve(d, grande: false)).take(cuantas).toList();
+  List<_Lista> _buenas(List<Diapositiva> lista, int cuantas) =>
+      [for (final d in lista) ?_lista(d, grande: false)].take(cuantas).toList();
 
   /// El próximo título que se ve bien en grande, o null.
   int? _proximoTitulo() {
     final lista = widget.vidriera.titulos;
     for (var i = 0; i < lista.length; i++) {
       final indice = (_siguienteTitulo + i) % lista.length;
-      if (_sirve(lista[indice], grande: true)) return indice;
+      if (_lista(lista[indice], grande: true) != null) return indice;
     }
     return null;
   }
@@ -314,7 +354,7 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
       } while (!_sePuede(_escena));
       if (_escena != Escena.titulo) return;
       final indice = _proximoTitulo()!;
-      _titulo = widget.vidriera.titulos[indice];
+      _titulo = _lista(widget.vidriera.titulos[indice], grande: true);
       _siguienteTitulo = indice + 1;
     });
   }
@@ -327,18 +367,18 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
     final vidriera = widget.vidriera;
     return switch (_escena) {
       Escena.logo => const _PantallaLogo(),
-      Escena.titulo => _PantallaTitulo(diapositiva: _titulo!),
+      Escena.titulo => _PantallaTitulo(lista: _titulo!),
       Escena.estrenos => _PantallaGrupo(
         sobretitulo: vidriera.sonEstrenos ? 'Recién llegadas' : 'Para ver hoy',
         titulo: vidriera.sonEstrenos ? 'Estrenos' : 'Películas destacadas',
         bajada: vidriera.sonEstrenos ? 'Las películas más nuevas, ya en Kairos TV' : 'Elegí la tuya en Kairos TV',
-        diapositivas: _buenas(vidriera.estrenos, _porGrupo),
+        listas: _buenas(vidriera.estrenos, _porGrupo),
       ),
       Escena.series => _PantallaGrupo(
         sobretitulo: 'Series',
         titulo: 'Temporadas completas',
         bajada: 'Seguí tus series capítulo a capítulo',
-        diapositivas: _buenas(vidriera.series, _porGrupo),
+        listas: _buenas(vidriera.series, _porGrupo),
       ),
       Escena.enVivo => _PantallaEnVivo(
         canales: _buenas(vidriera.canales, _logosEnVivo),
@@ -350,6 +390,7 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
 
   @override
   Widget build(BuildContext context) {
+    final enElLogo = _escena == Escena.logo;
     return Focus(
       autofocus: true,
       // Cualquier botón vuelve (y no hace nada más). Se sale al SOLTARLO: si
@@ -362,11 +403,31 @@ class _PantallaReposoTvState extends State<PantallaReposoTv> {
         onTap: _salir,
         child: Material(
           color: Colors.black,
-          child: AnimatedSwitcher(
-            duration: _fundido,
-            switchInCurve: Curves.easeOut,
-            switchOutCurve: Curves.easeIn,
-            child: KeyedSubtree(key: ValueKey(_paso), child: _pantalla()),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Un solo escenario de fondo para todas las escenas: a pleno y con
+              // el punto rubí en la del logo, más tenue detrás de las demás.
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: enElLogo ? 1 : 0),
+                duration: _fundido,
+                curve: Curves.easeInOut,
+                builder: (_, logo, _) => EscenarioNeon(intensidad: .7 + .3 * logo, rubi: logo),
+              ),
+              // La escena que se va se apaga del todo antes de que aparezca la
+              // nueva: así nunca se dibujan dos a la vez (en la TV, eso traba).
+              AnimatedSwitcher(
+                duration: _fundido,
+                transitionBuilder: (hijo, animacion) => FadeTransition(
+                  opacity: CurvedAnimation(
+                    parent: animacion,
+                    curve: const Interval(.5, 1, curve: Curves.easeOut),
+                  ),
+                  child: hijo,
+                ),
+                child: KeyedSubtree(key: ValueKey(_paso), child: _pantalla()),
+              ),
+            ],
           ),
         ),
       ),
@@ -389,8 +450,8 @@ class _Pie extends StatelessWidget {
   }
 }
 
-/// El fondo de las escenas de grupo: el escenario de neón, tenue y oscurecido
-/// arriba a la izquierda (donde va el texto) para que se lea bien.
+/// Sobre el escenario de las escenas de grupo: oscurecido a la izquierda
+/// (donde va el texto) para que se lea bien.
 class _FondoMarca extends StatelessWidget {
   const _FondoMarca({this.centrado = false});
 
@@ -399,22 +460,16 @@ class _FondoMarca extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        const EscenarioNeon(intensidad: .7, puntoRubi: false),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: centrado
-                ? const RadialGradient(radius: .6, colors: [Color(0xB3040507), Color(0x00040507)])
-                : const LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [Color(0xCC040507), Color(0x66040507), Color(0x33040507)],
-                  ),
-          ),
-        ),
-      ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: centrado
+            ? const RadialGradient(radius: .6, colors: [Color(0xB3040507), Color(0x00040507)])
+            : const LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [Color(0xCC040507), Color(0x66040507), Color(0x33040507)],
+              ),
+      ),
     );
   }
 }
@@ -454,20 +509,14 @@ class _Encabezado extends StatelessWidget {
 }
 
 /// La pantalla a la que siempre se vuelve: el logo, la hora y cómo salir.
-class _PantallaLogo extends StatefulWidget {
+class _PantallaLogo extends StatelessWidget {
   const _PantallaLogo();
 
-  @override
-  State<_PantallaLogo> createState() => _PantallaLogoState();
-}
-
-class _PantallaLogoState extends State<_PantallaLogo> {
   @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const EscenarioNeon(),
         // El logo, un poco arriba del centro (sobre el punto de fuga del pasillo)
         const Align(alignment: Alignment(0, -.12), child: LogoKairos(tamanio: 150)),
         Align(
@@ -490,34 +539,59 @@ class _PantallaLogoState extends State<_PantallaLogo> {
 }
 
 /// Una película, serie o canal: la imagen de fondo borrosa con zoom lento, el póster y el título.
-class _PantallaTitulo extends StatelessWidget {
-  const _PantallaTitulo({required this.diapositiva});
+class _PantallaTitulo extends StatefulWidget {
+  const _PantallaTitulo({required this.lista});
 
-  final Diapositiva diapositiva;
+  final _Lista lista;
+
+  @override
+  State<_PantallaTitulo> createState() => _PantallaTituloState();
+}
+
+class _PantallaTituloState extends State<_PantallaTitulo> {
+  /// El fondo: la misma imagen, chiquita y ya borroneada UNA vez. Agrandada
+  /// queda suave, y moverla no cuesta nada (difuminar la pantalla entera en
+  /// cada cuadro, como antes, trababa los TV box).
+  late final ui.Image _borrosa = _borronear(widget.lista.imagen);
+
+  static ui.Image _borronear(ui.Image imagen) {
+    const destino = Rect.fromLTWH(0, 0, 96, 54);
+    final origen = Size(imagen.width.toDouble(), imagen.height.toDouble());
+    final ajuste = applyBoxFit(BoxFit.cover, origen, destino.size);
+    final recorte = Alignment.center.inscribe(ajuste.source, Offset.zero & origen);
+    final grabadora = ui.PictureRecorder();
+    Canvas(grabadora).drawImageRect(
+      imagen,
+      recorte,
+      destino,
+      Paint()
+        ..filterQuality = FilterQuality.medium
+        ..imageFilter = ui.ImageFilter.blur(sigmaX: 2.5, sigmaY: 2.5),
+    );
+    final dibujo = grabadora.endRecording();
+    final resultado = dibujo.toImageSync(destino.width.toInt(), destino.height.toInt());
+    dibujo.dispose();
+    return resultado;
+  }
+
+  @override
+  void dispose() {
+    _borrosa.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final imagen = Image.network(
-      diapositiva.imagen,
-      fit: diapositiva.poster ? BoxFit.cover : BoxFit.contain,
-      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-    );
+    final diapositiva = widget.lista.diapositiva;
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Fondo: la misma imagen, enorme, borrosa y con un zoom lento ("Ken Burns")
+        // Fondo: la imagen enorme y borrosa, con un zoom lento ("Ken Burns")
         TweenAnimationBuilder<double>(
           tween: Tween(begin: 1.08, end: 1.22),
           duration: _cadaCuanto + _fundido,
           builder: (_, escala, hijo) => Transform.scale(scale: escala, child: hijo),
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
-            child: Image.network(
-              diapositiva.imagen,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          ),
+          child: RawImage(image: _borrosa, fit: BoxFit.cover, filterQuality: FilterQuality.medium),
         ),
         // Oscurecido para que se lea el texto
         const DecoratedBox(
@@ -585,7 +659,7 @@ class _PantallaTitulo extends StatelessWidget {
                   boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 60, offset: Offset(0, 24))],
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: imagen,
+                child: _Foto(imagen: widget.lista.imagen, poster: diapositiva.poster),
               ),
             ],
           ),
@@ -596,19 +670,27 @@ class _PantallaTitulo extends StatelessWidget {
   }
 }
 
+/// Una imagen ya lista: el póster llena su lugar; el logo entra entero.
+class _Foto extends StatelessWidget {
+  const _Foto({required this.imagen, required this.poster});
+
+  final ui.Image imagen;
+  final bool poster;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.expand(
+    child: RawImage(image: imagen, fit: poster ? BoxFit.cover : BoxFit.contain, filterQuality: FilterQuality.medium),
+  );
+}
+
 /// Estrenos o series: el encabezado y una fila de pósters que suben de a uno.
 class _PantallaGrupo extends StatelessWidget {
-  const _PantallaGrupo({
-    required this.sobretitulo,
-    required this.titulo,
-    required this.bajada,
-    required this.diapositivas,
-  });
+  const _PantallaGrupo({required this.sobretitulo, required this.titulo, required this.bajada, required this.listas});
 
   final String sobretitulo;
   final String titulo;
   final String bajada;
-  final List<Diapositiva> diapositivas;
+  final List<_Lista> listas;
 
   @override
   Widget build(BuildContext context) {
@@ -626,12 +708,12 @@ class _PantallaGrupo extends StatelessWidget {
               Expanded(
                 child: Row(
                   children: [
-                    for (var i = 0; i < diapositivas.length; i++) ...[
+                    for (var i = 0; i < listas.length; i++) ...[
                       if (i > 0) const SizedBox(width: 36),
                       Expanded(
                         child: _Entrada(
                           orden: i,
-                          child: _Poster(diapositiva: diapositivas[i]),
+                          child: _Poster(lista: listas[i]),
                         ),
                       ),
                     ],
@@ -651,7 +733,7 @@ class _PantallaGrupo extends StatelessWidget {
 class _PantallaEnVivo extends StatelessWidget {
   const _PantallaEnVivo({required this.canales, required this.cantidad});
 
-  final List<Diapositiva> canales;
+  final List<_Lista> canales;
   final int cantidad;
 
   @override
@@ -692,19 +774,7 @@ class _PantallaEnVivo extends StatelessWidget {
                             color: Tono.capaAlta,
                             borderRadius: BorderRadius.circular(Curva.panel),
                           ),
-                          child: Image.network(
-                            canales[i].imagen,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, _, _) => Center(
-                              child: Text(
-                                canales[i].titulo,
-                                maxLines: 2,
-                                textAlign: TextAlign.center,
-                                overflow: TextOverflow.ellipsis,
-                                style: LetraTv.cuerpo.copyWith(color: Tono.texto),
-                              ),
-                            ),
-                          ),
+                          child: _Foto(imagen: canales[i].imagen, poster: false),
                         ),
                       ),
                   ],
@@ -788,12 +858,13 @@ class _PantallaCifras extends StatelessWidget {
 
 /// Un póster con su título debajo.
 class _Poster extends StatelessWidget {
-  const _Poster({required this.diapositiva});
+  const _Poster({required this.lista});
 
-  final Diapositiva diapositiva;
+  final _Lista lista;
 
   @override
   Widget build(BuildContext context) {
+    final diapositiva = lista.diapositiva;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -806,11 +877,7 @@ class _Poster extends StatelessWidget {
               boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 40, offset: Offset(0, 16))],
             ),
             clipBehavior: Clip.antiAlias,
-            child: Image.network(
-              diapositiva.imagen,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Center(child: SimboloKairos(tamanio: 64)),
-            ),
+            child: _Foto(imagen: lista.imagen, poster: true),
           ),
         ),
         const SizedBox(height: 14),

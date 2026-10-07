@@ -74,7 +74,7 @@ void main() {
     });
     await tester.pump(const Duration(seconds: 3));
     await guardar('reposo-logo');
-    await tester.pump(const Duration(seconds: 6));
+    await tester.pump(const Duration(seconds: 9)); // la escena siguiente (cada 12 s)
     for (var i = 0; i < 40; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }

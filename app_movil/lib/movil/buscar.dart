@@ -1,10 +1,16 @@
 /// Buscar canales, películas y series por nombre (la lupa de la barra de arriba).
 /// El campo sigue el diseño de Stitch: fondo oscuro, borde que se pone celeste.
+///
+/// Abajo del campo, los chips Todo / En vivo / Películas / Series (con cuántos
+/// encontró cada uno). Arranca en el de la sección desde donde se abrió: desde
+/// Series busca series. La búsqueda en sí está en busqueda.dart (es la misma
+/// que la de la TV).
 library;
 
 import 'package:flutter/material.dart';
 
 import '../api/modelos.dart';
+import 'busqueda.dart';
 import 'componentes.dart';
 import 'datos.dart';
 import 'estilo.dart';
@@ -12,10 +18,21 @@ import 'estructura.dart';
 import 'grilla.dart';
 
 class PantallaBuscar extends StatefulWidget {
-  const PantallaBuscar({super.key, required this.irA});
+  const PantallaBuscar({super.key, required this.irA, this.que = QueBuscar.todo});
 
   /// Para ir a En Vivo con un canal (esta pantalla se abre encima de las secciones).
   final void Function(Seccion seccion, {String? categoria, int? canal}) irA;
+
+  /// Qué se busca al abrir (según la sección desde donde se abrió).
+  final QueBuscar que;
+
+  /// Lo que se busca desde cada sección.
+  static QueBuscar queDesde(Seccion seccion) => switch (seccion) {
+    Seccion.enVivo => QueBuscar.enVivo,
+    Seccion.peliculas => QueBuscar.peliculas,
+    Seccion.series => QueBuscar.series,
+    _ => QueBuscar.todo,
+  };
 
   @override
   State<PantallaBuscar> createState() => _PantallaBuscarState();
@@ -24,6 +41,7 @@ class PantallaBuscar extends StatefulWidget {
 class _PantallaBuscarState extends State<PantallaBuscar> {
   final _texto = TextEditingController();
   String _buscado = '';
+  late QueBuscar _que = widget.que;
 
   @override
   void dispose() {
@@ -31,27 +49,22 @@ class _PantallaBuscarState extends State<PantallaBuscar> {
     super.dispose();
   }
 
-  static String _simple(String texto) {
-    const conAcento = 'áéíóúüñ';
-    const sinAcento = 'aeiouun';
-    final minusculas = texto.toLowerCase();
-    final buffer = StringBuffer();
-    for (final letra in minusculas.split('')) {
-      final i = conAcento.indexOf(letra);
-      buffer.write(i >= 0 ? sinAcento[i] : letra);
-    }
-    return buffer.toString();
-  }
+  String get _ayuda => switch (_que) {
+    QueBuscar.todo => 'Buscar canales, películas, series...',
+    QueBuscar.enVivo => 'Buscar canales en vivo...',
+    QueBuscar.peliculas => 'Buscar películas...',
+    QueBuscar.series => 'Buscar series...',
+  };
 
   @override
   Widget build(BuildContext context) {
     final catalogo = DatosScope.of(context).catalogo;
-    final buscado = _simple(_buscado.trim());
-    bool coincide(String nombre) => buscado.length >= 2 && _simple(nombre).contains(buscado);
-    final canales = catalogo.canales.where((c) => coincide(c.nombre)).take(30).toList();
-    final peliculas = catalogo.peliculas.where((p) => coincide(p.nombre)).take(40).toList();
-    final series = catalogo.series.where((s) => coincide(s.nombre)).take(40).toList();
-    final nada = canales.isEmpty && peliculas.isEmpty && series.isEmpty;
+    final texto = _buscado.trim();
+    final encontrado = texto.length < 2 ? Encontrado.nada : buscarEnCatalogo(catalogo, texto);
+    bool muestra(QueBuscar que) => _que == QueBuscar.todo || _que == que;
+    final canales = muestra(QueBuscar.enVivo) ? encontrado.canales : const <Canal>[];
+    final peliculas = muestra(QueBuscar.peliculas) ? encontrado.peliculas : const <Canal>[];
+    final series = muestra(QueBuscar.series) ? encontrado.series : const <Serie>[];
 
     return Scaffold(
       backgroundColor: Tono.fondo,
@@ -68,7 +81,7 @@ class _PantallaBuscarState extends State<PantallaBuscar> {
             style: Letra.cuerpoGrande,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
-              hintText: 'Buscar canales, películas, series...',
+              hintText: _ayuda,
               hintStyle: Letra.cuerpo,
               isDense: true,
               filled: true,
@@ -95,11 +108,38 @@ class _PantallaBuscarState extends State<PantallaBuscar> {
             ),
           ),
         ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(52),
+          child: SizedBox(
+            height: 52,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(Espacio.margen, 4, Espacio.margen, 10),
+              children: [
+                for (final que in QueBuscar.values) ...[
+                  if (que != QueBuscar.values.first) const SizedBox(width: Espacio.xs),
+                  ChipFiltro(
+                    texto: texto.length < 2 ? que.texto : '${que.texto} (${encontrado.cuantos(que)})',
+                    icono: que == QueBuscar.todo ? Icons.auto_awesome_rounded : null,
+                    puntoEnVivo: que == QueBuscar.enVivo,
+                    activo: _que == que,
+                    alTocar: () => setState(() => _que = que),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
-      body: buscado.length < 2
+      body: texto.length < 2
           ? const Vacio(icono: Icons.search_rounded, texto: 'Escribí al menos dos letras del nombre.')
-          : nada
-          ? Vacio(icono: Icons.search_off_rounded, texto: 'No encontramos nada con "$_buscado".')
+          : encontrado.vacio(_que)
+          ? Vacio(
+              icono: Icons.search_off_rounded,
+              texto: _que == QueBuscar.todo || encontrado.vacio(QueBuscar.todo)
+                  ? 'No encontramos nada con "$texto".'
+                  : 'No hay ${_que.texto.toLowerCase()} con "$texto". Probá en "Todo".',
+            )
           : CustomScrollView(
               slivers: [
                 const SliverToBoxAdapter(child: SizedBox(height: Espacio.margen)),

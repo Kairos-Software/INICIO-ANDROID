@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_movil/aparato.dart';
 import 'package:app_movil/bienvenida.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
@@ -103,7 +104,12 @@ void main() {
 
     expect(video.ultimoAsset, Bienvenida.videoCelular);
     expect(find.byType(VideoPlayer), findsOneWidget);
-    expect(find.text('la app'), findsOneWidget); // por debajo ya está cargando
+    // Por debajo la app ya está cargando, pero no se dibuja (el video la tapa)
+    expect(find.text('la app', skipOffstage: false), findsOneWidget);
+    expect(find.text('la app'), findsNothing);
+
+    // Los botones del control no le llegan a la app mientras se ve el video
+    expect(await tester.sendKeyEvent(LogicalKeyboardKey.select), isTrue);
 
     await tester.pump(const Duration(seconds: 2));
     expect(find.byType(VideoPlayer), findsOneWidget); // todavía se reproduce
