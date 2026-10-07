@@ -7,6 +7,7 @@ base de datos ni sale a internet):
     formato(url)              -> 'hls' | 'dash' | 'directo' | 'rtsp' | 'youtube' | 'pagina' | 'rtmp' | '' (no se sabe)
     limpiar_nombre(nombre)    -> 'ES: (HD REPUESTO) DAZN LALIGA' -> 'DAZN LALIGA'
     para_adultos(nombre, categoria) -> True si es XXX / +18
+    aviso_de_la_lista(nombre) -> 'La lista avisa que...' si dice [Not 24/7] o [Geo-blocked]
 
 Son estimaciones a partir de lo que trae la lista (atributos, prefijos del
 nombre, categoría, terminación del tvg-id...). El formato real lo confirma
@@ -141,6 +142,19 @@ _ADULTOS = re.compile(r'\bxxx\b|\b18\s*\+|\+\s*18\b|\badult|\bporn|\bhot\s*club\
 def para_adultos(nombre='', categoria=''):
     """Canales XXX / +18 (por el nombre o la categoría)."""
     return bool(_ADULTOS.search(f'{nombre} {categoria}'))
+
+
+# Lo que la misma lista avisa en el nombre (así lo hace iptv-org): que no
+# transmite todo el día o que solo se ve desde su país.
+_AVISOS_DE_LA_LISTA = (
+    (re.compile(r'\[\s*not\s*24\s*/\s*7\s*\]', re.I), 'La lista avisa que no transmite todo el día [Not 24/7].'),
+    (re.compile(r'\[\s*geo[\s-]*blocked\s*\]', re.I), 'La lista avisa que solo se ve desde su país [Geo-blocked].'),
+)
+
+
+def aviso_de_la_lista(nombre=''):
+    """'Canal 8 (720p) [Not 24/7]' -> el motivo para descartarlo; '' si la lista no avisa nada."""
+    return next((motivo for patron, motivo in _AVISOS_DE_LA_LISTA if patron.search(nombre or '')), '')
 
 
 # ── Contenido: en vivo, película o serie ─────────────────────────────

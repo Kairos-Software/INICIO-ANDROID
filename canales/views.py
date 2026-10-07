@@ -8,6 +8,7 @@ Pantallas de canales del panel:
   /canales/series/detalle/          temporadas, capítulos, disponibilidad y fuentes de una serie
   /canales/canal/<id>/editar/       nombre, logo, categoría... de un canal, y sus fuentes
   /canales/probar/                  probar una dirección suelta y, si anda, agregarla como canal
+  /canales/lo-mas-visto/            lo más visto (canales, películas y series), sin datos de clientes
 
 Lo que tarda (verificar) se hace de a tandas: la página llama una y otra
 vez a las direcciones ".../lote/" (responden JSON) y va mostrando el avance.
@@ -28,7 +29,7 @@ from django.views.decorators.http import require_POST
 from usuarios.decoradores import requiere_permiso
 from usuarios.permisos import chequear_permiso
 
-from . import consultas, servicios
+from . import consultas, estadisticas, servicios
 from .clasificar import formato, idioma_y_pais, limpiar_nombre
 from .forms import CanalForm, CanalNuevoForm, FuentesFormSet, ImportarListaForm, ProbarLinkForm, QuitarCanalesForm
 from .models import Canal, Contenido, EntradaImportada, Fuente, Idioma, Importacion
@@ -376,3 +377,36 @@ def limpiar_nombres(request):
     else:
         messages.info(request, 'Los nombres ya estaban limpios.')
     return redirect('canales:inicio')
+
+
+# ── Lo más visto ─────────────────────────────────────────────────────
+
+_PESTANIAS_VISTO = [
+    ('vivo', 'En vivo', 'bi-broadcast'),
+    ('pelicula', 'Películas', 'bi-film'),
+    ('serie', 'Series', 'bi-collection-play'),
+]
+
+
+@requiere_permiso('ver_estadisticas')
+def lo_mas_visto(request):
+    try:
+        dias = int(request.GET.get('dias', 30))
+    except ValueError:
+        dias = 30
+    if dias not in estadisticas.PERIODOS:
+        dias = 30
+    tipo = request.GET.get('tipo', 'vivo')
+    if tipo not in Contenido.values:
+        tipo = 'vivo'
+    ranking = estadisticas.lo_mas_visto(dias)
+    return render(request, 'canales/lo_mas_visto.html', {
+        'dias': dias,
+        'periodos': estadisticas.PERIODOS,
+        'tipo': tipo,
+        'pestanias': [(clave, nombre, icono, ranking.totales[clave]) for clave, nombre, icono in _PESTANIAS_VISTO],
+        'filas': getattr(ranking, tipo),
+        'total': ranking.totales[tipo],
+        'puestos': estadisticas.PUESTOS,
+        'puede_editar': chequear_permiso(request.user, 'importar_canales'),
+    })

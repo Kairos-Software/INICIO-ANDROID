@@ -33,6 +33,7 @@ MODULOS_PERMISOS = [
     ('Contenido', [
         ('ver_canales', 'Ver el contenido (canales, películas y series) y el estado de sus fuentes'),
         ('importar_canales', 'Importar listas (M3U), verificar las fuentes y editar o quitar contenido'),
+        ('ver_estadisticas', 'Ver lo más visto: canales, películas y series (totales, sin datos de clientes)'),
     ]),
     ('Reventa', [
         ('administrar_reventa', 'Ver y gestionar a todos los revendedores y sus clientes; regalar y ajustar créditos'),
@@ -63,6 +64,7 @@ PERMISOS_RESTRINGIDOS = frozenset({
     'ver_actividad',
     'ver_canales',
     'importar_canales',
+    'ver_estadisticas',
     'administrar_reventa',
     'gestionar_paquetes',
     'confirmar_compras',

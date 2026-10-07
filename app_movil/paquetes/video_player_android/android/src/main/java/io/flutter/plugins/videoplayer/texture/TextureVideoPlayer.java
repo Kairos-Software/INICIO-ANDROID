@@ -87,6 +87,11 @@ public final class TextureVideoPlayer extends VideoPlayer implements SurfaceProd
           }
           androidx.media3.exoplayer.trackselection.DefaultTrackSelector trackSelector =
               new androidx.media3.exoplayer.trackselection.DefaultTrackSelector(context);
+          // Kairos TV: si el video trae varios audios, arranca con el español
+          // (de fábrica usa el que el archivo marca como principal, que suele
+          // ser el idioma original). Si no trae español, sigue igual. Ver ../../README.md.
+          trackSelector.setParameters(
+              trackSelector.buildUponParameters().setPreferredAudioLanguages("es").build());
           builder
               .setTrackSelector(trackSelector)
               .setMediaSourceFactory(asset.getMediaSourceFactory(context));

@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Caché de Gradle de los paquetes copiados (se genera al compilar)
+/paquetes/*/android/.gradle/

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load canales_extras %}
+{% comment %}
+    Lo más visto: canales en vivo, películas y series, ordenados por el tiempo
+    que se miraron en el período (7, 30 o 90 días). Son totales de todos los
+    aparatos: no dice quién miró qué. Los datos los cuenta la app (ver
+    canales/estadisticas.py). Solo con el permiso ver_estadisticas.
+{% endcomment %}
+
+{% block titulo %}Lo más visto{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        {% if permisos.ver_canales %}<a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Contenido</a>{% endif %}
+        <h1 class="pagina-titulo">Lo más visto</h1>
+        <p class="pagina-bajada">Qué se mira más en la app, sumando todos los aparatos (no dice quién miró qué). Sirve para saber qué contenido conviene traer y qué sobra.</p>
+    </div>
+    <nav class="pestanias" aria-label="Período">
+        {% for d in periodos %}
+        <a href="?tipo={{ tipo }}&dias={{ d }}" {% if d == dias %}class="activa" aria-current="page"{% endif %}>Últimos {{ d }} días</a>
+        {% endfor %}
+    </nav>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<nav class="pestanias contenido-pestanias mb-4" aria-label="Tipo de contenido">
+    {% for clave, nombre, icono, totales in pestanias %}
+    <a href="?tipo={{ clave }}&dias={{ dias }}" {% if clave == tipo %}class="activa" aria-current="page"{% endif %}>
+        <i class="bi {{ icono }}" aria-hidden="true"></i> {{ nombre }}
+        <span class="texto-suave">· {{ totales.tiempo }}</span>
+    </a>
+    {% endfor %}
+</nav>
+
+<section class="tarjeta mb-4">
+    <dl class="ficha-datos resumen-metricas">
+        <div><dt>Tiempo mirado</dt><dd class="dato fs-4">{{ total.tiempo }}</dd></div>
+        <div><dt>Vistas <span class="texto-suave">(más de 1 minuto)</span></dt><dd class="dato fs-4">{{ total.vistas }}</dd></div>
+        <div><dt>Agregados a favoritos</dt><dd class="dato fs-4">{{ total.favoritos }}</dd></div>
+    </dl>
+</section>
+
+<section class="tarjeta p-0">
+    <h2 class="tarjeta-titulo px-4 pt-4">
+        {% if tipo == 'vivo' %}Canales en vivo{% elif tipo == 'pelicula' %}Películas{% else %}Series{% endif %}
+        <span class="texto-suave fw-normal">· los {{ puestos }} primeros</span>
+    </h2>
+    {% if filas %}
+    <div class="table-responsive">
+        <table class="table tabla mb-0">
+            <thead><tr>
+                <th scope="col">#</th>
+                <th scope="col">{% if tipo == 'vivo' %}Canal{% elif tipo == 'pelicula' %}Película{% else %}Serie{% endif %}</th>
+                <th scope="col" class="text-end">Tiempo mirado</th>
+                <th scope="col" class="text-end">Vistas</th>
+                {% if tipo == 'serie' %}<th scope="col" class="text-end">Capítulos vistos</th>{% endif %}
+                <th scope="col" class="text-end">Favoritos</th>
+            </tr></thead>
+            <tbody>
+            {% for f in filas %}
+                <tr>
+                    <td class="texto-suave">{{ forloop.counter }}</td>
+                    <td>
+                        <div class="celda-canal">
+                            <span class="logo-mini" data-iniciales="{{ f.nombre|iniciales }}">{% if f.logo %}<img src="{{ f.logo }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% else %}{{ f.nombre|iniciales }}{% endif %}</span>
+                            <div>
+                                {% if f.canal and puede_editar %}
+                                <a href="{% url 'canales:canal_editar' f.canal.pk %}?volver={{ request.get_full_path|urlencode }}">{{ f.nombre }}</a>
+                                {% else %}{{ f.nombre }}{% endif %}
+                                {% if not f.en_la_app %}<span class="chip chip-no ms-1">Quitado</span>{% endif %}
+                            </div>
+                        </div>
+                    </td>
+                    <td class="dato text-end text-nowrap">{{ f.tiempo }}</td>
+                    <td class="dato text-end">{{ f.vistas }}</td>
+                    {% if tipo == 'serie' %}<td class="dato text-end">{{ f.capitulos }}</td>{% endif %}
+                    <td class="dato text-end">{{ f.favoritos }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="texto-suave px-4 pb-4 mb-0">Todavía no hay datos en este período. La app empieza a contar lo que se mira desde la versión que trae esta función: a medida que los clientes la usen, aparece acá.</p>
+    {% endif %}
+</section>
+{% endblock %}

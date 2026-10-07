@@ -70,6 +70,11 @@ class _EnfocableState extends State<Enfocable> {
   Timer? _largo;
   bool _fueLargo = false;
 
+  /// OK se apretó acá. Sin esto, al soltar el OK que abrió una sección desde
+  /// el menú, lo "soltaba" la primera película (que ya tenía el foco) y se
+  /// abría sola: parecía que el botón se tocaba dos veces.
+  bool _apretado = false;
+
   @override
   void dispose() {
     _largo?.cancel();
@@ -77,6 +82,10 @@ class _EnfocableState extends State<Enfocable> {
   }
 
   void _alCambiarFoco(bool enfocado) {
+    if (!enfocado) {
+      _apretado = false;
+      _largo?.cancel();
+    }
     setState(() => _enfocado = enfocado);
     widget.alEnfocar?.call(enfocado);
     if (enfocado) {
@@ -99,8 +108,10 @@ class _EnfocableState extends State<Enfocable> {
       if (evento is KeyDownEvent) widget.alOk?.call();
       return KeyEventResult.handled;
     }
-    // Con OK largo: se decide al soltar (o cuando pasa el tiempo apretado)
+    // Con OK largo: se decide al soltar (o cuando pasa el tiempo apretado).
+    // Solo cuenta si el OK se apretó acá (ver _apretado).
     if (evento is KeyDownEvent) {
+      _apretado = true;
       _fueLargo = false;
       _largo?.cancel();
       _largo = Timer(_esperaOkLargo, () {
@@ -109,7 +120,8 @@ class _EnfocableState extends State<Enfocable> {
       });
     } else if (evento is KeyUpEvent) {
       _largo?.cancel();
-      if (!_fueLargo) widget.alOk?.call();
+      if (_apretado && !_fueLargo) widget.alOk?.call();
+      _apretado = false;
     }
     return KeyEventResult.handled;
   }

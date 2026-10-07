@@ -17,6 +17,7 @@ import '../api/cliente.dart';
 import '../api/modelos.dart';
 import '../aparato.dart';
 import 'control_senal.dart';
+import 'medidor.dart';
 
 // ── Series ─────────────────────────────────────────────────────────
 
@@ -448,7 +449,10 @@ class Biblioteca extends ChangeNotifier {
   Iterable<String> get miLista => _miLista;
 
   void alternarMiLista(String clave) {
-    _miLista.contains(clave) ? _miLista.remove(clave) : _miLista.add(clave);
+    if (!_miLista.remove(clave)) {
+      _miLista.add(clave);
+      Medidor.favorito(clave); // para "Lo más visto" del panel (sin decir quién)
+    }
     _preferencias?.setStringList(_claveLista, _miLista.toList());
     notifyListeners();
   }

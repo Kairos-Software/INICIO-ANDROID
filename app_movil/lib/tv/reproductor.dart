@@ -19,6 +19,8 @@
 ///   OK (o Play/Pausa): pausa / sigue y muestra la barra.
 ///   Izquierda/Derecha: -10 s / +10 s (y la barra queda en la línea de tiempo).
 ///   Arriba/Abajo: la barra (pausa, siguiente episodio, favoritos, Ajustes).
+///   En la barra: Izquierda/Derecha van de botón en botón (en los bordes se
+///       quedan), Abajo va a la línea de tiempo y, desde ahí, Arriba vuelve a Pausa.
 ///   Atrás: esconde la barra; si no está, sale.
 ///   Guarda por dónde va cada 5 s y al terminar un capítulo sigue con el próximo.
 ///
@@ -362,6 +364,7 @@ class _ReproductorVivoTvState extends State<ReproductorVivoTv> {
                   bottom: MargenTv.abajo,
                   child: _PanelControles(
                     ayuda: '← → elegir  ·  OK: confirmar  ·  Atrás: cerrar',
+                    alMoverse: _esperarParaCerrar,
                     fila: [
                       _BotonCuadrado(
                         icono: Icons.view_list_rounded,
@@ -940,7 +943,8 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
                   right: MargenTv.derecha,
                   bottom: MargenTv.abajo,
                   child: _PanelControles(
-                    ayuda: 'Atrás: ocultar',
+                    ayuda: '← →: elegir  ·  ↓: línea de tiempo  ·  Atrás: ocultar',
+                    alMoverse: _reiniciarEspera,
                     fila: [
                       _BotonCuadrado(
                         icono: _reproduciendo ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -982,6 +986,10 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
                         _control.saltar(cuanto);
                         _reiniciarEspera();
                       },
+                      alSubir: () {
+                        _botonPausa.requestFocus();
+                        _reiniciarEspera();
+                      },
                     ),
                   ),
                 ),
@@ -995,11 +1003,20 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
 
 // La línea de tiempo: con el foco, Izquierda/Derecha mueven ±10 s.
 class _LineaDeTiempo extends StatelessWidget {
-  const _LineaDeTiempo({required this.posicion, required this.duracion, required this.alSaltar, this.nodo});
+  const _LineaDeTiempo({
+    required this.posicion,
+    required this.duracion,
+    required this.alSaltar,
+    required this.alSubir,
+    this.nodo,
+  });
 
   final Duration posicion;
   final Duration duracion;
   final ValueChanged<Duration> alSaltar;
+
+  /// Arriba: a los botones (el reproductor lo lleva a Pausa).
+  final VoidCallback alSubir;
   final FocusNode? nodo;
 
   @override
@@ -1022,6 +1039,10 @@ class _LineaDeTiempo extends StatelessWidget {
             }
             if (evento.logicalKey == LogicalKeyboardKey.arrowRight) {
               alSaltar(const Duration(seconds: 10));
+              return KeyEventResult.handled;
+            }
+            if (evento.logicalKey == LogicalKeyboardKey.arrowUp) {
+              alSubir();
               return KeyEventResult.handled;
             }
             return KeyEventResult.ignored;
@@ -1171,11 +1192,32 @@ class _EstadoSenal extends StatelessWidget {
 
 /// El panel de abajo con los controles (vidrio oscuro) y una ayuda de las teclas.
 class _PanelControles extends StatelessWidget {
-  const _PanelControles({required this.fila, this.debajo, this.ayuda});
+  const _PanelControles({required this.fila, this.debajo, this.ayuda, this.alMoverse});
 
   final List<Widget> fila;
   final Widget? debajo;
   final String? ayuda;
+
+  /// Avisa que se movió por la fila (para que la barra no se esconda mientras se usa).
+  final VoidCallback? alMoverse;
+
+  /// Izquierda/Derecha en la fila: al botón de al lado, en el orden en que se
+  /// ven. Sin esto Flutter elegía "el más cercano" mirando toda la barra, y a
+  /// veces saltaba a otro lado. En los bordes se queda (no se escapa de la fila).
+  KeyEventResult _moverEnLaFila(FocusNode fila, KeyEvent evento) {
+    final tecla = evento.logicalKey;
+    if (evento is KeyUpEvent || (tecla != LogicalKeyboardKey.arrowLeft && tecla != LogicalKeyboardKey.arrowRight)) {
+      return KeyEventResult.ignored;
+    }
+    final botones = fila.traversalDescendants.where((n) => n.canRequestFocus && n.context != null).toList()
+      ..sort((a, b) => a.rect.left.compareTo(b.rect.left));
+    final actual = botones.indexWhere((n) => n.hasPrimaryFocus);
+    if (actual < 0) return KeyEventResult.ignored;
+    final otro = actual + (tecla == LogicalKeyboardKey.arrowRight ? 1 : -1);
+    if (otro >= 0 && otro < botones.length) botones[otro].requestFocus();
+    alMoverse?.call();
+    return KeyEventResult.handled;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1191,7 +1233,12 @@ class _PanelControles extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(children: fila),
+            Focus(
+              canRequestFocus: false,
+              skipTraversal: true,
+              onKeyEvent: _moverEnLaFila,
+              child: Row(children: fila),
+            ),
             if (debajo != null) ...[const SizedBox(height: 22), debajo!],
             if (ayuda != null) ...[
               const SizedBox(height: 16),

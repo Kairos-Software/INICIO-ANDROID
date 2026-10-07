@@ -11,6 +11,8 @@
 ///     reconecta a la MISMA (suele ser un microcorte o un link con vencimiento
 ///     que se renueva al volver a pedirlo); una película sigue donde iba. En
 ///     vivo, si se caen todas, se vuelve a recorrerlas antes de rendirse.
+///   - Lo más visto: cuenta el tiempo que el video se ve de verdad (no en
+///     pausa ni cargando) y se lo pasa al [Medidor], que se lo manda al servidor.
 ///   - [enSuperficie]: el video se dibuja en una superficie de Android
 ///     (SurfaceView) en vez de una textura. En muchos TV box la textura muestra
 ///     la imagen verde o negra con el sonido bien; es lo que usa la TV.
@@ -33,6 +35,7 @@ import '../api/modelos.dart';
 import '../senales.dart';
 import 'ajustes_video.dart';
 import 'datos.dart';
+import 'medidor.dart';
 
 class ControlSenal extends ChangeNotifier {
   ControlSenal(this.api);
@@ -97,6 +100,12 @@ class ControlSenal extends ChangeNotifier {
   int _reconexiones = 0;
   int _vueltas = 0;
 
+  /// Lo más visto: desde cuándo se está viendo (null = no se ve: pausa,
+  /// cargando...), cuánto se vio desde que se abrió y si ya contó como vista.
+  DateTime? _seVeDesde;
+  Duration _vistoDeEstaVez = Duration.zero;
+  bool _vistaContada = false;
+
   bool get _enVivo => canal?.contenido == 'vivo';
 
   Duration get _esperaInicio => _enVivo ? _esperaVivo : _esperaArchivo;
@@ -109,7 +118,10 @@ class ControlSenal extends ChangeNotifier {
 
   /// Empieza a reproducir [nuevo] (corta lo que estaba). [desde]: para seguir donde se dejó.
   Future<void> abrir(Canal nuevo, {Duration? desde}) {
+    _medir(seVe: false);
     canal = nuevo;
+    _vistoDeEstaVez = Duration.zero;
+    _vistaContada = false;
     _desde = desde;
     _empezarDeCero();
     return _probar(0);
@@ -250,6 +262,7 @@ class ControlSenal extends ChangeNotifier {
   void _vigilar() {
     final actual = video;
     if (actual == null || _cerrado) return;
+    _medir(seVe: actual.value.isPlaying && !actual.value.isBuffering && !actual.value.hasError);
     if (actual.value.hasError) {
       _fallo(actual, Falla.de(actual.value.errorDescription ?? ''));
       return;
@@ -269,6 +282,25 @@ class ControlSenal extends ChangeNotifier {
       _vigiaTrabado = null;
     }
     _avisar();
+  }
+
+  /// Lo más visto: suma el rato que pasó desde el último aviso del video, si
+  /// se estaba viendo. El video avisa cada medio segundo mientras se
+  /// reproduce: si pasó mucho más (la app estuvo en segundo plano), no se cuenta.
+  void _medir({required bool seVe}) {
+    final ahora = DateTime.now();
+    final desde = _seVeDesde;
+    _seVeDesde = seVe ? ahora : null;
+    final actual = canal;
+    if (desde == null || actual == null) return;
+    final rato = ahora.difference(desde);
+    if (rato > const Duration(seconds: 5)) return;
+    Medidor.sumar(api, actual.id, rato);
+    _vistoDeEstaVez += rato;
+    if (!_vistaContada && _vistoDeEstaVez >= Medidor.paraUnaVista) {
+      _vistaContada = true;
+      Medidor.contarVista(actual.id);
+    }
   }
 
   /// La fuente actual falló mientras se veía. Si venía andando bien, se
@@ -384,6 +416,8 @@ class ControlSenal extends ChangeNotifier {
 
   @override
   void dispose() {
+    _medir(seVe: false);
+    Medidor.enviar(api); // al salir del reproductor, se avisa lo que se miró
     _cerrado = true;
     ++_intento;
     _cancelarVigias();

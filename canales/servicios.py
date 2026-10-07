@@ -116,6 +116,9 @@ def _motivo_de_descarte(entrada, importacion, contenido, tipo, idioma, pais, nom
         return 'Es RTMP: la app todavía no reproduce ese formato.'
     if _sin_nombre(nombre):
         return 'No tiene un nombre definido.'
+    aviso = clasificar.aviso_de_la_lista(entrada.nombre)
+    if aviso:
+        return aviso
     if importacion.solo_espanol and idioma == 'otro':
         return f'No está en español (país: {pais}).' if pais else 'No está en español.'
     if importacion.descartar_sin_logo and not entrada.logo.strip():

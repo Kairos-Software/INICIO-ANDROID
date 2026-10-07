@@ -77,6 +77,25 @@ void main() {
     expect(foco?.context?.findAncestorWidgetOfExactType<Semantics>()?.properties.label, 'Película 1');
   });
 
+  testWidgets('OK en el menú abre la sección y nada más (no "toca" también lo primero)', (tester) async {
+    await _abrirTv(tester, SeccionTv.series); // vacía: el foco está en "Buscar"
+    for (var i = 0; i < 4 && _enfocado() != 'menú: series'; i++) {
+      await _tecla(tester, LogicalKeyboardKey.arrowLeft);
+    }
+    await _tecla(tester, LogicalKeyboardKey.arrowUp);
+    expect(_enfocado(), 'menú: peliculas');
+    // Como un control de verdad: el OK se suelta un rato después, cuando la
+    // sección nueva ya se dibujó y el foco está en la primera película
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    final foco = FocusManager.instance.primaryFocus;
+    expect(foco?.context?.findAncestorWidgetOfExactType<Semantics>()?.properties.label, 'Película 1');
+    expect(find.byType(PantallaTv), findsOneWidget);
+    expect(ModalRoute.of(tester.element(find.byType(PantallaTv)))?.isCurrent, isTrue); // no abrió la película
+  });
+
   testWidgets('si el foco quedó afuera, el control lo recupera (nunca queda "muerto")', (tester) async {
     await _abrirTv(tester, SeccionTv.series);
     await _focoAfuera(tester);

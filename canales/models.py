@@ -5,6 +5,9 @@ Los canales de TV en vivo.
 
     Importacion  1 ──< EntradaImportada  (una lista M3U subida y qué pasó con cada línea)
 
+    Canal  1 ──< Visto            (cuánto se miró cada día, todos los aparatos juntos)
+    FavoritoAgregado              (cuántas veces se agregó algo a favoritos cada día)
+
 Un canal (ej: "Canal 26") puede tener VARIAS fuentes: distintas direcciones
 de la misma señal. La app usa la primera que funcione y, si se corta, pasa
 sola a la siguiente (failover). Así, si una fuente se cae, el canal sigue.
@@ -270,3 +273,44 @@ class EntradaImportada(models.Model):
 
     def get_tipo_display(self):
         return dict(Fuente.Tipo.choices).get(self.tipo) or ('RTMP' if self.tipo == 'rtmp' else 'Se averigua al verificar')
+
+
+# ── Lo más visto (estadísticas para el administrador) ────────────────
+
+class Visto(models.Model):
+    """
+    Cuánto se miró un canal, película o capítulo en un día, sumando todos
+    los aparatos. NO se guarda quién lo miró: solo los totales. Lo cuenta la
+    app y lo manda de a ratos (POST /api/v1/canales/visto/).
+    """
+    canal = models.ForeignKey(Canal, on_delete=models.CASCADE, related_name='vistos')
+    fecha = models.DateField(db_index=True)
+    segundos = models.PositiveIntegerField(default=0)
+    vistas = models.PositiveIntegerField(default=0, help_text='Veces que alguien lo miró más de un minuto.')
+
+    class Meta:
+        verbose_name = 'visto'
+        verbose_name_plural = 'vistos'
+        constraints = [models.UniqueConstraint(fields=['canal', 'fecha'], name='un_visto_por_canal_y_dia')]
+
+    def __str__(self):
+        return f'{self.canal} · {self.fecha} · {self.segundos // 60} min'
+
+
+class FavoritoAgregado(models.Model):
+    """
+    Cuántas veces se agregó algo a favoritos en un día (todos los aparatos
+    juntos, sin saber quién). `clave` es la que usa la app: "c:<id>" para un
+    canal o película, "s:<nombre>" para una serie entera.
+    """
+    clave = models.CharField(max_length=130)
+    fecha = models.DateField(db_index=True)
+    veces = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'favorito agregado'
+        verbose_name_plural = 'favoritos agregados'
+        constraints = [models.UniqueConstraint(fields=['clave', 'fecha'], name='un_favorito_por_clave_y_dia')]
+
+    def __str__(self):
+        return f'{self.clave} · {self.fecha} · {self.veces}'

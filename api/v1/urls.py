@@ -53,6 +53,7 @@ urlpatterns = [
 
     path('canales/', canales.lista, name='canales'),
     path('canales/fuentes/<int:pk>/falla/', canales.avisar_falla, name='fuente_falla'),
+    path('canales/visto/', canales.visto, name='canales_visto'),
     path('canales/fuentes/<int:pk>/resolver/', canales.resolver, name='fuente_resolver'),
 
     # La última versión de la app (para avisar que hay una nueva)

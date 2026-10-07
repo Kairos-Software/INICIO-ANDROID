@@ -243,6 +243,36 @@ void main() {
     await _atras(tester);
     expect(find.text('abrir'), findsOneWidget);
   });
+
+  testWidgets('película: Derecha e Izquierda recorren los botones de la barra, uno por uno', (tester) async {
+    await _abrir(tester, ReproductorVodTv(canal: _canal(9, 'Matrix (1999)')));
+    await _tecla(tester, LogicalKeyboardKey.select);
+    expect(_enfocado(), 'pausa');
+    await _tecla(tester, LogicalKeyboardKey.arrowRight);
+    expect(_enfocado(), 'Agregar a favoritos');
+    await _tecla(tester, LogicalKeyboardKey.arrowRight);
+    expect(_enfocado(), 'Ajustes');
+    await _tecla(tester, LogicalKeyboardKey.arrowRight); // en el borde: se queda
+    expect(_enfocado(), 'Ajustes');
+    await _tecla(tester, LogicalKeyboardKey.arrowLeft);
+    await _tecla(tester, LogicalKeyboardKey.arrowLeft);
+    expect(_enfocado(), 'pausa');
+    // Abajo, a la línea de tiempo; Arriba vuelve a la fila
+    await _tecla(tester, LogicalKeyboardKey.arrowDown);
+    expect(_enfocado(), 'línea de tiempo');
+    await _tecla(tester, LogicalKeyboardKey.arrowUp);
+    expect(_enfocado(), 'pausa');
+  });
+
+  testWidgets('película: después de adelantar, Arriba lleva a los botones y Derecha los recorre', (tester) async {
+    await _abrir(tester, ReproductorVodTv(canal: _canal(9, 'Matrix (1999)')));
+    await _tecla(tester, LogicalKeyboardKey.arrowRight); // adelanta: el foco queda en la línea de tiempo
+    expect(_enfocado(), 'línea de tiempo');
+    await _tecla(tester, LogicalKeyboardKey.arrowUp);
+    expect(_enfocado(), 'pausa');
+    await _tecla(tester, LogicalKeyboardKey.arrowRight);
+    expect(_enfocado(), 'Agregar a favoritos');
+  });
 }
 
 /// Unos cuadros (300 ms). Sin pumpAndSettle: dejaría correr el reloj mientras

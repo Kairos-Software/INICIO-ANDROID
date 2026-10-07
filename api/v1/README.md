@@ -29,7 +29,7 @@ Hay **dos tipos de sesión**:
 - **Usuario del panel** (`login/`, usuario y contraseña): administradores y
   revendedores. El superusuario ve los canales sin créditos ni límite de dispositivos.
 - **Cliente** (`cliente/login/`, código de 8 números): solo puede usar
-  `canales/`, `cliente/` y `cliente/logout/` (lo demás responde 403). Su token
+  `canales/` (con `fuentes/<id>/resolver/` y los avisos de falla y de lo visto), `cliente/` y `cliente/logout/` (lo demás responde 403). Su token
   empieza con `c_`. Si su servicio vence o lo suspenden, todo responde 403
   `servicio_vencido` / `suspendido`; si le liberan el dispositivo, 401.
   Reglas en `reventa/sesiones.py`.
@@ -53,6 +53,7 @@ Hay **dos tipos de sesión**:
 | POST | `/api/v1/usuarios/<id>/restablecer-password/` | `restablecer_password_usuarios` | `{password1, password2, obligar_cambio}` |
 | GET | `/api/v1/canales/` | sesión (usuario o cliente vigente) | Canales de TV activos, agrupados por categoría, con sus fuentes en orden de prioridad |
 | POST | `/api/v1/canales/fuentes/<id>/falla/` | sesión (usuario o cliente) | `{motivo, detalle}` (opcionales). La app avisa que no pudo reproducir esa fuente: el servidor la vuelve a probar y, si también falla, deja de mandarla; si a él le anda pero fallan 3 aparatos en un día, la oculta 7 días. → `{estado}` |
+| POST | `/api/v1/canales/visto/` | sesión (usuario o cliente) | `{vistos: [{id, segundos, vista}], favoritos: ["c:12", "s:Serie"]}`. Lo que se miró desde el último aviso y lo agregado a favoritos. Se suma a los totales del día **sin guardar quién lo mandó** ("Lo más visto" del panel). → `{sumados}` |
 | GET | `/api/v1/app/` | — | Última versión publicada de la app: `{version, notas, descarga}` (`version: null` si no hay). La app lo consulta al abrirse |
 | POST | `/api/v1/cliente/login/` | — | `{codigo, dispositivo}` → `{token, cliente}`. Errores: 400 `codigo_invalido`, 403 `servicio_vencido`/`suspendido`, 409 `cuenta_en_uso`, 429 `login_bloqueado` |
 | GET | `/api/v1/cliente/` | cliente | Su estado (`nombre`, `vence`, `pantallas`, `conectados`, `vendedor`: `{nombre, telefono}`). La app lo llama cada 5 min: es la "señal" que mantiene ocupada su pantalla |

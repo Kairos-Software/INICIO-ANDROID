@@ -104,6 +104,12 @@ class ClasificarTests(TestCase):
         self.assertTrue(clasificar.para_adultos('Canal', 'XXX-VIP [ 18+ ]'))
         self.assertFalse(clasificar.para_adultos('TN', 'Noticias'))
 
+    def test_aviso_de_la_lista(self):
+        self.assertIn('Not 24/7', clasificar.aviso_de_la_lista('Canal 8 Mar del Plata (720p) [Not 24/7]'))
+        self.assertIn('Geo-blocked', clasificar.aviso_de_la_lista('Adult Swim Latin America (1080p) [Geo-blocked]'))
+        self.assertEqual(clasificar.aviso_de_la_lista('A24 (1080p)'), '')
+        self.assertEqual(clasificar.aviso_de_la_lista('TN [HD]'), '')
+
 
 class ImportarTests(TestCase):
 
@@ -147,7 +153,8 @@ class ImportarTests(TestCase):
                  '#EXTINF:-1 group-title="XXX-VIP [ 18+ ]",XXX: Algo\nhttp://x/u/p/4\n'
                  '#EXTINF:-1,\nhttp://x/u/p/5\n'
                  '#EXTINF:-1,Repetido\nhttp://x/u/p/3\n'
-                 '#EXTINF:-1,Por RTMP\nrtmp://x/vivo\n')
+                 '#EXTINF:-1,Por RTMP\nrtmp://x/vivo\n'
+                 '#EXTINF:-1,Canal 8 (720p) [Not 24/7]\nhttp://x/u/p/8\n')
         importar_m3u(lista, solo_espanol=True, descartar_vod=True)
         motivos = dict(EntradaImportada.objects.values_list('posicion', 'motivo'))
         estados = dict(EntradaImportada.objects.values_list('posicion', 'estado'))
@@ -158,6 +165,7 @@ class ImportarTests(TestCase):
         self.assertEqual(motivos[5], 'No tiene un nombre definido.')
         self.assertEqual(estados[6], EntradaImportada.Estado.REPETIDA)
         self.assertIn('RTMP', motivos[7])
+        self.assertIn('Not 24/7', motivos[8])
         self.assertEqual(list(Canal.objects.values_list('nombre', flat=True)), ['Telefe'])
 
     def test_por_defecto_importa_peliculas_y_series(self):

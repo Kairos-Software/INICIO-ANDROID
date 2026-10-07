@@ -27,6 +27,14 @@ reproducir esa versión de la app (sin `formatos` = solo HLS, como la 1.0.0).
       servidor le anda pero varios aparatos avisan que no se reproduce, se
       oculta unos días igual ("caida"). motivo: formato | rechazo | tiempo |
       conexion | error (ver servicios.MOTIVOS_DE_LOS_APARATOS).
+
+    POST /api/v1/canales/visto/
+      {"vistos": [{"id": 12, "segundos": 300, "vista": true}], "favoritos": ["c:12", "s:Flash Gordon"]}
+      -> {"sumados": 3}
+      Lo que se miró en este aparato desde el último aviso ("vista": es la
+      primera vez que se avisa de ese rato: cuenta una vista) y lo que se
+      agregó a favoritos. Se suma a los totales del día: NO se guarda quién
+      lo mandó. Lo usa el panel en "Lo más visto" (ver canales/estadisticas.py).
 """
 
 from django.core.cache import cache
@@ -34,7 +42,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from canales import paginas
+from canales import estadisticas, paginas
 from canales.consultas import agrupar_por_categoria, canales_disponibles, fuentes_usables, tipos_pedidos
 from canales.models import Contenido, Fuente
 from canales.servicios import registrar_falla_en_aparato, reverificar_por_aviso
@@ -74,6 +82,15 @@ def avisar_falla(request, pk):
         if registrar_falla_en_aparato(fuente, quien, motivo, detalle):
             estado = Fuente.Estado.CAIDA
     return Response({'estado': estado})
+
+
+@api_view(['POST'])
+def visto(request):
+    vistos = request.data.get('vistos') if isinstance(request.data, dict) else None
+    favoritos = request.data.get('favoritos') if isinstance(request.data, dict) else None
+    sumados = estadisticas.registrar(vistos if isinstance(vistos, list) else [],
+                                     favoritos if isinstance(favoritos, list) else [])
+    return Response({'sumados': sumados})
 
 
 # La dirección que entrega un sitio dura un rato: si varios aparatos piden la

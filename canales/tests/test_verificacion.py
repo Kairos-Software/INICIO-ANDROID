@@ -550,6 +550,25 @@ class ResolverPaginaTests(TestCase):
     def test_solo_paginas(self):
         self.assertEqual(self.resolver('https://x/a.m3u8').status_code, 404)
 
+    def test_tambien_un_cliente_que_entra_con_el_codigo(self):
+        """Antes le daba 403: los canales de Twitch, Dailymotion... no le andaban a ningún cliente."""
+        from decimal import Decimal
+
+        from reventa import servicios as reventa
+        juan = reventa.crear_revendedor('juan', 'Clave-segura-2026', precio_pantalla=Decimal('5000'))
+        reventa.regalar_creditos(juan, 5)
+        cliente = reventa.crear_cliente(juan, 'Ana')
+        reventa.renovar(cliente, dispositivos=1)
+        cliente.refresh_from_db()
+        token = APIClient().post(reverse('api_v1:cliente_login'),
+                                 {'codigo': cliente.codigo_legible, 'dispositivo': 'TV'}).json()['token']
+        self.app.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        resuelto = paginas.Resuelto('https://cdn/x.m3u8', 'hls', {})
+        with mock.patch.object(paginas, 'resolver', return_value=resuelto):
+            respuesta = self.resolver('https://www.twitch.tv/canal')
+        self.assertEqual(respuesta.status_code, 200, respuesta.content)
+        self.assertEqual(respuesta.json()['url'], 'https://cdn/x.m3u8')
+
 
 class EditarCanalTests(TestCase):
 
