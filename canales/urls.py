@@ -14,6 +14,7 @@ urlpatterns = [
     path('importaciones/<int:pk>/borrar/', views.importacion_borrar, name='importacion_borrar'),
     path('catalogo/', views.catalogo, name='catalogo'),
     path('series/', views.series, name='series'),
+    path('como-en-la-app/', views.como_en_la_app, name='como_en_la_app'),
     path('series/detalle/', views.serie_detalle, name='serie_detalle'),
     path('canal/<int:pk>/editar/', views.canal_editar, name='canal_editar'),
     path('probar/', views.probar, name='probar'),

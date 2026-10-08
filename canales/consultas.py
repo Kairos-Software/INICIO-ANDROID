@@ -206,6 +206,63 @@ def series(texto='', estado='', categoria='', idioma='', origen='', sin_logo=Fal
     return resultado
 
 
+# ── Como en la app: lo que ve un cliente, categoría por categoría ────
+
+def nombre_en_la_app(nombre):
+    """
+    El nombre de la categoría como lo muestra la app (categoriaLegible en
+    lib/movil/datos.dart): 'AR | DEPORTES' -> 'Deportes'. Sin nombre -> 'Otros'.
+    """
+    partes = [p.strip() for p in (nombre or '').split('|') if p.strip()]
+    ultima = partes[-1] if partes else (nombre or '').strip()
+    if not ultima:
+        return 'Otros'
+    if ultima == ultima.upper() and len(ultima) > 3:
+        return ultima[0] + ultima[1:].lower()
+    return ultima
+
+
+@dataclass
+class SerieEnLaApp:
+    nombre: str
+    categoria: Categoria | None = None
+    logo: str = ''
+    capitulos: int = 0
+    tiene_el_primero: bool = False
+
+    @property
+    def completa(self):
+        """Como Serie.completa: la app solo muestra las que se pueden empezar (T1:E1) y tienen al menos 3."""
+        return self.tiene_el_primero and self.capitulos >= MINIMO_DE_CAPITULOS
+
+
+def como_en_la_app(contenido=Contenido.VIVO):
+    """
+    Lo que ve un cliente en la app, con sus mismas reglas: solo lo que se
+    puede reproducir, agrupado por categoría y en el mismo orden. En series,
+    las series completas (no los capítulos sueltos).
+      -> [(categoría o None, [canales o SerieEnLaApp]), ...]
+    Cada aparato puede mostrar un poco menos (lo que ya le falló, códecs que no tiene).
+    """
+    canales = canales_disponibles(TIPOS_QUE_REPRODUCE_LA_APP, contenido).prefetch_related(None)
+    if contenido != Contenido.SERIE:
+        return agrupar_por_categoria(canales)
+    por_nombre = {}
+    for canal in canales:
+        nombre, temporada, numero, _ = clasificar.episodio(canal.nombre)
+        serie = por_nombre.setdefault(nombre.lower(), SerieEnLaApp(nombre, canal.categoria))
+        serie.logo = serie.logo or canal.logo
+        serie.capitulos += 1
+        serie.tiene_el_primero = serie.tiene_el_primero or (temporada, numero) == (1, 1)
+    grupos = {}
+    for serie in por_nombre.values():
+        if serie.completa:
+            grupos.setdefault(serie.categoria.pk if serie.categoria else None, (serie.categoria, []))[1].append(serie)
+    for _, series_del_grupo in grupos.values():
+        series_del_grupo.sort(key=lambda s: s.nombre.lower())
+    return list(grupos.values())
+
+
 def ultimas_importaciones(limite=10):
     return Importacion.objects.select_related('usuario')[:limite]
 

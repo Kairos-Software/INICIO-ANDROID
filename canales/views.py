@@ -5,6 +5,7 @@ Pantallas de canales del panel:
   /canales/importaciones/<id>/      la prueba de una lista: el avance, qué es apto, qué no y por qué, y cargar las aptas
   /canales/catalogo/                canales en vivo y películas, con filtros para quitar los que no sirven
   /canales/series/                  series agrupadas, con búsqueda, filtros y paginación
+  /canales/como-en-la-app/          lo que ve un cliente: categorías con cuántos tienen y cuáles son (para ordenar)
   /canales/series/detalle/          temporadas, capítulos, disponibilidad y fuentes de una serie
   /canales/canal/<id>/editar/       nombre, logo, categoría... de un canal, y sus fuentes
   /canales/probar/                  probar una dirección suelta y, si anda, agregarla como canal
@@ -40,6 +41,7 @@ from .verificacion import Resultado, verificar_url, verificar_varias
 CANALES_POR_PAGINA = 120
 ENTRADAS_POR_PAGINA = 100
 SERIES_POR_PAGINA = 24
+COMO_EN_LA_APP_POR_PAGINA = 150
 
 
 def _parametros_sin_pagina(request):
@@ -221,6 +223,49 @@ def series(request):
         'parametros': _parametros_sin_pagina(request),
         'categorias': consultas.categorias_con_canales(Contenido.SERIE),
         'origenes': consultas.origenes(Contenido.SERIE),
+        'puede_editar': chequear_permiso(request.user, 'importar_canales'),
+        'todas_las_categorias': Categoria.objects.order_by('nombre'),
+    })
+
+
+@requiere_permiso('ver_canales')
+def como_en_la_app(request):
+    """
+    Lo que ve un cliente, como en la app: las categorías con cuántos tienen
+    ("Kids 5") y, al elegir una, cuáles son. Para ordenar viendo lo mismo que él.
+    """
+    contenido = request.GET.get('contenido', '')
+    if contenido not in Contenido.values:
+        contenido = Contenido.VIVO
+    grupos = [
+        {
+            'clave': str(categoria.pk) if categoria else 'ninguna',
+            'categoria': categoria,
+            'nombre': consultas.nombre_en_la_app(categoria.nombre if categoria else ''),
+            'cantidad': len(items),
+            'items': items,
+        }
+        for categoria, items in consultas.como_en_la_app(contenido)
+    ]
+    # Dos categorías que en la app se llaman igual ("AR | Deportes" y "Deportes"): marcarlas
+    veces = {}
+    for grupo in grupos:
+        veces[grupo['nombre'].casefold()] = veces.get(grupo['nombre'].casefold(), 0) + 1
+    for grupo in grupos:
+        grupo['repetida'] = veces[grupo['nombre'].casefold()] > 1
+        grupo['otro_nombre'] = (grupo['categoria'] is not None
+                                and grupo['categoria'].nombre.strip() != grupo['nombre'])
+
+    pedida = request.GET.get('categoria', '')
+    elegida = next((g for g in grupos if g['clave'] == pedida), grupos[0] if grupos else None)
+    return render(request, 'canales/como_en_la_app.html', {
+        'contenido': contenido,
+        'grupos': grupos,
+        'elegida': elegida,
+        'pagina': Paginator(elegida['items'] if elegida else [], COMO_EN_LA_APP_POR_PAGINA).get_page(
+            request.GET.get('pagina')),
+        'parametros': _parametros_sin_pagina(request),
+        'total': sum(g['cantidad'] for g in grupos),
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
         'todas_las_categorias': Categoria.objects.order_by('nombre'),
     })
@@ -416,7 +461,10 @@ def categorias(request):
             messages.success(request, _accion_de_categorias(request))
         except organizar.NoSePuede as error:
             messages.error(request, str(error))
-        return redirect('canales:categorias')
+        volver = request.POST.get('volver') or ''
+        if not url_has_allowed_host_and_scheme(volver, allowed_hosts={request.get_host()}):
+            volver = reverse('canales:categorias')
+        return redirect(volver)
 
     lista = list(organizar.categorias_con_cantidades())
     return render(request, 'canales/categorias.html', {

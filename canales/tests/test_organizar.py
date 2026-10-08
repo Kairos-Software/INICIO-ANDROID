@@ -3,7 +3,7 @@
 from django.test import TestCase
 from django.urls import reverse
 
-from canales import organizar
+from canales import consultas, organizar
 from canales.models import Canal, Categoria, Contenido, Fuente
 from canales.servicios import importar_m3u
 from usuarios.models import Rol, Usuario
@@ -162,3 +162,72 @@ class PantallasTests(TestCase):
         self.assertEqual(self.client.post(reverse('canales:catalogo_contenido')).status_code, 403)
         self.assertEqual(self.client.post(reverse('canales:series_acciones')).status_code, 403)
         self.assertNotContains(self.client.get(reverse('canales:series')), 'Mover elegidas')
+
+
+class ComoEnLaAppTests(TestCase):
+    """La vista "Como en la app": las categorías con cuántos tienen, con las reglas de la app."""
+
+    def setUp(self):
+        self.admin = Usuario.objects.create_superuser('admin', 'admin@test.com', 'x')
+        self.client.force_login(self.admin)
+        self.kids = Categoria.objects.create(nombre='Kids', orden=1)
+        self.ar_kids = Categoria.objects.create(nombre='AR | KIDS', orden=2)
+
+    def _con_fuente(self, nombre, contenido=Contenido.VIVO, categoria=None):
+        canal = _canal(nombre, contenido, categoria)
+        Fuente.objects.create(canal=canal, url=f'https://x/{canal.pk}.m3u8')
+        return canal
+
+    def test_el_nombre_como_lo_muestra_la_app(self):
+        self.assertEqual(consultas.nombre_en_la_app('AR | DEPORTES'), 'Deportes')
+        self.assertEqual(consultas.nombre_en_la_app('Kids'), 'Kids')
+        self.assertEqual(consultas.nombre_en_la_app('TV'), 'TV')
+        self.assertEqual(consultas.nombre_en_la_app(''), 'Otros')
+
+    def test_solo_cuenta_lo_que_la_app_muestra(self):
+        self._con_fuente('Zenón', categoria=self.kids)
+        self._con_fuente('Disney', categoria=self.kids)
+        quitado = self._con_fuente('Quitado', categoria=self.kids)
+        Canal.objects.filter(pk=quitado.pk).update(activo=False)
+        _canal('Sin fuentes', categoria=self.kids)
+        self._con_fuente('Suelto')
+        grupos = consultas.como_en_la_app(Contenido.VIVO)
+        self.assertEqual([(c and c.nombre, [x.nombre for x in items]) for c, items in grupos],
+                         [('Kids', ['Disney', 'Zenón']), (None, ['Suelto'])])
+
+    def test_series_solo_las_completas(self):
+        for n in (1, 2, 3):
+            self._con_fuente(f'Arrow S01 E0{n}', Contenido.SERIE, self.kids)
+        self._con_fuente('A medias S01 E02', Contenido.SERIE, self.kids)
+        [(categoria, series)] = consultas.como_en_la_app(Contenido.SERIE)
+        self.assertEqual((categoria, [(s.nombre, s.capitulos) for s in series]), (self.kids, [('Arrow', 3)]))
+
+    def test_la_pagina_muestra_categorias_numeros_y_repetidas(self):
+        self._con_fuente('Zenón', categoria=self.kids)
+        self._con_fuente('Paka Paka', categoria=self.ar_kids)
+        url = reverse('canales:como_en_la_app')
+        respuesta = self.client.get(url)
+        self.assertContains(respuesta, 'Repetida', count=2)        # en la app las dos se llaman "Kids"
+        self.assertContains(respuesta, 'en la lista: AR | KIDS')
+        self.assertContains(respuesta, 'Zenón')                     # la primera, elegida sola
+        self.assertNotContains(respuesta, 'Paka Paka')
+        self.assertContains(self.client.get(url, {'categoria': self.ar_kids.pk}), 'Paka Paka')
+
+    def test_renombrar_desde_la_pagina_vuelve_a_ella(self):
+        self._con_fuente('Paka Paka', categoria=self.ar_kids)
+        volver = reverse('canales:como_en_la_app') + f'?categoria={self.ar_kids.pk}'
+        respuesta = self.client.post(reverse('canales:categorias'), {
+            'accion': 'renombrar', 'categoria': self.ar_kids.pk, 'nombre': 'Infantiles', 'volver': volver})
+        self.assertRedirects(respuesta, volver)
+        self.ar_kids.refresh_from_db()
+        self.assertEqual(self.ar_kids.nombre, 'Infantiles')
+
+    def test_quien_solo_mira_no_ve_las_acciones(self):
+        self._con_fuente('Zenón', categoria=self.kids)
+        solo_ve = Usuario.objects.create_user(
+            'mira', None, 'x', rol=Rol.objects.create(nombre='Mira', permisos=['ver_canales']))
+        self.client.force_login(solo_ve)
+        respuesta = self.client.get(reverse('canales:como_en_la_app'))
+        self.assertContains(respuesta, 'Zenón')
+        self.assertNotContains(respuesta, 'Renombrar')
+        self.assertNotContains(respuesta, 'name="canal"')
