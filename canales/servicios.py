@@ -34,11 +34,11 @@ from django.utils import timezone
 from actividad.models import Accion
 from actividad.registro import registrar
 
-from . import clasificar
+from . import clasificar, organizar
 from .analisis import NOMBRES_DE_IDIOMAS
 from .consultas import MINIMO_DE_CAPITULOS, fuentes_usables
 from .m3u import leer_m3u, normalizar
-from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Importacion
+from .models import Canal, Contenido, EntradaImportada, Fuente, Importacion
 from .verificacion import NOMBRES_DE_CODECS, Resultado
 
 # De a cuántas se verifican, y cuánto puede tardar como máximo una tanda en
@@ -312,11 +312,8 @@ def _agregar(entrada, resultado, indice, categorias, origen, usuario, ahora):
     canal = indice.buscar(entrada.nombre, entrada.pais, entrada.contenido)
     nuevo = canal is None
     if nuevo:
-        categoria = None
-        if entrada.categoria:
-            if entrada.categoria not in categorias:
-                categorias[entrada.categoria], _ = Categoria.objects.get_or_create(nombre=entrada.categoria[:80])
-            categoria = categorias[entrada.categoria]
+        # Respeta lo que se ordenó en el panel: si "Argentina" se juntó en "Noticias", va a "Noticias"
+        categoria = organizar.categoria_por_nombre(entrada.categoria, categorias, usuario)
         canal = Canal(nombre=entrada.nombre, numero=entrada.numero, logo=entrada.logo, categoria=categoria,
                       tvg_id=entrada.tvg_id, pais=entrada.pais, idioma=entrada.idioma, contenido=entrada.contenido)
         canal.marcar_autor(usuario)
@@ -440,7 +437,7 @@ def cargar_lote(importacion, tamanio=TAMANIO_CARGA):
             return {**progreso(importacion), 'ocupada': True, 'canales_nuevos': 0}
         aptas = list(importacion.entradas.filter(estado=Estado.APTA).order_by('posicion')[:tamanio])
         indice = _IndiceDeCanales()
-        categorias = {}
+        categorias = organizar.indice_de_categorias()
         ahora = timezone.now()
         for entrada in aptas:
             canal = indice.buscar(entrada.nombre, entrada.pais, entrada.contenido)

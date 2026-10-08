@@ -9,6 +9,8 @@ Pantallas de canales del panel:
   /canales/canal/<id>/editar/       nombre, logo, categoría... de un canal, y sus fuentes
   /canales/probar/                  probar una dirección suelta y, si anda, agregarla como canal
   /canales/lo-mas-visto/            lo más visto (canales, películas y series), sin datos de clientes
+  /canales/categorias/              ordenar las categorías: crear, renombrar, juntar, borrar y el orden en la app
+  (y en el catálogo y en Series: mover a otra categoría y cambiar el tipo de lo elegido)
 
 Lo que tarda (verificar) se hace de a tandas: la página llama una y otra
 vez a las direcciones ".../lote/" (responden JSON) y va mostrando el avance.
@@ -29,10 +31,10 @@ from django.views.decorators.http import require_POST
 from usuarios.decoradores import requiere_permiso
 from usuarios.permisos import chequear_permiso
 
-from . import consultas, estadisticas, servicios
+from . import consultas, estadisticas, organizar, servicios
 from .clasificar import formato, idioma_y_pais, limpiar_nombre
 from .forms import CanalForm, CanalNuevoForm, FuentesFormSet, ImportarListaForm, ProbarLinkForm, QuitarCanalesForm
-from .models import Canal, Contenido, EntradaImportada, Fuente, Idioma, Importacion
+from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Idioma, Importacion
 from .verificacion import Resultado, verificar_url, verificar_varias
 
 CANALES_POR_PAGINA = 120
@@ -200,6 +202,7 @@ def catalogo(request):
         'contenidos': Contenido.choices,
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
         'resumen': consultas.resumen(),
+        'todas_las_categorias': Categoria.objects.order_by('nombre'),
     })
 
 
@@ -218,6 +221,8 @@ def series(request):
         'parametros': _parametros_sin_pagina(request),
         'categorias': consultas.categorias_con_canales(Contenido.SERIE),
         'origenes': consultas.origenes(Contenido.SERIE),
+        'puede_editar': chequear_permiso(request.user, 'importar_canales'),
+        'todas_las_categorias': Categoria.objects.order_by('nombre'),
     })
 
 
@@ -290,6 +295,134 @@ def catalogo_mostrar(request):
     else:
         messages.info(request, 'No había ningún canal quitado entre los elegidos.')
     return _volver_al_catalogo(request)
+
+
+def _categoria_elegida(request):
+    """La categoría de destino: una nueva (si se escribió) o una de la lista. None = sin categoría."""
+    nueva = request.POST.get('nueva_categoria', '').strip()
+    if nueva:
+        return organizar.categoria_por_nombre(nueva, usuario=request.user)
+    elegida = request.POST.get('categoria', '')
+    if elegida == 'ninguna':
+        return None
+    if not elegida.isdigit():
+        raise organizar.NoSePuede('Elegí una categoría o escribí una nueva.')
+    return get_object_or_404(Categoria, pk=elegida)
+
+
+@require_POST
+@requiere_permiso('importar_canales')
+def catalogo_categoria(request):
+    """Mueve lo elegido a otra categoría (o a una nueva)."""
+    try:
+        categoria = _categoria_elegida(request)
+    except organizar.NoSePuede as error:
+        messages.error(request, str(error))
+        return _volver_al_catalogo(request)
+    cantidad = organizar.mover_a_categoria(_canales_elegidos(request), categoria, request.user)
+    messages.success(request, f'Se movieron {cantidad} a "{categoria or "Sin categoría"}".' if cantidad
+                     else 'No se movió nada (ya estaban en esa categoría, o no había ninguno elegido).')
+    return _volver_al_catalogo(request)
+
+
+def _avisar_cambio_de_tipo(request, cantidad, sin_numero, contenido):
+    if not cantidad:
+        messages.info(request, 'No había ninguno elegido.')
+        return
+    destino = {Contenido.VIVO: 'canales en vivo', Contenido.PELICULA: 'películas', Contenido.SERIE: 'series'}[contenido]
+    messages.success(request, f'{cantidad} pasaron a {destino}.')
+    if sin_numero:
+        messages.warning(request, f'{sin_numero} no dicen temporada y capítulo en el nombre ("S01 E01"): la app '
+                                  f'los toma como series de un solo capítulo y no los muestra. Elegilos y pasalos '
+                                  f'a serie escribiendo el nombre de la serie, o editales el nombre.')
+
+
+@require_POST
+@requiere_permiso('importar_canales')
+def catalogo_contenido(request):
+    """Cambia el tipo de lo elegido: en vivo, película o serie (con nombre de serie: los numera)."""
+    contenido = request.POST.get('contenido', '')
+    try:
+        temporada = max(1, min(int(request.POST.get('temporada') or 1), 99))
+    except ValueError:
+        messages.error(request, 'La temporada tiene que ser un número.')
+        return _volver_al_catalogo(request)
+    try:
+        cantidad, sin_numero = organizar.cambiar_contenido(
+            _canales_elegidos(request), contenido, request.POST.get('nombre_serie', ''), temporada, request.user)
+    except organizar.NoSePuede as error:
+        messages.error(request, str(error))
+        return _volver_al_catalogo(request)
+    _avisar_cambio_de_tipo(request, cantidad, sin_numero, contenido)
+    return _volver_al_catalogo(request)
+
+
+@require_POST
+@requiere_permiso('importar_canales')
+def series_acciones(request):
+    """Sobre series enteras (todos sus capítulos): moverlas de categoría o pasarlas a películas."""
+    capitulos = organizar.capitulos_de(request.POST.getlist('serie'))
+    try:
+        if request.POST.get('accion') == 'mover':
+            categoria = _categoria_elegida(request)
+            cantidad = organizar.mover_a_categoria(capitulos, categoria, request.user)
+            messages.success(request, f'Se movieron {cantidad} capítulo(s) a "{categoria or "Sin categoría"}".'
+                             if cantidad else 'No se movió nada (ya estaban en esa categoría).')
+        elif request.POST.get('accion') == 'a_peliculas':
+            cantidad, _ = organizar.cambiar_contenido(capitulos, Contenido.PELICULA, usuario=request.user)
+            _avisar_cambio_de_tipo(request, cantidad, 0, Contenido.PELICULA)
+    except organizar.NoSePuede as error:
+        messages.error(request, str(error))
+    volver = request.POST.get('volver') or ''
+    if not url_has_allowed_host_and_scheme(volver, allowed_hosts={request.get_host()}):
+        volver = reverse('canales:series')
+    return redirect(volver)
+
+
+# ── Categorías ───────────────────────────────────────────────────────
+
+def _accion_de_categorias(request):
+    """Hace lo que se pidió en la página de categorías y devuelve el mensaje (o lanza NoSePuede)."""
+    accion = request.POST.get('accion', '')
+    if accion == 'crear':
+        categoria = organizar.crear_categoria(request.POST.get('nombre', ''), request.user)
+        return f'Se creó "{categoria}". Ahora elegí qué va adentro desde el catálogo ("Mover a categoría").'
+    if accion == 'renombrar':
+        categoria = get_object_or_404(Categoria, pk=request.POST.get('categoria', '0'))
+        viejo = categoria.nombre
+        final = organizar.renombrar_categoria(categoria, request.POST.get('nombre', ''), request.user)
+        return f'"{viejo}" ahora se llama "{final}".' if final.pk == categoria.pk else f'Ya existía "{final}": se juntaron.'
+    if accion == 'juntar':
+        elegidas = Categoria.objects.filter(pk__in=[pk for pk in request.POST.getlist('elegida') if pk.isdigit()])
+        final = organizar.juntar_categorias(list(elegidas), request.POST.get('destino', ''), request.user)
+        return f'Se juntaron en "{final}". Las listas que traigan esos nombres van a ir a "{final}".'
+    if accion == 'borrar':
+        categoria = get_object_or_404(Categoria, pk=request.POST.get('categoria', '0'))
+        cantidad = organizar.borrar_categoria(categoria, request.user)
+        return f'Se borró "{categoria}"' + (f' y {cantidad} quedaron sin categoría.' if cantidad else '.')
+    if accion == 'ordenar':
+        ordenes = {int(clave[6:]): int(valor or 0) for clave, valor in request.POST.items()
+                   if clave.startswith('orden_') and clave[6:].isdigit() and (valor or '0').isdigit()}
+        cantidad = organizar.ordenar_categorias(ordenes, request.user)
+        return f'Se guardó el orden ({cantidad} cambiaron).' if cantidad else 'El orden ya estaba así.'
+    raise organizar.NoSePuede('No se entendió qué hacer.')
+
+
+@requiere_permiso('importar_canales')
+def categorias(request):
+    """Crear, renombrar, juntar, borrar y ordenar las categorías."""
+    if request.method == 'POST':
+        try:
+            messages.success(request, _accion_de_categorias(request))
+        except organizar.NoSePuede as error:
+            messages.error(request, str(error))
+        return redirect('canales:categorias')
+
+    lista = list(organizar.categorias_con_cantidades())
+    return render(request, 'canales/categorias.html', {
+        'categorias': lista,
+        'parecidas': organizar.categorias_parecidas(lista),
+    })
 
 
 # ── Editar un canal ──────────────────────────────────────────────────

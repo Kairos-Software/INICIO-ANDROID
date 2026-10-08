@@ -1025,6 +1025,9 @@ a.chip:hover, a.chip.activo { filter: brightness(1.25); box-shadow: 0 0 0 1px cu
     transition: border-color .14s, box-shadow .14s;
 }
 .serie-tarjeta:hover { border-color: var(--celeste-borde); }
+/* Elegir series enteras (mover de categoría, pasar a películas): la casilla flota arriba a la derecha */
+.serie-tarjeta { position: relative; }
+.serie-tarjeta:has(.canal-elegir:checked) { border-color: var(--celeste); box-shadow: var(--brillo-celeste); }
 .serie-portada {
     display: grid; place-items: center; overflow: hidden;
     aspect-ratio: 2 / 3; background: var(--capa-alta);

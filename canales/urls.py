@@ -21,4 +21,8 @@ urlpatterns = [
     path('limpiar-nombres/', views.limpiar_nombres, name='limpiar_nombres'),
     path('catalogo/quitar/', views.catalogo_quitar, name='catalogo_quitar'),
     path('catalogo/mostrar/', views.catalogo_mostrar, name='catalogo_mostrar'),
+    path('catalogo/categoria/', views.catalogo_categoria, name='catalogo_categoria'),
+    path('catalogo/tipo/', views.catalogo_contenido, name='catalogo_contenido'),
+    path('series/acciones/', views.series_acciones, name='series_acciones'),
+    path('categorias/', views.categorias, name='categorias'),
 ]

@@ -156,6 +156,37 @@
         </button>
         {% endif %}
     </div>
+    {# Ordenar: mover a otra categoría y cambiar el tipo (canales/organizar.py) #}
+    <div class="acciones-catalogo">
+        <label for="categoria-destino" class="small texto-suave mb-0">Mover a categoría</label>
+        <select name="categoria" id="categoria-destino" class="form-select form-select-sm w-auto">
+            <option value="">Elegí...</option>
+            {% for c in todas_las_categorias %}<option value="{{ c.pk }}">{{ c.nombre }}</option>{% endfor %}
+            <option value="ninguna">Sin categoría</option>
+        </select>
+        <label for="nueva-categoria" class="visually-hidden">O una categoría nueva</label>
+        <input type="text" name="nueva_categoria" id="nueva-categoria" class="form-control form-control-sm w-auto" maxlength="80" placeholder="o una nueva">
+        <button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'canales:catalogo_categoria' %}" data-necesita-elegidos>
+            <i class="bi bi-folder-symlink" aria-hidden="true"></i> Mover elegidos
+        </button>
+        <a href="{% url 'canales:categorias' %}" class="btn btn-sm btn-link">Ordenar categorías</a>
+    </div>
+    <div class="acciones-catalogo">
+        <label for="contenido-destino" class="small texto-suave mb-0">Cambiar a</label>
+        <select name="contenido" id="contenido-destino" class="form-select form-select-sm w-auto">
+            {% for valor, nombre in contenidos %}<option value="{{ valor }}" {% if valor == filtros.contenido %}disabled{% endif %}>{{ nombre }}</option>{% endfor %}
+        </select>
+        <span style="display:inline-flex;gap:.5rem" data-solo-serie>
+            <label for="nombre-serie" class="visually-hidden">Nombre de la serie</label>
+            <input type="text" name="nombre_serie" id="nombre-serie" class="form-control form-control-sm w-auto" maxlength="90"
+                   placeholder="Nombre de la serie (opcional)" title="Si lo escribís, los elegidos quedan como capítulos de esa serie, numerados en orden: Serie S01 E01, E02...">
+            <label for="temporada" class="visually-hidden">Temporada</label>
+            <input type="number" name="temporada" id="temporada" class="form-control form-control-sm" style="width:6rem" min="1" max="99" value="1" title="Temporada">
+        </span>
+        <button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'canales:catalogo_contenido' %}" data-necesita-elegidos>
+            <i class="bi bi-arrow-left-right" aria-hidden="true"></i> Cambiar tipo
+        </button>
+    </div>
     {% endif %}
 </form>
 {% else %}
@@ -302,6 +333,15 @@
         if (boton && boton.dataset.confirmar && !window.confirm(boton.dataset.confirmar)) evento.preventDefault();
     });
     actualizar();
+
+    // "Cambiar a": el nombre de la serie y la temporada solo hacen falta al pasar a serie
+    var tipo = document.getElementById('contenido-destino');
+    var deSerie = form.querySelector('[data-solo-serie]');
+    if (tipo && deSerie) {
+        var mostrarDeSerie = function () { deSerie.style.display = tipo.value === 'serie' ? 'inline-flex' : 'none'; };
+        tipo.addEventListener('change', mostrarDeSerie);
+        mostrarDeSerie();
+    }
 })();
 </script>
 {% endblock %}

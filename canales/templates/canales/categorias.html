@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% comment %}
+    Ordenar las categorías (canales/organizar.py): crear, renombrar, juntar,
+    borrar y el orden en que aparecen en la app. Lo que se junta o renombra
+    queda recordado: las listas que traigan el nombre viejo van a la categoría
+    nueva. Qué va en cada categoría se elige desde el catálogo ("Mover a categoría").
+
+    Los formularios de cada fila (renombrar, borrar) están afuera de la tabla
+    y sus campos se unen con el atributo form="..." (no se pueden anidar formularios).
+{% endcomment %}
+
+{% block titulo %}Categorías{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Contenido</a>
+    <h1 class="pagina-titulo">Categorías</h1>
+    <p class="pagina-bajada">Ordená cómo se agrupa el contenido en la app. Juntá las repetidas, renombralas y elegí en qué orden aparecen. Lo que juntes queda recordado: si una lista nueva trae "Argentina" y vos la juntaste en "Noticias", va directo a "Noticias". Para elegir qué canales van en cada una, usá "Mover a categoría" en el catálogo.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+{% if parecidas %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Parecen repetidas</h2>
+    <p class="texto-suave small">Categorías con nombres parecidos (mayúsculas, "HD", el país adelante, en inglés...). Revisá y juntalas con un clic.</p>
+    <div class="d-grid gap-2">
+        {% for grupo in parecidas %}
+        <form method="post" class="d-flex flex-wrap align-items-center gap-2">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="juntar">
+            {% for c in grupo %}<input type="hidden" name="elegida" value="{{ c.pk }}">{% endfor %}
+            <span>{% for c in grupo %}<span class="chip">{{ c.nombre }} · {{ c.total }}</span> {% endfor %}</span>
+            <i class="bi bi-arrow-right texto-suave" aria-hidden="true"></i>
+            <label class="visually-hidden" for="destino-parecidas-{{ forloop.counter }}">Juntar en</label>
+            <input type="text" class="form-control form-control-sm w-auto" name="destino" id="destino-parecidas-{{ forloop.counter }}"
+                   value="{{ grupo.0.nombre }}" maxlength="80" list="nombres-de-categorias" required>
+            <button type="submit" class="btn btn-sm btn-acento"><i class="bi bi-intersect" aria-hidden="true"></i> Juntar</button>
+        </form>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Crear una categoría</h2>
+    <form method="post" class="d-flex flex-wrap gap-2">
+        {% csrf_token %}
+        <input type="hidden" name="accion" value="crear">
+        <label class="visually-hidden" for="nombre-nueva">Nombre</label>
+        <input type="text" class="form-control w-auto" name="nombre" id="nombre-nueva" maxlength="80" placeholder="Ej: Infantiles, Fútbol, Estrenos" required>
+        <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-plus-lg" aria-hidden="true"></i> Crear</button>
+    </form>
+</section>
+
+<section class="tarjeta p-0">
+    <form method="post" id="form-categorias">
+        {% csrf_token %}
+        <div class="d-flex flex-wrap align-items-center gap-2 px-4 pt-4 pb-3">
+            <h2 class="tarjeta-titulo mb-0 me-auto">Todas ({{ categorias|length }})</h2>
+            <span class="texto-suave small" id="cantidad-elegidas">Elegí dos o más para juntarlas</span>
+            <label class="visually-hidden" for="destino">Juntar en</label>
+            <input type="text" class="form-control form-control-sm w-auto" name="destino" id="destino" maxlength="80"
+                   list="nombres-de-categorias" placeholder="Juntar en... (nombre)">
+            <button type="submit" class="btn btn-sm btn-outline-secondary" name="accion" value="juntar" data-necesita-elegidas>
+                <i class="bi bi-intersect" aria-hidden="true"></i> Juntar elegidas
+            </button>
+            <button type="submit" class="btn btn-sm btn-acento" name="accion" value="ordenar">
+                <i class="bi bi-sort-numeric-down" aria-hidden="true"></i> Guardar orden
+            </button>
+        </div>
+        {% if categorias %}
+        <div class="table-responsive">
+            <table class="table tabla mb-0">
+                <thead><tr>
+                    <th scope="col"><span class="visually-hidden">Elegir</span></th>
+                    <th scope="col" title="Menor = aparece primero en la app">Orden</th>
+                    <th scope="col">Categoría</th>
+                    <th scope="col" class="text-end">En vivo</th>
+                    <th scope="col" class="text-end">Películas</th>
+                    <th scope="col" class="text-end">Capítulos</th>
+                    <th scope="col">Renombrar</th>
+                    <th scope="col"><span class="visually-hidden">Acciones</span></th>
+                </tr></thead>
+                <tbody>
+                {% for c in categorias %}
+                    <tr>
+                        <td><input class="form-check-input categoria-elegir" type="checkbox" name="elegida" value="{{ c.pk }}" aria-label="Elegir {{ c.nombre }}"></td>
+                        <td><input type="number" class="form-control form-control-sm" style="width:5.5rem" name="orden_{{ c.pk }}" value="{{ c.orden }}" min="0" aria-label="Orden de {{ c.nombre }}"></td>
+                        <td>
+                            <strong>{{ c.nombre }}</strong>
+                            {% if c.otros_nombres %}<div class="texto-suave small" title="Las listas que traigan estos nombres van a esta categoría">También: {{ c.otros_nombres|linebreaksbr }}</div>{% endif %}
+                            {% if not c.total %}<span class="chip">Vacía</span>{% endif %}
+                        </td>
+                        <td class="dato text-end">{% if c.en_vivo %}<a href="{% url 'canales:catalogo' %}?contenido=vivo&categoria={{ c.pk }}">{{ c.en_vivo }}</a>{% else %}0{% endif %}</td>
+                        <td class="dato text-end">{% if c.peliculas %}<a href="{% url 'canales:catalogo' %}?contenido=pelicula&categoria={{ c.pk }}">{{ c.peliculas }}</a>{% else %}0{% endif %}</td>
+                        <td class="dato text-end">{% if c.capitulos %}<a href="{% url 'canales:series' %}?categoria={{ c.pk }}">{{ c.capitulos }}</a>{% else %}0{% endif %}</td>
+                        <td>
+                            <div class="d-flex gap-1">
+                                <label class="visually-hidden" for="nombre-{{ c.pk }}">Nombre nuevo de {{ c.nombre }}</label>
+                                <input type="text" class="form-control form-control-sm" style="min-width:9rem" name="nombre" id="nombre-{{ c.pk }}"
+                                       form="renombrar-{{ c.pk }}" maxlength="80" placeholder="{{ c.nombre }}" required>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" form="renombrar-{{ c.pk }}" title="Renombrar">
+                                    <i class="bi bi-pencil" aria-hidden="true"></i><span class="visually-hidden">Renombrar</span>
+                                </button>
+                            </div>
+                        </td>
+                        <td>
+                            <button type="submit" class="btn btn-sm btn-link text-danger" form="borrar-{{ c.pk }}"
+                                    data-confirmar="¿Borrar &quot;{{ c.nombre }}&quot;?{% if c.total %} Sus {{ c.total }} quedan sin categoría (en la app, en &quot;Otros&quot;). Si querés pasarlos a otra, mejor juntala.{% endif %}">
+                                <i class="bi bi-trash" aria-hidden="true"></i><span class="visually-hidden">Borrar {{ c.nombre }}</span>
+                            </button>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="vacio"><i class="bi bi-tags" aria-hidden="true"></i><p>Todavía no hay categorías: se crean solas al importar listas, o creá una arriba.</p></div>
+        {% endif %}
+    </form>
+</section>
+
+{# Los formularios de cada fila (sus campos están en la tabla, unidos con form="...") #}
+{% for c in categorias %}
+<form method="post" id="renombrar-{{ c.pk }}" class="d-none">{% csrf_token %}<input type="hidden" name="accion" value="renombrar"><input type="hidden" name="categoria" value="{{ c.pk }}"></form>
+<form method="post" id="borrar-{{ c.pk }}" class="d-none">{% csrf_token %}<input type="hidden" name="accion" value="borrar"><input type="hidden" name="categoria" value="{{ c.pk }}"></form>
+{% endfor %}
+
+<datalist id="nombres-de-categorias">
+    {% for c in categorias %}<option value="{{ c.nombre }}">{% endfor %}
+</datalist>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // Confirmar antes de borrar
+    document.addEventListener('submit', function (evento) {
+        var boton = evento.submitter;
+        if (boton && boton.dataset.confirmar && !window.confirm(boton.dataset.confirmar)) evento.preventDefault();
+    });
+    // "Juntar elegidas" se habilita con dos o más (o una, si se escribe otro nombre de destino)
+    var casillas = document.querySelectorAll('.categoria-elegir');
+    var juntar = document.querySelector('[data-necesita-elegidas]');
+    var destino = document.getElementById('destino');
+    var cantidad = document.getElementById('cantidad-elegidas');
+    function actualizar() {
+        var elegidas = Array.prototype.filter.call(casillas, function (c) { return c.checked; }).length;
+        if (juntar) juntar.disabled = !(elegidas >= 2 || (elegidas === 1 && destino.value.trim()));
+        if (cantidad) cantidad.textContent = elegidas ? elegidas + ' elegida' + (elegidas > 1 ? 's' : '') : 'Elegí dos o más para juntarlas';
+    }
+    casillas.forEach(function (c) { c.addEventListener('change', actualizar); });
+    if (destino) destino.addEventListener('input', actualizar);
+    actualizar();
+})();
+</script>
+{% endblock %}

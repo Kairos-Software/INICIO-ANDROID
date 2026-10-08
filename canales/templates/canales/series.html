@@ -76,9 +76,41 @@
 </p>
 
 {% if pagina.object_list %}
+<form method="post" action="{% url 'canales:series_acciones' %}" id="form-series">
+{% csrf_token %}
+<input type="hidden" name="volver" value="{{ request.get_full_path }}">
+{% if puede_editar %}
+{# Sobre series enteras: todos sus capítulos (canales/organizar.py) #}
+<div class="acciones-catalogo mb-3">
+    <div class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" id="elegir-todas">
+        <label class="form-check-label" for="elegir-todas">Toda la página</label>
+    </div>
+    <span class="texto-suave small" id="cantidad-elegidas">Ninguna elegida</span>
+    <label for="categoria-destino" class="visually-hidden">Mover a categoría</label>
+    <select name="categoria" id="categoria-destino" class="form-select form-select-sm w-auto">
+        <option value="">Mover a categoría...</option>
+        {% for c in todas_las_categorias %}<option value="{{ c.pk }}">{{ c.nombre }}</option>{% endfor %}
+        <option value="ninguna">Sin categoría</option>
+    </select>
+    <label for="nueva-categoria" class="visually-hidden">O una categoría nueva</label>
+    <input type="text" name="nueva_categoria" id="nueva-categoria" class="form-control form-control-sm w-auto" maxlength="80" placeholder="o una nueva">
+    <button type="submit" class="btn btn-sm btn-outline-secondary" name="accion" value="mover" data-necesita-elegidas>
+        <i class="bi bi-folder-symlink" aria-hidden="true"></i> Mover elegidas
+    </button>
+    <button type="submit" class="btn btn-sm btn-outline-secondary" name="accion" value="a_peliculas" data-necesita-elegidas
+            data-confirmar="¿Pasar a películas todos los capítulos de las series elegidas? Cada capítulo queda como una película suelta.">
+        <i class="bi bi-film" aria-hidden="true"></i> Pasar a películas
+    </button>
+    <a href="{% url 'canales:categorias' %}" class="btn btn-sm btn-link">Ordenar categorías</a>
+</div>
+{% endif %}
 <div class="grilla-series">
     {% for serie in pagina %}
     <article class="serie-tarjeta">
+        {% if puede_editar %}
+        <input type="checkbox" class="form-check-input canal-elegir serie-elegir" name="serie" value="{{ serie.nombre }}" aria-label="Elegir {{ serie.nombre }}">
+        {% endif %}
         <a class="serie-portada" href="{% url 'canales:serie_detalle' %}?nombre={{ serie.nombre|urlencode }}" aria-label="Ver {{ serie.nombre }}">
             {% if serie.logo %}
             <img src="{{ serie.logo }}" alt="" loading="lazy" referrerpolicy="no-referrer">
@@ -105,6 +137,7 @@
     </article>
     {% endfor %}
 </div>
+</form>
 {% else %}
 <div class="tarjeta">
     <div class="vacio">
@@ -115,4 +148,39 @@
 {% endif %}
 
 {% include "parciales/_paginacion.html" with pagina=pagina parametros=parametros %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // Elegir series enteras para moverlas de categoría o pasarlas a películas
+    var form = document.getElementById('form-series');
+    if (!form) return;
+    var casillas = form.querySelectorAll('.serie-elegir');
+    var todas = document.getElementById('elegir-todas');
+    var cantidad = document.getElementById('cantidad-elegidas');
+    var botones = form.querySelectorAll('[data-necesita-elegidas]');
+    function actualizar() {
+        var elegidas = Array.prototype.filter.call(casillas, function (c) { return c.checked; }).length;
+        if (cantidad) cantidad.textContent = elegidas ? elegidas + ' elegida' + (elegidas > 1 ? 's' : '') : 'Ninguna elegida';
+        botones.forEach(function (boton) { boton.disabled = !elegidas; });
+        if (todas) {
+            todas.checked = elegidas && elegidas === casillas.length;
+            todas.indeterminate = elegidas > 0 && elegidas < casillas.length;
+        }
+    }
+    casillas.forEach(function (c) { c.addEventListener('change', actualizar); });
+    if (todas) {
+        todas.addEventListener('change', function () {
+            casillas.forEach(function (c) { c.checked = todas.checked; });
+            actualizar();
+        });
+    }
+    form.addEventListener('submit', function (evento) {
+        var boton = evento.submitter;
+        if (boton && boton.dataset.confirmar && !window.confirm(boton.dataset.confirmar)) evento.preventDefault();
+    });
+    actualizar();
+})();
+</script>
 {% endblock %}

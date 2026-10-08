@@ -26,6 +26,10 @@ from herramientas.modelos import ModeloBase
 class Categoria(ModeloBase):
     nombre = models.CharField(max_length=80)
     orden = models.PositiveIntegerField(default=0, help_text='Menor = aparece primero.')
+    # Los nombres que tenía antes o de las categorías que se le juntaron (uno
+    # por línea). Al importar, una lista que diga "Argentina" va a la categoría
+    # que tiene "Argentina" acá (ver organizar.categoria_por_nombre).
+    otros_nombres = models.TextField(blank=True)
 
     class Meta:
         verbose_name = 'categoría'

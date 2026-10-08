@@ -5,6 +5,7 @@ from django.core.validators import URLValidator
 
 from herramientas.formularios import EstiloBootstrapMixin
 
+from . import organizar
 from .m3u import leer_m3u
 from .models import Canal, Categoria, Fuente
 
@@ -116,7 +117,7 @@ class CanalForm(EstiloBootstrapMixin, forms.ModelForm):
             datos['motivo_quitado'] = ''
         nueva = (datos.get('nueva_categoria') or '').strip()
         if nueva:
-            datos['categoria'], _ = Categoria.objects.get_or_create(nombre=nueva)
+            datos['categoria'] = organizar.categoria_por_nombre(nueva)
             self.instance.categoria = datos['categoria']
         return datos
 
@@ -164,6 +165,6 @@ class CanalNuevoForm(EstiloBootstrapMixin, forms.ModelForm):
         datos = super().clean()
         nueva = (datos.get('nueva_categoria') or '').strip()
         if nueva:
-            datos['categoria'], _ = Categoria.objects.get_or_create(nombre=nueva)
+            datos['categoria'] = organizar.categoria_por_nombre(nueva)
             self.instance.categoria = datos['categoria']
         return datos
