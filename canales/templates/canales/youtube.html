@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% comment %}
+    Traer de YouTube: se pega el link de un canal oficial (o se elige uno de
+    los sugeridos) y sus videos largos entran como películas (o capítulos, si
+    el título dice "T1 E2"). Después se prueban y se cargan en la pantalla de
+    la importación, igual que una lista. Ver canales/youtube.py.
+{% endcomment %}
+
+{% block titulo %}Traer de YouTube · Contenido{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado">
+    <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Contenido</a>
+    <h1 class="pagina-titulo">Traer de YouTube</h1>
+    <p class="pagina-bajada">Películas y dibujos de canales <strong>oficiales</strong> que los suben gratis. En la app se ven con el reproductor de YouTube (con su publicidad), sin cuenta. Hace falta la app 1.2.8 o más nueva: las anteriores no los muestran.</p>
+</div>
+{% endblock %}
+
+{% block contenido %}
+<section class="tarjeta mb-4">
+    <h2 class="tarjeta-titulo">Canales revisados</h2>
+    <p class="texto-suave small">Verificados por YouTube, dejan ver sus videos en otras apps y están en español. Tocá uno y se completa el formulario.</p>
+    <div class="d-flex flex-wrap gap-2">
+        {% for nombre, url, categoria, minutos in sugeridos %}
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-url="{{ url }}" data-categoria="{{ categoria }}" data-minutos="{{ minutos }}">
+            {% if categoria %}<i class="bi bi-balloon" aria-hidden="true"></i>{% else %}<i class="bi bi-film" aria-hidden="true"></i>{% endif %}
+            {{ nombre }}
+        </button>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="tarjeta">
+    <h2 class="tarjeta-titulo">El canal</h2>
+    <form method="post" class="row g-3 align-items-start" novalidate id="form-youtube">
+        {% csrf_token %}
+        {% include "parciales/_campo.html" with campo=form.url ancho="col-12" %}
+        {% include "parciales/_campo.html" with campo=form.categoria ancho="col-md-6" %}
+        {% include "parciales/_campo.html" with campo=form.minimo_minutos ancho="col-md-6" %}
+        {% include "parciales/_campo.html" with campo=form.solo_espanol ancho="col-12" %}
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-youtube" aria-hidden="true"></i> Traer los videos
+            </button>
+            <span class="texto-suave small ms-2">Lee la lista del canal (no baja ningún video). Con miles de videos tarda hasta un minuto. Después se prueba cada uno y elegís cargarlos.</span>
+        </div>
+    </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var form = document.getElementById('form-youtube');
+    document.querySelectorAll('[data-url]').forEach(function (boton) {
+        boton.addEventListener('click', function () {
+            form.querySelector('[name=url]').value = boton.dataset.url;
+            form.querySelector('[name=categoria]').value = boton.dataset.categoria;
+            form.querySelector('[name=minimo_minutos]').value = boton.dataset.minutos;
+            form.querySelector('[name=url]').focus();
+        });
+    });
+    form.addEventListener('submit', function () {
+        var boton = form.querySelector('button[type=submit]');
+        boton.disabled = true;
+        boton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Leyendo el canal…';
+    });
+})();
+</script>
+{% endblock %}

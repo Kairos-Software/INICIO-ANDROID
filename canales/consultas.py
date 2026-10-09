@@ -14,7 +14,7 @@ from .models import Canal, Categoria, Contenido, Fuente, Importacion, hace_dias_
 # 1.0.0 no dice nada y solo sabe HLS: a esa se le manda solo HLS (si no,
 # mostraría canales que no puede abrir).
 TIPOS_QUE_REPRODUCE_LA_APP = [Fuente.Tipo.HLS, Fuente.Tipo.DASH, Fuente.Tipo.DIRECTO, Fuente.Tipo.RTSP,
-                              Fuente.Tipo.YOUTUBE, Fuente.Tipo.PAGINA]
+                              Fuente.Tipo.YOUTUBE, Fuente.Tipo.PAGINA, Fuente.Tipo.YT_VIDEO]
 TIPOS_DE_LA_APP_VIEJA = [Fuente.Tipo.HLS]
 
 

@@ -109,6 +109,9 @@ class Fuente(models.Model):
         RTSP = 'rtsp', 'RTSP'
         YOUTUBE = 'youtube', 'YouTube'
         PAGINA = 'pagina', 'Página de video (Twitch, Dailymotion...)'
+        # Películas y capítulos de canales oficiales de YouTube: la app los muestra en el
+        # reproductor de YouTube, sin sacarlos de ahí (ver canales/youtube.py)
+        YT_VIDEO = 'yt_video', 'Video de YouTube (reproductor oficial)'
 
     # `activa` la decide una persona; `estado` lo pone la verificación
     # automática. La app usa una fuente solo si está activa Y no está caída.

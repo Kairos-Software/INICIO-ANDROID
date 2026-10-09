@@ -97,6 +97,19 @@ class ControlSenal extends ChangeNotifier {
 
   /// Alguna fuente de este canal llegó a andar bien.
   bool _seVio = false;
+
+  /// Cuántos canales seguidos no anduvieron en este aparato (vuelve a 0
+  /// cuando uno anda bien un rato). Si son varios, o si el aparato no pudo
+  /// arrancar la imagen, en la TV se sugiere reiniciarla: hay televisores
+  /// (ej. Philips con Android TV 10) cuyo decodificador de video se traba
+  /// tras días en espera y muestran casi todo en verde o sin imagen.
+  static int canalesSinAndar = 0;
+
+  /// Cuántos canales seguidos sin andar alcanzan para sugerir reiniciar la TV.
+  static const _sinAndarParaSugerir = 2;
+
+  bool get sugerirReiniciarAparato =>
+      error != null && (canalesSinAndar >= _sinAndarParaSugerir || _ultimaFalla?.motivo == Falla.formato.motivo);
   int _reconexiones = 0;
   int _vueltas = 0;
 
@@ -110,7 +123,12 @@ class ControlSenal extends ChangeNotifier {
 
   Duration get _esperaInicio => _enVivo ? _esperaVivo : _esperaArchivo;
 
-  List<FuenteCanal> get fuentes => canal?.fuentesReproducibles ?? const [];
+  /// Las que abre este reproductor. Las de YouTube oficial ("yt_video") no:
+  /// van en el reproductor de YouTube (reproductor_youtube.dart).
+  List<FuenteCanal> get fuentes => [
+    for (final fuente in canal?.fuentesReproducibles ?? const <FuenteCanal>[])
+      if (fuente.tipo != 'yt_video') fuente,
+  ];
 
   bool get cargando => error == null && (video == null || video!.value.isBuffering);
 
@@ -182,6 +200,7 @@ class ControlSenal extends ChangeNotifier {
       final falla = _ultimaFalla;
       if (fuentes.isNotEmpty && falla != null && falla.motivo != Falla.sinInternet.motivo) {
         NoAnda.anotar(canal!, deFormato: falla.motivo == Falla.formato.motivo);
+        canalesSinAndar++;
       }
       _avisar();
       return;
@@ -245,6 +264,7 @@ class ControlSenal extends ChangeNotifier {
       if (_cerrado || video != nuevo || nuevo.value.hasError) return;
       _andaba = true;
       _seVio = true;
+      canalesSinAndar = 0;
       _reconexiones = 0;
       _vueltas = 0;
     });

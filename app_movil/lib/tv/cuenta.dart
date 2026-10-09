@@ -186,7 +186,8 @@ class CuentaTv extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           const Text(
-                            '¿Imagen verde o negra con sonido? Probá cambiar el modo de video.',
+                            '¿Imagen verde o negra con sonido? Probá cambiar el modo de video o desenchufá la TV '
+                            '30 segundos.',
                             style: LetraTv.ayuda,
                           ),
                           const SizedBox(height: 14),

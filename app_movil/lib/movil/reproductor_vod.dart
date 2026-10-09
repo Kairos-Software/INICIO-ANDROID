@@ -26,10 +26,18 @@ import 'control_senal.dart';
 import 'datos.dart';
 import 'detalle.dart';
 import 'estilo.dart';
+import 'reproductor_youtube.dart';
 
-/// Reproduce una película (si quedó a medias, sigue desde ahí).
+/// Reproduce una película (si quedó a medias, sigue desde ahí). Las de
+/// YouTube oficial, en el reproductor de YouTube (reproductor_youtube.dart).
 void reproducirPelicula(BuildContext context, Canal pelicula, {Duration? desde}) {
-  abrirPantalla<void>(context, PantallaReproductorVod(canal: pelicula, desde: desde ?? _dondeQuedo(context, pelicula)));
+  final dondeQuedo = desde ?? _dondeQuedo(context, pelicula);
+  abrirPantalla<void>(
+    context,
+    fuenteDeYoutube(pelicula) != null
+        ? PantallaYoutube(canal: pelicula, tv: false, desde: dondeQuedo)
+        : PantallaReproductorVod(canal: pelicula, desde: dondeQuedo),
+  );
 }
 
 /// Reproduce una serie por el capítulo que corresponde (el que quedó a medias o el siguiente).
@@ -39,14 +47,12 @@ void reproducirSerie(BuildContext context, Serie serie) {
 }
 
 void reproducirEpisodio(BuildContext context, Serie serie, Episodio episodio, {Duration? desde}) {
+  final dondeQuedo = desde ?? _dondeQuedo(context, episodio.canal);
   abrirPantalla<void>(
     context,
-    PantallaReproductorVod(
-      canal: episodio.canal,
-      serie: serie,
-      episodio: episodio,
-      desde: desde ?? _dondeQuedo(context, episodio.canal),
-    ),
+    fuenteDeYoutube(episodio.canal) != null
+        ? PantallaYoutube(canal: episodio.canal, tv: false, serie: serie, episodio: episodio, desde: dondeQuedo)
+        : PantallaReproductorVod(canal: episodio.canal, serie: serie, episodio: episodio, desde: dondeQuedo),
   );
 }
 

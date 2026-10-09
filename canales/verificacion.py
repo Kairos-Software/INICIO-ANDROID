@@ -529,6 +529,9 @@ def _verificar_rtsp(url):
 
 
 def verificar_url(url, tipo='hls', user_agent='', referer='', a_fondo=False):
+    if tipo == 'yt_video':
+        from . import youtube
+        return youtube.verificar_video(url)
     if tipo in ('youtube', 'pagina'):
         from . import paginas
         return paginas.verificar(url, youtube=tipo == 'youtube')

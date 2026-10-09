@@ -34,7 +34,7 @@ from django.utils import timezone
 from actividad.models import Accion
 from actividad.registro import registrar
 
-from . import clasificar, organizar
+from . import clasificar, organizar, youtube
 from .analisis import NOMBRES_DE_IDIOMAS
 from .consultas import MINIMO_DE_CAPITULOS, fuentes_usables
 from .m3u import leer_m3u, normalizar
@@ -177,6 +177,65 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
     importacion.save(update_fields=['total', 'para_verificar', 'terminada'])
     registrar(usuario, Accion.CREAR,
               f'Subió la lista de canales "{archivo}": {importacion.total} canal(es), '
+              f'{importacion.para_verificar} para verificar.', modulo='canales')
+    return importacion
+
+
+def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_minutos=40, solo_espanol=True):
+    """
+    Como crear_importacion, pero con los videos de un canal oficial de YouTube
+    (youtube.videos_del_canal): cada video es una película, o un capítulo si
+    el título dice temporada y capítulo ("T1 E2"). Después se prueba y se
+    carga igual que una lista (procesar_lote, cargar_lote).
+      categoria: dónde van todos ("Infantiles"); vacía = según el género del título.
+      minimo_minutos: los más cortos se descartan (avances, clips, Shorts).
+      solo_espanol: se descarta lo que el título dice que está en inglés.
+    """
+    archivo = f'YouTube: {listado.nombre}'[:150]
+    importacion = Importacion.objects.create(
+        archivo=archivo, usuario=usuario if getattr(usuario, 'pk', None) else None, solo_espanol=solo_espanol,
+    )
+    ya_guardadas = set(Fuente.objects.values_list('url', flat=True))
+    vistas = set()
+    nombres = youtube.nombres_distintos([video.titulo for video in listado.videos])
+    entradas = []
+    for posicion, (video, nombre) in enumerate(zip(listado.videos, nombres), start=1):
+        capitulo = youtube.capitulo(video.titulo)
+        nombre = capitulo or nombre
+        idioma = 'otro' if youtube.en_ingles(video.titulo) else 'es'
+        estado, motivo = Estado.PENDIENTE, ''
+        if video.url in vistas:
+            estado, motivo = Estado.REPETIDA, 'El mismo video aparece antes en este canal.'
+        elif video.url in ya_guardadas:
+            estado, motivo = Estado.REPETIDA, 'Este video ya estaba cargado.'
+        elif not video.segundos:
+            estado, motivo = Estado.DESCARTADA, 'No se sabe cuánto dura (puede ser un vivo o un estreno programado).'
+        elif video.segundos < minimo_minutos * 60:
+            estado = Estado.DESCARTADA
+            motivo = f'Dura {video.segundos // 60} min: es un video corto (se pidieron de {minimo_minutos} min o más).'
+        elif solo_espanol and idioma == 'otro':
+            estado, motivo = Estado.DESCARTADA, 'El título dice que está en inglés.'
+        elif clasificar.para_adultos(video.titulo, ''):
+            estado, motivo = Estado.DESCARTADA, 'Es contenido para adultos.'
+        elif _sin_nombre(nombre):
+            estado, motivo = Estado.DESCARTADA, 'No tiene un nombre definido.'
+        vistas.add(video.url)
+        entradas.append(EntradaImportada(
+            importacion=importacion, posicion=posicion,
+            nombre_original=video.titulo[:200], nombre=(nombre or 'Sin nombre')[:120], logo=video.imagen,
+            categoria=(categoria or youtube.genero(video.titulo))[:80], tvg_id=video.id, idioma=idioma,
+            contenido=Contenido.SERIE if capitulo else Contenido.PELICULA,
+            url=video.url, tipo=youtube.TIPO, estado=estado, motivo=motivo,
+        ))
+    EntradaImportada.objects.bulk_create(entradas, batch_size=1000)
+
+    importacion.total = len(entradas)
+    importacion.para_verificar = sum(1 for e in entradas if e.estado == Estado.PENDIENTE)
+    if not importacion.para_verificar:
+        importacion.terminada = timezone.now()
+    importacion.save(update_fields=['total', 'para_verificar', 'terminada'])
+    registrar(usuario, Accion.CREAR,
+              f'Trajo los videos del canal de YouTube "{listado.nombre}": {importacion.total} video(s), '
               f'{importacion.para_verificar} para verificar.', modulo='canales')
     return importacion
 

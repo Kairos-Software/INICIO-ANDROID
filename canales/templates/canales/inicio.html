@@ -22,6 +22,9 @@
         </a>
         {% endif %}
         {% if puede_importar %}
+        <a href="{% url 'canales:youtube' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-youtube" aria-hidden="true"></i> Traer de YouTube
+        </a>
         <a href="{% url 'canales:categorias' %}" class="btn btn-outline-secondary">
             <i class="bi bi-tags" aria-hidden="true"></i> Categorías
         </a>

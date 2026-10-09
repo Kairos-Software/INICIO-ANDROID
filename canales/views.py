@@ -8,6 +8,7 @@ Pantallas de canales del panel:
   /canales/como-en-la-app/          lo que ve un cliente: categorías con cuántos tienen y cuáles son (para ordenar)
   /canales/series/detalle/          temporadas, capítulos, disponibilidad y fuentes de una serie
   /canales/canal/<id>/editar/       nombre, logo, categoría... de un canal, y sus fuentes
+  /canales/youtube/                 traer las películas de un canal oficial de YouTube (se prueban y cargan como una lista)
   /canales/probar/                  probar una dirección suelta y, si anda, agregarla como canal
   /canales/lo-mas-visto/            lo más visto (canales, películas y series), sin datos de clientes
   /canales/categorias/              ordenar las categorías: crear, renombrar, juntar, borrar y el orden en la app
@@ -32,9 +33,10 @@ from django.views.decorators.http import require_POST
 from usuarios.decoradores import requiere_permiso
 from usuarios.permisos import chequear_permiso
 
-from . import consultas, estadisticas, organizar, servicios
+from . import consultas, estadisticas, organizar, servicios, youtube
 from .clasificar import formato, idioma_y_pais, limpiar_nombre
-from .forms import CanalForm, CanalNuevoForm, FuentesFormSet, ImportarListaForm, ProbarLinkForm, QuitarCanalesForm
+from .forms import (CanalForm, CanalNuevoForm, FuentesFormSet, ImportarListaForm, ProbarLinkForm, QuitarCanalesForm,
+                    TraerDeYoutubeForm)
 from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Idioma, Importacion
 from .verificacion import Resultado, verificar_url, verificar_varias
 
@@ -70,6 +72,28 @@ def inicio(request):
         'importaciones': consultas.ultimas_importaciones(),
         'puede_importar': chequear_permiso(request.user, 'importar_canales'),
     })
+
+
+@requiere_permiso('importar_canales')
+def traer_de_youtube(request):
+    """
+    Las películas de un canal oficial de YouTube: se leen sus videos (solo los
+    datos) y se arma una importación como la de una lista, que se prueba y se
+    carga en la misma pantalla.
+    """
+    form = TraerDeYoutubeForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        datos = form.cleaned_data
+        try:
+            listado = youtube.videos_del_canal(datos['url'])
+        except youtube.NoSePudo as error:
+            form.add_error('url', str(error))
+        else:
+            importacion = servicios.crear_importacion_de_youtube(
+                listado, request.user, categoria=datos['categoria'].strip(),
+                minimo_minutos=datos['minimo_minutos'], solo_espanol=datos['solo_espanol'])
+            return redirect(f'{importacion_url(importacion)}?empezar=1')
+    return render(request, 'canales/youtube.html', {'form': form, 'sugeridos': youtube.SUGERIDOS})
 
 
 def importacion_url(importacion):

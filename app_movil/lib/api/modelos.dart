@@ -148,12 +148,14 @@ class FuenteCanal {
   /// El formato de la señal, que el servidor averigua mirando lo que responde
   /// (como VLC): "hls", "dash", "directo" (MPEG-TS, MP4...: lo que mandan las
   /// listas IPTV sin extensión), "rtsp", "youtube" o "pagina" (Twitch,
-  /// Dailymotion...). Los dos últimos se resuelven al reproducir (senales.dart).
+  /// Dailymotion...). Esos dos se resuelven al reproducir (senales.dart).
+  /// "yt_video": película o capítulo de un canal oficial de YouTube, que se
+  /// ve en el reproductor de YouTube (movil/reproductor_youtube.dart).
   final String tipo;
 
   /// Los formatos que este reproductor sabe abrir. Se le mandan al servidor
   /// al pedir los canales (?formatos=...) para que no mande otros.
-  static const formatosQueReproduce = ['hls', 'dash', 'directo', 'rtsp', 'youtube', 'pagina'];
+  static const formatosQueReproduce = ['hls', 'dash', 'directo', 'rtsp', 'youtube', 'pagina', 'yt_video'];
 
   bool get esReproducible => formatosQueReproduce.contains(tipo);
 

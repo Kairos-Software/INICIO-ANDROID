@@ -62,6 +62,7 @@ Depuración por red).
 | `flutter_secure_storage` | Guardar el token cifrado en el celular (Keystore de Android). |
 | `flutter_localizations` | Textos de Flutter (calendario, copiar/pegar) en español. |
 | `video_player` | El reproductor de video (en Android usa ExoPlayer): HLS, DASH, video directo (MPEG-TS/MP4, el de las listas IPTV) y RTSP. Desde la 1.1.0; la 1.0.0 solo HLS. |
+| `webview_flutter`, `webview_flutter_android` | El reproductor oficial de YouTube para las películas de canales oficiales (ver `lib/movil/reproductor_youtube.dart`). |
 | `youtube_explode_dart` | Saca la dirección del video de YouTube en el aparato (ver `lib/senales.dart`). |
 | `cronet_http` | El motor de red de Chrome: con él se le habla a YouTube, que rechaza (error 429) al cliente de red de Dart. `android/app/build.gradle.kts` fija `cronet-api` en la 119 (la 141 no compila con este Android Gradle). |
 | `wakelock_plus` | Que la pantalla no se apague mientras se mira un canal. |

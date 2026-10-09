@@ -23,6 +23,7 @@
 ///       quedan), Abajo va a la línea de tiempo y, desde ahí, Arriba vuelve a Pausa.
 ///   Atrás: esconde la barra; si no está, sale.
 ///   Guarda por dónde va cada 5 s y al terminar un capítulo sigue con el próximo.
+///   Las de canales oficiales de YouTube van en su reproductor (movil/reproductor_youtube.dart).
 ///
 /// Las opciones y la barra se esconden solas a los 5 s (en pausa, no); la guía a los 15 s.
 library;
@@ -41,6 +42,7 @@ import '../movil/control_senal.dart';
 import '../movil/datos.dart';
 import '../movil/detalle.dart' show proximoEpisodio;
 import '../movil/estilo.dart';
+import '../movil/reproductor_youtube.dart';
 import '../sesion.dart';
 import 'estructura.dart' show DialogoTv;
 import 'foco.dart';
@@ -61,25 +63,27 @@ Future<void> verCanalTv(BuildContext context, Canal canal, {List<Canal>? lista})
   return abrirTv<void>(context, ReproductorVivoTv(canal: canal, lista: lista ?? catalogo.canales));
 }
 
-/// Reproduce una película (si quedó a medias, desde ahí).
+/// Reproduce una película (si quedó a medias, desde ahí). Las de YouTube
+/// oficial, en el reproductor de YouTube (movil/reproductor_youtube.dart).
 Future<void> reproducirPeliculaTv(BuildContext context, Canal pelicula, {bool desdeElInicio = false}) {
+  final desde = desdeElInicio ? null : _dondeQuedo(context, pelicula);
   return abrirTv<void>(
     context,
-    ReproductorVodTv(canal: pelicula, desde: desdeElInicio ? null : _dondeQuedo(context, pelicula)),
+    fuenteDeYoutube(pelicula) != null
+        ? PantallaYoutube(canal: pelicula, tv: true, desde: desde)
+        : ReproductorVodTv(canal: pelicula, desde: desde),
   );
 }
 
 /// Reproduce un capítulo (si no se dice cuál, el que corresponde: el que quedó a medias o el siguiente).
 Future<void> reproducirSerieTv(BuildContext context, Serie serie, {Episodio? episodio, bool desdeElInicio = false}) {
   final elegido = episodio ?? proximoEpisodio(serie, DatosScope.of(context).biblioteca);
+  final desde = desdeElInicio ? null : _dondeQuedo(context, elegido.canal);
   return abrirTv<void>(
     context,
-    ReproductorVodTv(
-      canal: elegido.canal,
-      serie: serie,
-      episodio: elegido,
-      desde: desdeElInicio ? null : _dondeQuedo(context, elegido.canal),
-    ),
+    fuenteDeYoutube(elegido.canal) != null
+        ? PantallaYoutube(canal: elegido.canal, tv: true, serie: serie, episodio: elegido, desde: desde)
+        : ReproductorVodTv(canal: elegido.canal, serie: serie, episodio: elegido, desde: desde),
   );
 }
 
@@ -1151,6 +1155,16 @@ class _EstadoSenal extends StatelessWidget {
               const Text('Esto no está disponible ahora', textAlign: TextAlign.center, style: LetraTv.pantalla),
               const SizedBox(height: 10),
               Text(error, textAlign: TextAlign.center, style: LetraTv.cuerpo),
+              // Varios canales seguidos sin andar: casi siempre es la TV (ver ControlSenal.canalesSinAndar)
+              if (control.sugerirReiniciarAparato) ...[
+                const SizedBox(height: 14),
+                const Text(
+                  'Si varios canales no andan o se ven en verde, desenchufá la TV 30 segundos y volvé a abrir '
+                  'Kairos TV: algunos televisores lo necesitan después de muchos días encendidos.',
+                  textAlign: TextAlign.center,
+                  style: LetraTv.ayuda,
+                ),
+              ],
               const SizedBox(height: 30),
               FocusTraversalGroup(
                 child: Wrap(

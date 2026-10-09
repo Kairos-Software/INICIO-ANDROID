@@ -29,6 +29,26 @@ def _texto_del_archivo(archivo):
     return archivo.read().decode('utf-8', errors='replace')
 
 
+class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
+    """Traer las películas de un canal oficial de YouTube (canales/youtube.py)."""
+    url = forms.CharField(
+        label='Link del canal de YouTube', max_length=300,
+        help_text='Ej: https://www.youtube.com/@MovieCentralEspanol. Solo canales OFICIALES, del dueño de lo que '
+                  'suben (con la tilde de verificado).',
+        widget=forms.TextInput(attrs={'placeholder': 'https://www.youtube.com/@canal', 'inputmode': 'url'}),
+    )
+    categoria = forms.CharField(
+        label='Categoría', required=False, max_length=80,
+        help_text='Vacía: cada película va según el género que dice su título (Acción, Terror...). Para dibujos, '
+                  'escribí "Infantiles".',
+    )
+    minimo_minutos = forms.IntegerField(
+        label='Solo videos de al menos (minutos)', min_value=1, max_value=600, initial=60,
+        help_text='Saca avances, clips y Shorts. Películas: 60. Dibujos: 20.',
+    )
+    solo_espanol = forms.BooleanField(label='Descartar los que dicen estar en inglés', required=False, initial=True)
+
+
 class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
     archivo = forms.FileField(
         label='Lista de canales',

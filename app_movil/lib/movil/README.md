@@ -24,6 +24,7 @@ están fuera del repo, en `D:\Desktop\diseños app pv\stitch\`. Los valores
 | `favoritos.dart` | Favoritos: canales, películas y series por separado. | `mobile-06`, `mobile-09` |
 | `en_vivo.dart` | Reproductor 16:9 arriba + categorías + lista de canales con favoritos; y la pantalla completa horizontal con zapping y Ajustes. | `(1).zip` |
 | `detalle.dart` | Detalle de película o serie: portada, Reproducir/Continuar, Mi lista, episodios por temporada, similares. | `(2).zip` |
+| `reproductor_youtube.dart` | Películas y capítulos de **canales oficiales de YouTube** (fuentes `yt_video`): se ven en el reproductor de YouTube dentro de un WebView (la "IFrame API", con su publicidad y sin cuenta), presentándose como kairostv.grupokairosarg.com. Celular: controles de YouTube. TV: OK pausa, ← → 10 s, Atrás sale. Guarda por dónde vas, suma a Lo más visto, sigue con el próximo capítulo y avisa al servidor si YouTube no lo deja ver. | — |
 | `reproductor_vod.dart` | Reproductor de películas y capítulos: controles, barra para adelantar, velocidad, Ajustes (calidad, idioma, imagen, fuente), siguiente capítulo, girar a pantalla completa. Guarda por dónde vas. | `(3).zip` |
 | `grilla.dart` | Secciones Películas y Series (grilla de pósters con chips de categoría). | grilla de "Tendencias" |
 | `mi_espacio.dart` | Cuenta (código, vencimiento, pantallas, vendedor), Continuar viendo, "volver al último canal al abrir" y, para usuarios del panel, sus herramientas. | armada con sus piezas |

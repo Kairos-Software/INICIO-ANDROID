@@ -18,6 +18,7 @@ urlpatterns = [
     path('series/detalle/', views.serie_detalle, name='serie_detalle'),
     path('canal/<int:pk>/editar/', views.canal_editar, name='canal_editar'),
     path('probar/', views.probar, name='probar'),
+    path('youtube/', views.traer_de_youtube, name='youtube'),
     path('lo-mas-visto/', views.lo_mas_visto, name='lo_mas_visto'),
     path('limpiar-nombres/', views.limpiar_nombres, name='limpiar_nombres'),
     path('catalogo/quitar/', views.catalogo_quitar, name='catalogo_quitar'),
