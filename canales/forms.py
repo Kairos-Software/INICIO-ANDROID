@@ -7,7 +7,7 @@ from herramientas.formularios import EstiloBootstrapMixin
 
 from . import organizar
 from .m3u import leer_m3u
-from .models import Canal, Categoria, Fuente
+from .models import Canal, Categoria, Contenido, Fuente
 
 # Una lista con películas y series (miles de entradas) puede pesar varios MB.
 # OJO: nginx también tiene que aceptarlo (client_max_body_size en despliegue/nginx).
@@ -29,6 +29,37 @@ def _texto_del_archivo(archivo):
     return archivo.read().decode('utf-8', errors='replace')
 
 
+# ── Importar directo en una categoría (listas M3U y YouTube) ──
+
+def _opciones_de_categorias(vacia):
+    """Las categorías para elegir, con las subcategorías debajo de su principal ("— Rock")."""
+    from .consultas import categorias_en_arbol
+    return [('', vacia)] + [(str(c.pk), f'{"— " if nivel else ""}{c.nombre}') for c, nivel in categorias_en_arbol()]
+
+
+def _campo_categoria_nueva():
+    return forms.CharField(label='O una categoría nueva', max_length=80, required=False,
+                           help_text='Si escribís acá, se crea (o se usa la que ya se llame así).')
+
+
+def _nombre_de_la_categoria(datos):
+    """La categoría elegida para todo lo importado: su nombre ('' = la que diga cada entrada)."""
+    nueva = ' '.join((datos.get('categoria_nueva') or '').split())
+    if nueva:
+        return nueva
+    elegida = Categoria.objects.filter(pk=datos.get('categoria_destino') or 0).first()
+    return elegida.nombre if elegida else ''
+
+
+class EditarDesdeOrganizarForm(forms.Form):
+    """La edición rápida de "Organizar contenido" (la categoría se lee aparte: views._categoria_elegida)."""
+    nombre = forms.CharField(max_length=120)
+    logo = forms.URLField(max_length=500, required=False)
+    numero = forms.CharField(max_length=10, required=False)
+    contenido = forms.ChoiceField(choices=Contenido.choices, required=False)
+    activo = forms.BooleanField(required=False)
+
+
 class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
     """Traer las películas de un canal oficial de YouTube (canales/youtube.py)."""
     url = forms.CharField(
@@ -37,16 +68,23 @@ class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
                   'suben (con la tilde de verificado).',
         widget=forms.TextInput(attrs={'placeholder': 'https://www.youtube.com/@canal', 'inputmode': 'url'}),
     )
-    categoria = forms.CharField(
-        label='Categoría', required=False, max_length=80,
-        help_text='Vacía: cada película va según el género que dice su título (Acción, Terror...). Para dibujos, '
-                  'escribí "Infantiles".',
+    categoria_destino = forms.ChoiceField(
+        label='Categoría', required=False,
+        help_text='Sin elegir: cada película va según el género que dice su título (Acción, Terror...).',
     )
+    categoria_nueva = _campo_categoria_nueva()
     minimo_minutos = forms.IntegerField(
         label='Solo videos de al menos (minutos)', min_value=1, max_value=600, initial=60,
         help_text='Saca avances, clips y Shorts. Películas: 60. Dibujos: 20.',
     )
     solo_espanol = forms.BooleanField(label='Descartar los que dicen estar en inglés', required=False, initial=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['categoria_destino'].choices = _opciones_de_categorias('Según el género de cada título')
+
+    def categoria(self):
+        return _nombre_de_la_categoria(self.cleaned_data)
 
 
 class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
@@ -73,6 +111,15 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
     descartar_adultos = forms.BooleanField(label='Descartar contenido para adultos', required=False, initial=True,
                                            help_text='XXX / +18, por el nombre o la categoría.')
     descartar_sin_logo = forms.BooleanField(label='Descartar los que no tienen logo', required=False)
+    categoria_destino = forms.ChoiceField(
+        label='Poner todo en la categoría', required=False,
+        help_text='Sin elegir: cada canal va a la categoría que dice la lista (group-title).',
+    )
+    categoria_nueva = _campo_categoria_nueva()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['categoria_destino'].choices = _opciones_de_categorias('La que dice la lista')
 
     def clean_archivo(self):
         archivo = self.cleaned_data['archivo']
@@ -87,8 +134,9 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
         return archivo
 
     def opciones(self):
-        return {campo: self.cleaned_data[campo] for campo in ('descartar_vod', 'solo_espanol', 'descartar_adultos',
-                                                              'descartar_sin_logo', 'a_fondo')}
+        opciones = {campo: self.cleaned_data[campo] for campo in ('descartar_vod', 'solo_espanol', 'descartar_adultos',
+                                                                  'descartar_sin_logo', 'a_fondo')}
+        return {**opciones, 'categoria': _nombre_de_la_categoria(self.cleaned_data)}
 
 
 class QuitarCanalesForm(forms.Form):

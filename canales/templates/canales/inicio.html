@@ -34,11 +34,11 @@
             <i class="bi bi-bar-chart-line" aria-hidden="true"></i> Lo más visto
         </a>
         {% endif %}
-        <a href="{% url 'canales:como_en_la_app' %}" class="btn btn-outline-secondary">
-            <i class="bi bi-phone" aria-hidden="true"></i> Como en la app
+        <a href="{% url 'canales:catalogo' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Catálogo (datos técnicos)
         </a>
-        <a href="{% url 'canales:catalogo' %}" class="btn btn-acento">
-            <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Ver catálogo
+        <a href="{% url 'canales:organizar' %}" class="btn btn-acento">
+            <i class="bi bi-diagram-3" aria-hidden="true"></i> Organizar contenido
         </a>
     </div>
 </div>
@@ -109,6 +109,8 @@
         {% include "parciales/_campo.html" with campo=form.solo_espanol ancho="col-md-6 col-xl-3" %}
         {% include "parciales/_campo.html" with campo=form.descartar_adultos ancho="col-md-6 col-xl-3" %}
         {% include "parciales/_campo.html" with campo=form.descartar_sin_logo ancho="col-md-6 col-xl-3" %}
+        {% include "parciales/_campo.html" with campo=form.categoria_destino ancho="col-md-6" %}
+        {% include "parciales/_campo.html" with campo=form.categoria_nueva ancho="col-md-6" %}
         <div class="col-12">
             <button type="submit" class="btn btn-primary">
                 <i class="bi bi-upload" aria-hidden="true"></i> Subir y analizar

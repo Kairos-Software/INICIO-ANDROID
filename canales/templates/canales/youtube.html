@@ -35,8 +35,9 @@
     <form method="post" class="row g-3 align-items-start" novalidate id="form-youtube">
         {% csrf_token %}
         {% include "parciales/_campo.html" with campo=form.url ancho="col-12" %}
-        {% include "parciales/_campo.html" with campo=form.categoria ancho="col-md-6" %}
-        {% include "parciales/_campo.html" with campo=form.minimo_minutos ancho="col-md-6" %}
+        {% include "parciales/_campo.html" with campo=form.categoria_destino ancho="col-md-4" %}
+        {% include "parciales/_campo.html" with campo=form.categoria_nueva ancho="col-md-4" %}
+        {% include "parciales/_campo.html" with campo=form.minimo_minutos ancho="col-md-4" %}
         {% include "parciales/_campo.html" with campo=form.solo_espanol ancho="col-12" %}
         <div class="col-12">
             <button type="submit" class="btn btn-primary">
@@ -55,7 +56,14 @@
     document.querySelectorAll('[data-url]').forEach(function (boton) {
         boton.addEventListener('click', function () {
             form.querySelector('[name=url]').value = boton.dataset.url;
-            form.querySelector('[name=categoria]').value = boton.dataset.categoria;
+            // La categoría sugerida: si ya existe se elige; si no, se escribe como nueva
+            var lista = form.querySelector('[name=categoria_destino]');
+            var nueva = form.querySelector('[name=categoria_nueva]');
+            var existe = Array.prototype.find.call(lista.options, function (o) {
+                return o.text.replace(/^— /, '').toLowerCase() === boton.dataset.categoria.toLowerCase();
+            });
+            lista.value = existe ? existe.value : '';
+            nueva.value = boton.dataset.categoria && !existe ? boton.dataset.categoria : '';
             form.querySelector('[name=minimo_minutos]').value = boton.dataset.minutos;
             form.querySelector('[name=url]').focus();
         });

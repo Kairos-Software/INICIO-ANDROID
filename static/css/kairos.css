@@ -1065,6 +1065,30 @@ a.chip:hover, a.chip.activo { filter: brightness(1.25); box-shadow: 0 0 0 1px cu
 .espejo-detalle { margin-top: -.25rem; font-size: .72rem; color: var(--texto-apagado); }
 .espejo-separador { width: 1px; align-self: stretch; background: var(--borde); }
 
+/* Organizar contenido: lo que se suma a "Como en la app" */
+.espejo-categoria.nivel-1 { margin-left: 1.1rem; padding-top: .4rem; padding-bottom: .4rem; font-weight: 500; font-size: .85rem; }
+.espejo-categoria.nivel-1 .bi { color: var(--texto-apagado); margin-right: .2rem; }
+.espejo-nueva { margin-bottom: .9rem; padding: .55rem .7rem; border: 1px dashed var(--borde-fuerte); border-radius: var(--radio); }
+.espejo-nueva summary { cursor: pointer; font-weight: 600; font-size: .875rem; color: var(--celeste-claro); }
+.espejo-opciones { background: var(--capa); border: 1px solid var(--borde); border-radius: var(--radio-tarjeta); padding: .65rem .9rem; }
+.espejo-opciones summary { cursor: pointer; font-weight: 600; font-size: .875rem; }
+.espejo-opciones-cuerpo { display: grid; gap: .6rem; margin-top: .75rem; }
+.espejo-opcion { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.espejo-opcion > label, .espejo-opcion > span:first-of-type { min-width: 4.5rem; margin: 0; }
+.espejo-opcion .form-control, .espejo-opcion .form-select { width: auto; flex: 0 1 18rem; }
+.espejo-seccion { margin: 1.4rem 0 .75rem; font-size: 1rem; font-weight: 700; color: var(--texto-suave); }
+.espejo-seccion:first-of-type { margin-top: 0; }
+.espejo-tarjeta.fuera .espejo-imagen { opacity: .5; border-style: dashed; border-color: var(--borde-fuerte); }
+.espejo-editar {
+    align-self: flex-start; padding: .15rem .6rem; border-radius: 8px;
+    border: 1px solid var(--borde); background: var(--capa-alta); color: var(--texto-suave); font-size: .75rem;
+}
+.espejo-editar:hover { color: var(--celeste-claro); border-color: var(--celeste-borde); }
+.espejo-imagen.poster { aspect-ratio: 2 / 3; }
+.espejo-imagen.poster img { object-fit: cover; padding: 0; }
+.espejo-origenes { display: grid; gap: .45rem; padding-left: 1.1rem; margin: 0; font-size: .85rem; }
+.espejo-origenes .direccion { display: block; color: var(--texto-apagado); font-size: .75rem; word-break: break-all; }
+
 @media (max-width: 991.98px) {
     .espejo { grid-template-columns: minmax(0, 1fr); }
     .espejo-categorias { position: static; max-height: 18rem; }

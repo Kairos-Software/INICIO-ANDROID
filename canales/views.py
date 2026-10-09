@@ -5,7 +5,8 @@ Pantallas de canales del panel:
   /canales/importaciones/<id>/      la prueba de una lista: el avance, qué es apto, qué no y por qué, y cargar las aptas
   /canales/catalogo/                canales en vivo y películas, con filtros para quitar los que no sirven
   /canales/series/                  series agrupadas, con búsqueda, filtros y paginación
-  /canales/como-en-la-app/          lo que ve un cliente: categorías con cuántos tienen y cuáles son (para ordenar)
+  /canales/organizar/               TODO en un lugar: árbol de categorías (con subcategorías) y su contenido para
+                                    editar, mover, cambiar el tipo, quitar o eliminar, y de dónde salió cada cosa
   /canales/series/detalle/          temporadas, capítulos, disponibilidad y fuentes de una serie
   /canales/canal/<id>/editar/       nombre, logo, categoría... de un canal, y sus fuentes
   /canales/youtube/                 traer las películas de un canal oficial de YouTube (se prueban y cargan como una lista)
@@ -18,7 +19,9 @@ Lo que tarda (verificar) se hace de a tandas: la página llama una y otra
 vez a las direcciones ".../lote/" (responden JSON) y va mostrando el avance.
 """
 
+import json
 from functools import partial
+from urllib.parse import quote
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
@@ -35,15 +38,14 @@ from usuarios.permisos import chequear_permiso
 
 from . import consultas, estadisticas, organizar, servicios, youtube
 from .clasificar import formato, idioma_y_pais, limpiar_nombre
-from .forms import (CanalForm, CanalNuevoForm, FuentesFormSet, ImportarListaForm, ProbarLinkForm, QuitarCanalesForm,
-                    TraerDeYoutubeForm)
+from .forms import (CanalForm, CanalNuevoForm, EditarDesdeOrganizarForm, FuentesFormSet, ImportarListaForm,
+                    ProbarLinkForm, QuitarCanalesForm, TraerDeYoutubeForm)
 from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Idioma, Importacion
 from .verificacion import Resultado, verificar_url, verificar_varias
 
 CANALES_POR_PAGINA = 120
 ENTRADAS_POR_PAGINA = 100
 SERIES_POR_PAGINA = 24
-COMO_EN_LA_APP_POR_PAGINA = 150
 
 
 def _parametros_sin_pagina(request):
@@ -90,7 +92,7 @@ def traer_de_youtube(request):
             form.add_error('url', str(error))
         else:
             importacion = servicios.crear_importacion_de_youtube(
-                listado, request.user, categoria=datos['categoria'].strip(),
+                listado, request.user, categoria=form.categoria(),
                 minimo_minutos=datos['minimo_minutos'], solo_espanol=datos['solo_espanol'])
             return redirect(f'{importacion_url(importacion)}?empezar=1')
     return render(request, 'canales/youtube.html', {'form': form, 'sugeridos': youtube.SUGERIDOS})
@@ -252,47 +254,138 @@ def series(request):
     })
 
 
-@requiere_permiso('ver_canales')
 def como_en_la_app(request):
+    """La vista vieja "Como en la app": ahora es parte de Organizar contenido."""
+    return redirect(f"{reverse('canales:organizar')}?{request.GET.urlencode()}")
+
+
+def _origenes_de(fuentes, importaciones):
+    """Para la edición rápida: de dónde salió cada fuente (lista, canal de YouTube, a mano) y cómo está."""
+    return [{'origen': f.origen or 'No se sabe', 'url': f.url, 'tipo': f.get_tipo_display(),
+             'estado': f.get_estado_display(), 'importacion': importaciones.get(f.origen, '')} for f in fuentes]
+
+
+def _preparar_para_editar(pagina, contenido):
+    """Le pone a cada cosa de la página sus datos (JSON) para el cuadro de edición rápida."""
+    importaciones = {archivo: reverse('canales:importacion', args=[pk])
+                     for archivo, pk in Importacion.objects.order_by('creada').values_list('archivo', 'pk')}
+    if contenido == Contenido.SERIE:
+        por_capitulo = {}
+        capitulos = [c.canal.pk for serie in pagina for c in serie.capitulos]
+        for fuente in Fuente.objects.filter(canal_id__in=capitulos).order_by('prioridad', 'pk'):
+            por_capitulo.setdefault(fuente.canal_id, []).append(fuente)
+        for serie in pagina:
+            fuentes, vistos = [], set()
+            for capitulo in serie.capitulos:
+                for fuente in por_capitulo.get(capitulo.canal.pk, []):
+                    if fuente.origen not in vistos:   # una vez por origen (no una por capítulo)
+                        vistos.add(fuente.origen)
+                        fuentes.append(fuente)
+            serie.activo = any(c.canal.activo for c in serie.capitulos)
+            serie.datos = json.dumps({
+                'tipo': 'serie', 'nombre': serie.nombre, 'logo': serie.logo, 'activo': serie.activo,
+                'categoria': serie.categoria_id or 'ninguna', 'capitulos': serie.cantidad,
+                'en_app': serie.completa, 'motivo': serie.por_que_no_se_ve,
+                'fuentes': _origenes_de(fuentes, importaciones),
+                'mas': f"{reverse('canales:serie_detalle')}?nombre={quote(serie.nombre)}",
+            })
+        return
+    for canal in pagina:
+        canal.no_se_ve = consultas.por_que_no_se_ve(canal)
+        canal.datos = json.dumps({
+            'tipo': 'canal', 'pk': canal.pk, 'nombre': canal.nombre, 'logo': canal.logo, 'numero': canal.numero,
+            'categoria': canal.categoria_id or 'ninguna', 'contenido': canal.contenido, 'activo': canal.activo,
+            'en_app': not canal.no_se_ve, 'motivo': canal.no_se_ve,
+            'fuentes': _origenes_de(canal.fuentes.all(), importaciones),
+            'mas': reverse('canales:canal_editar', args=[canal.pk]),
+        })
+
+
+@requiere_permiso('ver_canales')
+def organizar_contenido(request):
     """
-    Lo que ve un cliente, como en la app: las categorías con cuántos tienen
-    ("Kids 5") y, al elegir una, cuáles son. Para ordenar viendo lo mismo que él.
+    Todas las herramientas en un lugar: a la izquierda el árbol de categorías
+    (con subcategorías) y cuántos tiene cada una; a la derecha su contenido,
+    para editar uno (nombre, logo, categoría, tipo, de dónde salió) o muchos
+    (mover, cambiar el tipo, quitar, eliminar). Ver consultas.organizar_contenido.
     """
     contenido = request.GET.get('contenido', '')
     if contenido not in Contenido.values:
         contenido = Contenido.VIVO
-    grupos = [
-        {
-            'clave': str(categoria.pk) if categoria else 'ninguna',
-            'categoria': categoria,
-            'nombre': consultas.nombre_en_la_app(categoria.nombre if categoria else ''),
-            'cantidad': len(items),
-            'items': items,
-        }
-        for categoria, items in consultas.como_en_la_app(contenido)
-    ]
-    # Dos categorías que en la app se llaman igual ("AR | Deportes" y "Deportes"): marcarlas
-    veces = {}
-    for grupo in grupos:
-        veces[grupo['nombre'].casefold()] = veces.get(grupo['nombre'].casefold(), 0) + 1
-    for grupo in grupos:
-        grupo['repetida'] = veces[grupo['nombre'].casefold()] > 1
-        grupo['otro_nombre'] = (grupo['categoria'] is not None
-                                and grupo['categoria'].nombre.strip() != grupo['nombre'])
-
-    pedida = request.GET.get('categoria', '')
-    elegida = next((g for g in grupos if g['clave'] == pedida), grupos[0] if grupos else None)
-    return render(request, 'canales/como_en_la_app.html', {
+    filtros = {
+        'texto': request.GET.get('q', '').strip(),
+        'mostrar': request.GET.get('mostrar') if request.GET.get('mostrar') in ('app', 'fuera') else 'todo',
+        'origen': request.GET.get('origen', ''),
+        'sin_logo': request.GET.get('sin_logo') == '1',
+    }
+    datos = consultas.organizar_contenido(contenido, categoria=request.GET.get('categoria', ''),
+                                          pagina=request.GET.get('pagina'), **filtros)
+    _preparar_para_editar(datos.pagina, contenido)
+    nodo = next((n for n in datos.nodos if n['clave'] == datos.elegida), None)
+    arbol = consultas.categorias_en_arbol()
+    # Los filtros de ahora, para los links del árbol (que cambian solo la categoría)
+    base = request.GET.copy()
+    for clave in ('categoria', 'pagina'):
+        base.pop(clave, None)
+    base['contenido'] = contenido
+    return render(request, 'canales/organizar.html', {
         'contenido': contenido,
-        'grupos': grupos,
-        'elegida': elegida,
-        'pagina': Paginator(elegida['items'] if elegida else [], COMO_EN_LA_APP_POR_PAGINA).get_page(
-            request.GET.get('pagina')),
+        'datos': datos,
+        'nodo': nodo,
+        'filtros': filtros,
+        'hay_filtros': bool(filtros['texto'] or filtros['mostrar'] != 'todo' or filtros['origen']
+                            or filtros['sin_logo']),
+        'origenes': consultas.origenes(contenido),
+        'arbol': arbol,
+        'principales': [c for c, nivel in arbol if nivel == 0],
         'parametros': _parametros_sin_pagina(request),
-        'total': sum(g['cantidad'] for g in grupos),
+        'base': base.urlencode(),
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
-        'todas_las_categorias': Categoria.objects.order_by('nombre'),
     })
+
+
+@require_POST
+@requiere_permiso('importar_canales')
+def organizar_editar(request):
+    """La edición rápida de una cosa (o de una serie entera) desde Organizar contenido."""
+    form = EditarDesdeOrganizarForm(request.POST)
+    if not form.is_valid():
+        errores = '; '.join(f'{campo}: {" ".join(lista)}' for campo, lista in form.errors.items())
+        messages.error(request, f'No se guardó: {errores}')
+        return redirect(_volver(request))
+    datos = form.cleaned_data
+    try:
+        categoria = _categoria_elegida(request)
+        if request.POST.get('tipo') == 'serie':
+            nombre = request.POST.get('serie', '')
+            cambios = organizar.editar_serie(nombre, request.user, nombre=datos['nombre'], logo=datos['logo'],
+                                             categoria=categoria, activo=datos['activo'])
+            titulo = datos['nombre'] or nombre
+        else:
+            canal = get_object_or_404(Canal, pk=request.POST.get('canal', '0'))
+            extra = {'contenido': datos['contenido']} if datos['contenido'] else {}
+            cambios = organizar.editar_canal(canal, request.user, nombre=datos['nombre'], logo=datos['logo'],
+                                             categoria=categoria, activo=datos['activo'],
+                                             numero=datos['numero'].strip(), **extra)
+            titulo = canal.nombre
+    except organizar.NoSePuede as error:
+        messages.error(request, str(error))
+        return redirect(_volver(request))
+    messages.success(request, f'Se guardó "{titulo}".' if cambios else f'"{titulo}" no tenía cambios.')
+    return redirect(_volver(request))
+
+
+@require_POST
+@requiere_permiso('importar_canales')
+def organizar_eliminar(request):
+    """Elimina lo elegido (canales/películas/capítulos, o series enteras)."""
+    if request.POST.getlist('serie'):
+        canales = organizar.capitulos_de(request.POST.getlist('serie'))
+    else:
+        canales = _canales_elegidos(request)
+    cantidad = organizar.eliminar_contenido(canales, request.user)
+    messages.success(request, f'Se eliminaron {cantidad}.' if cantidad else 'No había nada elegido.')
+    return redirect(_volver(request))
 
 
 @requiere_permiso('ver_canales')
@@ -440,6 +533,14 @@ def series_acciones(request):
         elif request.POST.get('accion') == 'a_peliculas':
             cantidad, _ = organizar.cambiar_contenido(capitulos, Contenido.PELICULA, usuario=request.user)
             _avisar_cambio_de_tipo(request, cantidad, 0, Contenido.PELICULA)
+        elif request.POST.get('accion') == 'quitar':
+            cantidad = servicios.quitar_canales(capitulos, request.POST.get('motivo', ''), request.user)
+            messages.success(request, f'Se quitaron de la app {cantidad} capítulo(s).' if cantidad
+                             else 'Ya estaban quitadas.')
+        elif request.POST.get('accion') == 'mostrar':
+            cantidad = servicios.mostrar_canales(capitulos, request.user)
+            messages.success(request, f'{cantidad} capítulo(s) vuelven a la app.' if cantidad
+                             else 'No había ninguna quitada.')
     except organizar.NoSePuede as error:
         messages.error(request, str(error))
     volver = request.POST.get('volver') or ''
@@ -453,9 +554,17 @@ def series_acciones(request):
 def _accion_de_categorias(request):
     """Hace lo que se pidió en la página de categorías y devuelve el mensaje (o lanza NoSePuede)."""
     accion = request.POST.get('accion', '')
+    padre_pk = request.POST.get('padre', '')
+    padre = get_object_or_404(Categoria, pk=padre_pk) if padre_pk.isdigit() else None
     if accion == 'crear':
-        categoria = organizar.crear_categoria(request.POST.get('nombre', ''), request.user)
-        return f'Se creó "{categoria}". Ahora elegí qué va adentro desde el catálogo ("Mover a categoría").'
+        categoria = organizar.crear_categoria(request.POST.get('nombre', ''), request.user, padre=padre)
+        return (f'Se creó "{categoria.nombre_en_app}". Ahora elegí qué va adentro y usá "Mover a…", '
+                f'o importá directo en ella.')
+    if accion == 'ubicar':
+        categoria = get_object_or_404(Categoria, pk=request.POST.get('categoria', '0'))
+        organizar.ubicar_categoria(categoria, padre, request.user)
+        return (f'"{categoria}" ahora está dentro de "{padre}" (en la app: "{categoria.nombre_en_app}").' if padre
+                else f'"{categoria}" ahora es una categoría principal.')
     if accion == 'renombrar':
         categoria = get_object_or_404(Categoria, pk=request.POST.get('categoria', '0'))
         viejo = categoria.nombre
@@ -467,7 +576,10 @@ def _accion_de_categorias(request):
         return f'Se juntaron en "{final}". Las listas que traigan esos nombres van a ir a "{final}".'
     if accion == 'borrar':
         categoria = get_object_or_404(Categoria, pk=request.POST.get('categoria', '0'))
-        cantidad = organizar.borrar_categoria(categoria, request.user)
+        con_contenido = request.POST.get('con_contenido') == '1'
+        cantidad = organizar.borrar_categoria(categoria, request.user, con_contenido=con_contenido)
+        if con_contenido:
+            return f'Se borró "{categoria}" con todo su contenido ({cantidad} eliminados).'
         return f'Se borró "{categoria}"' + (f' y {cantidad} quedaron sin categoría.' if cantidad else '.')
     if accion == 'ordenar':
         ordenes = {int(clave[6:]): int(valor or 0) for clave, valor in request.POST.items()

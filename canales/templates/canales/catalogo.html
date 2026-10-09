@@ -16,8 +16,8 @@
         <h1 class="pagina-titulo">Catálogo</h1>
         <p class="pagina-bajada">Así ven los canales en la app. Los punteados no se ven (sus fuentes no andan) y los rojos están quitados a mano. Elegí los que no te sirven y quitalos, o editalos para ponerles nombre y logo.</p>
     </div>
-    <a href="{% url 'canales:como_en_la_app' %}?contenido={{ filtros.contenido }}" class="btn btn-outline-secondary">
-        <i class="bi bi-phone" aria-hidden="true"></i> Como en la app
+    <a href="{% url 'canales:organizar' %}?contenido={{ filtros.contenido }}" class="btn btn-outline-secondary">
+        <i class="bi bi-diagram-3" aria-hidden="true"></i> Organizar contenido
     </a>
 </div>
 {% endblock %}

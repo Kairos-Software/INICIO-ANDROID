@@ -17,6 +17,9 @@ mal, y se pueden juntar películas sueltas como una serie numerada.
     organizar.mover_a_categoria(canales, noticias)              -> cuántos se movieron
     organizar.cambiar_contenido(canales, 'serie', nombre_serie='Flash Gordon')
     organizar.categorias_parecidas()                            -> [[cat, cat], ...] posibles repetidas
+    organizar.crear_categoria('Rock', padre=musica)             -> subcategoría ("Música · Rock" en la app)
+    organizar.borrar_categoria(musica, con_contenido=True)      -> la borra con todo lo de adentro
+    organizar.eliminar_contenido(canales)                       -> los borra (si se vuelven a importar, vuelven)
 """
 
 import re
@@ -29,7 +32,7 @@ from actividad.models import Accion
 from actividad.registro import registrar
 
 from . import clasificar
-from .models import Canal, Categoria, Contenido
+from .models import Canal, Categoria, Contenido, Fuente
 
 
 class NoSePuede(Exception):
@@ -106,14 +109,40 @@ def categorias_con_cantidades():
     ).order_by('orden', 'nombre')
 
 
-def crear_categoria(nombre, usuario=None):
+def crear_categoria(nombre, usuario=None, padre=None):
+    """Una categoría nueva; con `padre`, una subcategoría (ej: "Rock" dentro de "Música")."""
     nombre = ' '.join((nombre or '').split())[:80]
     if not nombre:
         raise NoSePuede('Escribí el nombre de la categoría.')
     if _clave(nombre) in indice_de_categorias():
         raise NoSePuede(f'Ya hay una categoría "{nombre}" (o una que se llamaba así).')
+    if padre is not None and padre.padre_id:
+        raise NoSePuede(f'"{padre}" ya es una subcategoría: las subcategorías no pueden tener otras adentro.')
     categoria = categoria_por_nombre(nombre, usuario=usuario)
-    registrar(usuario, Accion.CREAR, f'Creó la categoría "{categoria}".', objeto=categoria, modulo='canales')
+    if padre is not None:
+        categoria.padre = padre
+        categoria.save(update_fields=['padre', 'modificado'])
+    registrar(usuario, Accion.CREAR, f'Creó la categoría "{categoria.nombre_en_app}".', objeto=categoria,
+              modulo='canales')
+    return categoria
+
+
+def ubicar_categoria(categoria, padre, usuario=None):
+    """La pone dentro de otra (`padre`) o la deja suelta (None). Un solo nivel de subcategorías."""
+    if padre is not None:
+        if padre.pk == categoria.pk:
+            raise NoSePuede('Una categoría no puede ir dentro de sí misma.')
+        if padre.padre_id:
+            raise NoSePuede(f'"{padre}" ya es una subcategoría: elegí una categoría principal.')
+        if categoria.subcategorias.filter(eliminado_en__isnull=True).exists():
+            raise NoSePuede(f'"{categoria}" tiene subcategorías: no puede ir dentro de otra.')
+    if categoria.padre_id == (padre.pk if padre else None):
+        return categoria
+    categoria.padre = padre
+    categoria.marcar_autor(usuario)
+    categoria.save(update_fields=['padre', 'modificado', 'modificado_por'])
+    registrar(usuario, Accion.EDITAR, f'Puso la categoría "{categoria}" '
+              + (f'dentro de "{padre}".' if padre else 'como principal.'), objeto=categoria, modulo='canales')
     return categoria
 
 
@@ -178,12 +207,26 @@ def juntar_categorias(categorias, destino, usuario=None):
 
 
 @transaction.atomic
-def borrar_categoria(categoria, usuario=None):
-    """La borra: lo que tenía queda "Sin categoría" (en la app, en "Otros"). Devuelve cuántos tenía."""
-    cantidad = Canal.todos.filter(categoria=categoria).update(categoria=None, modificado=timezone.now())
+def borrar_categoria(categoria, usuario=None, con_contenido=False):
+    """
+    La borra. Sin `con_contenido`, lo que tenía queda "Sin categoría" (en la
+    app, en "Otros") y sus subcategorías quedan como principales. Con
+    `con_contenido`, se eliminan también todo lo que tenía y sus
+    subcategorías con lo suyo. Devuelve cuántos canales/películas/capítulos tenía.
+    """
+    subcategorias = list(categoria.subcategorias.filter(eliminado_en__isnull=True))
+    if con_contenido:
+        cantidad = eliminar_contenido(Canal.objects.filter(categoria__in=[categoria, *subcategorias]), usuario)
+        for subcategoria in subcategorias:
+            subcategoria.eliminar(usuario)
+    else:
+        cantidad = Canal.todos.filter(categoria=categoria).update(categoria=None, modificado=timezone.now())
+        Categoria.objects.filter(padre=categoria).update(padre=None, modificado=timezone.now())
     categoria.eliminar(usuario)
-    registrar(usuario, Accion.ELIMINAR, f'Borró la categoría "{categoria}" ({cantidad} quedaron sin categoría).',
-              objeto=categoria, modulo='canales')
+    detalle = (f'con todo su contenido ({cantidad} eliminados)' if con_contenido
+               else f'({cantidad} quedaron sin categoría)')
+    registrar(usuario, Accion.ELIMINAR, f'Borró la categoría "{categoria}" {detalle}.', objeto=categoria,
+              modulo='canales')
     return cantidad
 
 
@@ -305,9 +348,100 @@ def cambiar_contenido(canales, contenido, nombre_serie='', temporada=1, usuario=
     return len(elegidos), sin_numero
 
 
+@transaction.atomic
+def eliminar_contenido(canales, usuario=None):
+    """
+    Elimina canales, películas o capítulos: dejan de existir en el panel y en
+    la app (quedan en la base solo para las estadísticas). Sus direcciones se
+    borran: si se vuelve a importar la lista, vuelven a entrar. (Para que NO
+    vuelvan, en vez de eliminarlos hay que "quitarlos".) Devuelve cuántos.
+    """
+    elegidos = list(canales.filter(eliminado_en__isnull=True))
+    if not elegidos:
+        return 0
+    Fuente.objects.filter(canal__in=elegidos).delete()
+    Canal.objects.filter(pk__in=[c.pk for c in elegidos]).update(
+        eliminado_en=timezone.now(), eliminado_por=_usuario(usuario), modificado=timezone.now())
+    nombres = ', '.join(c.nombre for c in elegidos[:3]) + (f' y {len(elegidos) - 3} más' if len(elegidos) > 3 else '')
+    registrar(usuario, Accion.ELIMINAR, f'Eliminó {len(elegidos)}: {nombres}.', modulo='canales')
+    return len(elegidos)
+
+
+@transaction.atomic
+def renombrar_serie(nombre, nuevo, usuario=None):
+    """Le cambia el nombre a una serie: a cada capítulo ("Viejo S01 E02 Título" -> "Nuevo S01 E02 Título")."""
+    nuevo = ' '.join((nuevo or '').split())[:90]
+    if not nuevo:
+        raise NoSePuede('Escribí el nombre nuevo de la serie.')
+    capitulos = list(capitulos_de([nombre]))
+    for canal in capitulos:
+        _, temporada, numero, titulo = clasificar.episodio(canal.nombre)
+        if numero is None:
+            continue
+        canal.nombre = f'{nuevo} S{temporada:02d} E{numero:02d}{f" {titulo}" if titulo else ""}'[:120]
+        canal.marcar_autor(usuario)
+    Canal.objects.bulk_update(capitulos, ['nombre', 'modificado_por'])
+    if capitulos:
+        registrar(usuario, Accion.EDITAR, f'Renombró la serie "{nombre}" a "{nuevo}" ({len(capitulos)} capítulos).',
+                  modulo='canales')
+    return len(capitulos)
+
+
 def capitulos_de(nombres_de_series):
     """Los capítulos (Canal) de esas series, por nombre de serie (como las arma la app)."""
     buscados = {_clave(n) for n in nombres_de_series if n.strip()}
     pks = [canal.pk for canal in Canal.objects.filter(contenido=Contenido.SERIE).only('pk', 'nombre')
            if _clave(clasificar.episodio(canal.nombre)[0]) in buscados]
     return Canal.objects.filter(pk__in=pks)
+
+
+# ── Editar desde "Organizar contenido" ───────────────────────────────
+
+@transaction.atomic
+def editar_canal(canal, usuario=None, **datos):
+    """
+    Cambia lo que vino en `datos` (nombre, logo, numero, categoria, contenido,
+    activo) de un canal, película o capítulo. Devuelve los nombres de lo que cambió.
+    """
+    cambios = []
+    for campo in ('nombre', 'logo', 'numero', 'categoria', 'contenido', 'activo'):
+        if campo in datos and getattr(canal, campo) != datos[campo]:
+            setattr(canal, campo, datos[campo])
+            cambios.append(campo)
+    if 'activo' in cambios:
+        canal.motivo_quitado = '' if canal.activo else 'Quitado a mano.'
+    if cambios:
+        canal.marcar_autor(usuario)
+        canal.save()
+        registrar(usuario, Accion.EDITAR, f'Editó "{canal.nombre}" ({", ".join(cambios)}).', objeto=canal,
+                  modulo='canales')
+    return cambios
+
+
+@transaction.atomic
+def editar_serie(serie, usuario=None, **datos):
+    """
+    Lo mismo para una serie entera (todos sus capítulos): nombre (los
+    renombra), logo, categoria y activo. Devuelve los nombres de lo que cambió.
+    """
+    capitulos = capitulos_de([serie])
+    if not capitulos.exists():
+        raise NoSePuede(f'No se encontró la serie "{serie}".')
+    cambios = []
+    ahora, quien = timezone.now(), _usuario(usuario)
+    if 'logo' in datos and capitulos.exclude(logo=datos['logo']).exists():
+        capitulos.update(logo=datos['logo'], modificado=ahora, modificado_por=quien)
+        cambios.append('logo')
+    if 'categoria' in datos and capitulos.exclude(categoria=datos['categoria']).exists():
+        capitulos.update(categoria=datos['categoria'], modificado=ahora, modificado_por=quien)
+        cambios.append('categoria')
+    if 'activo' in datos and capitulos.exclude(activo=datos['activo']).exists():
+        capitulos.update(activo=datos['activo'], motivo_quitado='' if datos['activo'] else 'Quitado a mano.',
+                         modificado=ahora, modificado_por=quien)
+        cambios.append('activo')
+    if datos.get('nombre') and _clave(datos['nombre']) != _clave(serie):
+        renombrar_serie(serie, datos['nombre'], usuario)
+        cambios.append('nombre')
+    elif cambios:
+        registrar(usuario, Accion.EDITAR, f'Editó la serie "{serie}" ({", ".join(cambios)}).', modulo='canales')
+    return cambios

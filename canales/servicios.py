@@ -127,12 +127,15 @@ def _motivo_de_descarte(entrada, importacion, contenido, tipo, idioma, pais, nom
 
 
 def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, descartar_sin_logo=False,
-                      descartar_vod=False, descartar_adultos=True, a_fondo=False):
+                      descartar_vod=False, descartar_adultos=True, a_fondo=False, categoria=''):
     """
     Lee la lista y guarda cada canal como una EntradaImportada, con lo que se
     sabe de él (idioma, país, si es en vivo o película, formato). Las que no
     sirven quedan descartadas desde ya, con el motivo; las demás, pendientes
     de verificar. No sale a internet: tarda segundos aunque sean miles.
+    `categoria`: todo va a esa (por nombre; se crea al cargar si no existe) en
+    vez de a la que dice la lista. Igual se usa la de la lista para deducir
+    idioma, país y si son capítulos de series.
     """
     importacion = Importacion.objects.create(
         archivo=archivo[:150], usuario=usuario if getattr(usuario, 'pk', None) else None,
@@ -163,7 +166,7 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
         entradas.append(EntradaImportada(
             importacion=importacion, posicion=posicion,
             nombre_original=entrada.nombre[:200], nombre=(nombre or 'Sin nombre')[:120],
-            logo=entrada.logo[:500], categoria=entrada.categoria[:80], numero=entrada.numero[:10],
+            logo=entrada.logo[:500], categoria=(categoria or entrada.categoria)[:80], numero=entrada.numero[:10],
             tvg_id=entrada.tvg_id[:120], pais=pais, idioma=idioma, contenido=contenido,
             url=entrada.url[:1000], tipo=tipo, user_agent=entrada.user_agent[:300], referer=entrada.referer[:500],
             estado=estado, motivo=motivo,

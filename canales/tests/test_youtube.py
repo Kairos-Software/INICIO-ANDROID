@@ -168,7 +168,7 @@ class PantallaTests(TestCase):
         listado = youtube.Listado('Bluey', [youtube.Video('ccccccccccc', 'Bluey en la playa | Bluey', 3600)])
         with mock.patch('canales.youtube.videos_del_canal', return_value=listado):
             respuesta = self.client.post(reverse('canales:youtube'), {
-                'url': 'https://www.youtube.com/@Bluey', 'categoria': 'Infantiles', 'minimo_minutos': 20,
+                'url': 'https://www.youtube.com/@Bluey', 'categoria_nueva': 'Infantiles', 'minimo_minutos': 20,
                 'solo_espanol': 'on'})
         entrada = EntradaImportada.objects.get()
         self.assertRedirects(respuesta, reverse('canales:importacion', args=[entrada.importacion_id]) + '?empezar=1',

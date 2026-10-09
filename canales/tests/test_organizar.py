@@ -202,32 +202,135 @@ class ComoEnLaAppTests(TestCase):
         [(categoria, series)] = consultas.como_en_la_app(Contenido.SERIE)
         self.assertEqual((categoria, [(s.nombre, s.capitulos) for s in series]), (self.kids, [('Arrow', 3)]))
 
-    def test_la_pagina_muestra_categorias_numeros_y_repetidas(self):
-        self._con_fuente('Zenón', categoria=self.kids)
-        self._con_fuente('Paka Paka', categoria=self.ar_kids)
-        url = reverse('canales:como_en_la_app')
-        respuesta = self.client.get(url)
-        self.assertContains(respuesta, 'Repetida', count=2)        # en la app las dos se llaman "Kids"
-        self.assertContains(respuesta, 'en la lista: AR | KIDS')
-        self.assertContains(respuesta, 'Zenón')                     # la primera, elegida sola
-        self.assertNotContains(respuesta, 'Paka Paka')
-        self.assertContains(self.client.get(url, {'categoria': self.ar_kids.pk}), 'Paka Paka')
 
-    def test_renombrar_desde_la_pagina_vuelve_a_ella(self):
-        self._con_fuente('Paka Paka', categoria=self.ar_kids)
-        volver = reverse('canales:como_en_la_app') + f'?categoria={self.ar_kids.pk}'
-        respuesta = self.client.post(reverse('canales:categorias'), {
-            'accion': 'renombrar', 'categoria': self.ar_kids.pk, 'nombre': 'Infantiles', 'volver': volver})
-        self.assertRedirects(respuesta, volver)
-        self.ar_kids.refresh_from_db()
-        self.assertEqual(self.ar_kids.nombre, 'Infantiles')
+class OrganizarTests(TestCase):
+    """Organizar contenido: subcategorías, edición rápida, eliminar, origen e importar en una categoría."""
 
-    def test_quien_solo_mira_no_ve_las_acciones(self):
-        self._con_fuente('Zenón', categoria=self.kids)
+    def setUp(self):
+        self.client.force_login(Usuario.objects.create_superuser('admin', 'admin@test.com', 'x'))
+        self.musica = Categoria.objects.create(nombre='Música', orden=1)
+        self.noticias = Categoria.objects.create(nombre='Noticias', orden=2)
+        self.rock = organizar.crear_categoria('Rock', padre=self.musica)
+        self.pop = organizar.crear_categoria('Pop', padre=self.musica)
+
+    def _con_fuente(self, nombre, categoria=None, contenido=Contenido.VIVO, origen='lista-prueba.m3u'):
+        canal = _canal(nombre, contenido, categoria)
+        Fuente.objects.create(canal=canal, url=f'https://x/{nombre.replace(" ", "")}.m3u8', origen=origen)
+        return canal
+
+    def test_la_app_ve_las_subcategorias_con_su_padre_y_en_orden(self):
+        self.rock.orden = 9
+        self.rock.save()
+        self._con_fuente('TN', self.noticias)
+        self._con_fuente('Rock FM', self.rock)
+        self._con_fuente('Radio Mix', self.musica)
+        canales = consultas.canales_disponibles(contenido=Contenido.VIVO)
+        nombres = [c.nombre_en_app for c, _ in consultas.agrupar_por_categoria(canales)]
+        self.assertEqual(nombres, ['Música', 'Música · Rock', 'Noticias'])   # Rock va pegada a Música
+
+    def test_un_solo_nivel_de_subcategorias(self):
+        with self.assertRaises(organizar.NoSePuede):
+            organizar.crear_categoria('Punk', padre=self.rock)
+        with self.assertRaises(organizar.NoSePuede):
+            organizar.ubicar_categoria(self.musica, self.noticias)   # Música tiene subcategorías
+        organizar.ubicar_categoria(self.pop, None)
+        self.pop.refresh_from_db()
+        self.assertIsNone(self.pop.padre)
+
+    def test_el_arbol_cuenta_lo_de_las_subcategorias(self):
+        self._con_fuente('Rock FM', self.rock)
+        self._con_fuente('Rock & Pop', self.rock)
+        self._con_fuente('Los 40', self.pop)
+        datos = consultas.organizar_contenido(Contenido.VIVO, categoria=str(self.musica.pk))
+        nodos = {n['clave']: n for n in datos.nodos}
+        self.assertEqual((nodos[str(self.musica.pk)]['total'], nodos[str(self.rock.pk)]['total']), (3, 2))
+        self.assertEqual(len(datos.pagina.object_list), 3)   # la principal muestra lo de sus subcategorías
+        self.assertEqual([c.nombre for c, _ in datos.grupos], ['Pop', 'Rock'])
+
+    def test_la_pagina_muestra_arbol_y_de_donde_salio(self):
+        self._con_fuente('Rock FM', self.rock, origen='YouTube: Radio Oficial')
+        respuesta = self.client.get(reverse('canales:organizar'), {'categoria': self.rock.pk})
+        self.assertContains(respuesta, 'Nueva categoría')
+        self.assertContains(respuesta, 'nivel-1')
+        self.assertContains(respuesta, 'YouTube: Radio Oficial')   # en los datos de la edición rápida
+        self.assertContains(respuesta, 'En la app: «Música · Rock»')
+        self.assertRedirects(self.client.get(reverse('canales:como_en_la_app')), reverse('canales:organizar') + '?',
+                             fetch_redirect_response=False)
+
+    def test_crear_subcategoria_desde_la_pagina(self):
+        volver = reverse('canales:organizar')
+        self.client.post(reverse('canales:categorias'),
+                         {'accion': 'crear', 'nombre': 'Jazz', 'padre': self.musica.pk, 'volver': volver})
+        self.assertEqual(Categoria.objects.get(nombre='Jazz').padre, self.musica)
+
+    def test_borrar_solo_la_categoria(self):
+        radio = self._con_fuente('Radio Mix', self.musica)
+        organizar.borrar_categoria(self.musica)
+        radio.refresh_from_db()
+        self.rock.refresh_from_db()
+        self.assertIsNone(radio.categoria)
+        self.assertIsNone(self.rock.padre)   # la subcategoría queda como principal
+
+    def test_borrar_la_categoria_con_todo_y_poder_reimportarlo(self):
+        self._con_fuente('Rock FM', self.rock)
+        self._con_fuente('Radio Mix', self.musica)
+        tn = self._con_fuente('TN', self.noticias)
+        self.client.post(reverse('canales:categorias'), {'accion': 'borrar', 'categoria': self.musica.pk,
+                                                         'con_contenido': '1'})
+        self.assertEqual(list(Canal.objects.values_list('nombre', flat=True)), ['TN'])
+        self.assertFalse(Categoria.objects.filter(nombre__in=['Música', 'Rock', 'Pop']).exists())
+        self.assertEqual(Fuente.objects.get().canal, tn)
+        importar_m3u('#EXTM3U\n#EXTINF:-1 group-title="Rock",Rock FM\nhttps://x/RockFM.m3u8\n')
+        self.assertTrue(Canal.objects.filter(nombre='Rock FM').exists())   # vuelve si se importa de nuevo
+
+    def test_edicion_rapida(self):
+        canal = self._con_fuente('Rock FM', self.noticias)
+        self.client.post(reverse('canales:organizar_editar'), {
+            'tipo': 'canal', 'canal': canal.pk, 'nombre': 'Rock FM 95.9', 'logo': 'https://ejemplo.com/logo.png',
+            'categoria': self.rock.pk, 'contenido': 'vivo', 'numero': '95'})   # sin "activo": se quita
+        canal.refresh_from_db()
+        self.assertEqual((canal.nombre, canal.logo, canal.categoria, canal.numero, canal.activo),
+                         ('Rock FM 95.9', 'https://ejemplo.com/logo.png', self.rock, '95', False))
+
+    def test_edicion_rapida_de_una_serie_entera(self):
+        for n in (1, 2, 3):
+            self._con_fuente(f'Arrow S01 E0{n} Piloto', self.noticias, Contenido.SERIE)
+        self.client.post(reverse('canales:organizar_editar'), {
+            'tipo': 'serie', 'serie': 'Arrow', 'nombre': 'Flecha', 'logo': '', 'categoria': self.rock.pk,
+            'activo': 'on'})
+        self.assertEqual(sorted(Canal.objects.values_list('nombre', 'categoria')),
+                         [(f'Flecha S01 E0{n} Piloto', self.rock.pk) for n in (1, 2, 3)])
+
+    def test_eliminar_desde_la_pagina(self):
+        canal = self._con_fuente('Rock FM', self.rock)
+        self.client.post(reverse('canales:organizar_eliminar'), {'canal': [canal.pk]})
+        self.assertFalse(Canal.objects.filter(pk=canal.pk).exists())
+        self.assertTrue(Canal.todos.filter(pk=canal.pk).exists())   # queda para las estadísticas
+
+    def test_importar_todo_en_una_categoria(self):
+        importar_m3u('#EXTM3U\n#EXTINF:-1 group-title="Varios",Rock FM\nhttps://x/rock.m3u8\n', categoria='Rock')
+        self.assertEqual(Canal.objects.get(nombre='Rock FM').categoria, self.rock)
+
+    def test_quien_solo_mira_no_puede_tocar(self):
+        self._con_fuente('Rock FM', self.rock)
         solo_ve = Usuario.objects.create_user(
             'mira', None, 'x', rol=Rol.objects.create(nombre='Mira', permisos=['ver_canales']))
         self.client.force_login(solo_ve)
-        respuesta = self.client.get(reverse('canales:como_en_la_app'))
-        self.assertContains(respuesta, 'Zenón')
-        self.assertNotContains(respuesta, 'Renombrar')
-        self.assertNotContains(respuesta, 'name="canal"')
+        respuesta = self.client.get(reverse('canales:organizar'))
+        self.assertContains(respuesta, 'Rock FM')
+        self.assertNotContains(respuesta, 'Nueva categoría')
+        self.assertNotContains(respuesta, 'class="form-check-input canal-elegir"')
+        self.assertEqual(self.client.post(reverse('canales:organizar_editar')).status_code, 403)
+        self.assertEqual(self.client.post(reverse('canales:organizar_eliminar')).status_code, 403)
+
+    def test_las_pestanias_de_peliculas_y_series(self):
+        self._con_fuente('Tormenta Blanca', self.rock, Contenido.PELICULA, origen='YouTube: Movie Central')
+        for n in (1, 2, 3):
+            self._con_fuente(f'Arrow S01 E0{n}', self.rock, Contenido.SERIE)
+        peliculas = self.client.get(reverse('canales:organizar'), {'contenido': 'pelicula', 'mostrar': 'app'})
+        self.assertContains(peliculas, 'Tormenta Blanca')
+        self.assertContains(peliculas, 'YouTube: Movie Central')
+        series = self.client.get(reverse('canales:organizar'), {'contenido': 'serie', 'q': 'arr'})
+        self.assertContains(series, 'Arrow')
+        self.assertContains(series, '3 cap.')
+        self.assertContains(series, 'value="Arrow"')   # se eligen series enteras

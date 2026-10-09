@@ -62,7 +62,7 @@ def lista(request):
         'categorias': [
             {
                 'id': categoria.pk if categoria else None,
-                'nombre': categoria.nombre if categoria else 'Otros',
+                'nombre': categoria.nombre_en_app if categoria else 'Otros',   # "Música · Rock"
                 'canales': CanalSerializer(del_grupo, many=True, context=contexto).data,
             }
             for categoria, del_grupo in agrupar_por_categoria(canales)

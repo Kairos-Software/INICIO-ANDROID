@@ -1,0 +1,491 @@
+{% extends "base.html" %}
+{% load canales_extras %}
+{% comment %}
+    Organizar contenido: TODO en un lugar.
+      - Izquierda: el árbol de categorías (las subcategorías, adentro de su
+        principal) con cuántos tiene cada una, y crear una nueva.
+      - Derecha: lo que hay en la elegida. Tocar una tarjeta la elige (para
+        mover, cambiar el tipo, quitar o eliminar varias juntas, en la barra
+        de abajo); "Editar" abre la edición rápida: nombre, logo, categoría,
+        tipo, si se muestra y de dónde salió (lista, canal de YouTube, a mano).
+      - Arriba: los filtros y las opciones de la categoría elegida
+        (renombrar, ubicarla dentro de otra, orden, borrar).
+    Ver consultas.organizar_contenido y organizar.py.
+{% endcomment %}
+
+{% block titulo %}Organizar contenido{% endblock %}
+
+{% block encabezado %}
+<div class="pagina-encabezado d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <a href="{% url 'canales:inicio' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Contenido</a>
+        <h1 class="pagina-titulo">Organizar contenido</h1>
+        <p class="pagina-bajada">Todo lo cargado, por categoría. Tocá una tarjeta para elegirla y usá la barra de abajo, o "Editar" para cambiarle nombre, logo, categoría o tipo y ver de dónde salió.</p>
+    </div>
+    {% if puede_editar %}
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'canales:youtube' %}" class="btn btn-outline-secondary"><i class="bi bi-youtube" aria-hidden="true"></i> Traer de YouTube</a>
+        <a href="{% url 'canales:inicio' %}#form-importar" class="btn btn-outline-secondary"><i class="bi bi-upload" aria-hidden="true"></i> Importar lista</a>
+        <a href="{% url 'canales:categorias' %}" class="btn btn-outline-secondary"><i class="bi bi-tags" aria-hidden="true"></i> Juntar repetidas</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block contenido %}
+<nav class="pestanias contenido-pestanias mb-4" aria-label="Tipo de contenido">
+    <a href="?contenido=vivo" {% if contenido == 'vivo' %}class="activa" aria-current="page"{% endif %}><i class="bi bi-broadcast" aria-hidden="true"></i> En vivo</a>
+    <a href="?contenido=pelicula" {% if contenido == 'pelicula' %}class="activa" aria-current="page"{% endif %}><i class="bi bi-film" aria-hidden="true"></i> Películas</a>
+    <a href="?contenido=serie" {% if contenido == 'serie' %}class="activa" aria-current="page"{% endif %}><i class="bi bi-collection-play" aria-hidden="true"></i> Series</a>
+</nav>
+
+<div class="espejo">
+    {# ── El árbol de categorías ── #}
+    <aside class="espejo-categorias" aria-label="Categorías">
+        {% if puede_editar %}
+        <details class="espejo-nueva">
+            <summary><i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva categoría</summary>
+            <form method="post" action="{% url 'canales:categorias' %}" class="d-grid gap-2 mt-2">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="crear">
+                <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+                <label for="nueva-nombre" class="visually-hidden">Nombre</label>
+                <input type="text" name="nombre" id="nueva-nombre" class="form-control form-control-sm" maxlength="80" placeholder="Nombre (ej: Música, Rock)" required>
+                <label for="nueva-padre" class="visually-hidden">Dónde va</label>
+                <select name="padre" id="nueva-padre" class="form-select form-select-sm">
+                    <option value="">Categoría principal</option>
+                    {% for c in principales %}<option value="{{ c.pk }}" {% if nodo.categoria.pk == c.pk %}selected{% endif %}>Dentro de: {{ c.nombre }}</option>{% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary">Crear</button>
+            </form>
+        </details>
+        {% endif %}
+        <p class="espejo-total">
+            <strong class="dato">{{ datos.total }}</strong>
+            {% if contenido == 'vivo' %}canales{% elif contenido == 'pelicula' %}películas{% else %}series{% endif %}
+            {% if filtros.mostrar == 'app' %}que ve la app{% elif filtros.mostrar == 'fuera' %}que no se ven{% else %}cargados{% endif %}
+        </p>
+        <nav class="espejo-lista">
+            <a href="?{{ base }}&amp;categoria=todas" class="espejo-categoria{% if datos.elegida == 'todas' %} activa{% endif %}">
+                <span class="espejo-categoria-nombre">Todas</span>
+                <span class="espejo-categoria-numero">{{ datos.total }}</span>
+            </a>
+            {% for n in datos.nodos %}
+            <a href="?{{ base }}&amp;categoria={{ n.clave }}" class="espejo-categoria nivel-{{ n.nivel }}{% if n.clave == datos.elegida %} activa{% endif %}"
+               {% if n.clave == datos.elegida %}aria-current="true"{% endif %}>
+                <span class="espejo-categoria-nombre">
+                    {% if n.nivel %}<i class="bi bi-arrow-return-right" aria-hidden="true"></i>{% endif %}
+                    {% if n.categoria %}{{ n.categoria.nombre }}{% else %}Sin categoría{% endif %}
+                    {% if n.vacia %}<small>vacía</small>{% elif n.total != n.cantidad %}<small>{{ n.cantidad }} propios, el resto en sus subcategorías</small>{% endif %}
+                </span>
+                <span class="espejo-categoria-numero">{{ n.total }}</span>
+            </a>
+            {% endfor %}
+        </nav>
+    </aside>
+
+    <section class="espejo-contenido" aria-label="Contenido">
+        {# ── Filtros ── #}
+        <form method="get" class="filtros mb-3" role="search">
+            <input type="hidden" name="contenido" value="{{ contenido }}">
+            {% if datos.elegida != 'todas' %}<input type="hidden" name="categoria" value="{{ datos.elegida }}">{% endif %}
+            <div class="filtros-buscar">
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <label for="q" class="visually-hidden">Buscar</label>
+                <input type="search" id="q" name="q" value="{{ filtros.texto }}" class="form-control" placeholder="Buscar por nombre">
+            </div>
+            <div>
+                <label for="mostrar" class="visually-hidden">Qué mostrar</label>
+                <select id="mostrar" name="mostrar" class="form-select">
+                    <option value="todo" {% if filtros.mostrar == 'todo' %}selected{% endif %}>Todo lo cargado</option>
+                    <option value="app" {% if filtros.mostrar == 'app' %}selected{% endif %}>Solo lo que ve la app</option>
+                    <option value="fuera" {% if filtros.mostrar == 'fuera' %}selected{% endif %}>Lo que no se ve (caído o quitado)</option>
+                </select>
+            </div>
+            <div>
+                <label for="origen" class="visually-hidden">De dónde salió</label>
+                <select id="origen" name="origen" class="form-select">
+                    <option value="">Cualquier origen</option>
+                    {% for o in origenes %}<option value="{{ o }}" {% if filtros.origen == o %}selected{% endif %}>{{ o }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="form-check d-flex align-items-center gap-2 mb-0">
+                <input class="form-check-input mt-0" type="checkbox" name="sin_logo" value="1" id="sin_logo" {% if filtros.sin_logo %}checked{% endif %}>
+                <label class="form-check-label" for="sin_logo">Sin imagen</label>
+            </div>
+            <button type="submit" class="btn btn-primary">Filtrar</button>
+            {% if hay_filtros %}<a href="?contenido={{ contenido }}{% if datos.elegida != 'todas' %}&amp;categoria={{ datos.elegida }}{% endif %}" class="btn btn-link">Limpiar</a>{% endif %}
+        </form>
+
+        {# ── La categoría elegida y sus opciones ── #}
+        <div class="espejo-titulo">
+            <h2>
+                {% if datos.elegida == 'todas' %}Todas{% elif nodo.categoria %}{{ nodo.categoria.nombre }}{% else %}Sin categoría{% endif %}
+                <span>{% if nodo %}{{ nodo.total }}{% else %}{{ datos.pagina.paginator.count }}{% endif %}</span>
+            </h2>
+            {% if nodo.categoria %}
+            <span class="texto-suave small">En la app: «{{ nodo.categoria.nombre_en_app }}»</span>
+            {% elif datos.elegida == 'ninguna' %}
+            <span class="texto-suave small">En la app: «Otros»</span>
+            {% endif %}
+        </div>
+
+        {% if puede_editar and nodo.categoria %}
+        <details class="espejo-opciones mb-3">
+            <summary><i class="bi bi-gear" aria-hidden="true"></i> Opciones de «{{ nodo.categoria.nombre }}»</summary>
+            <div class="espejo-opciones-cuerpo">
+                <form method="post" action="{% url 'canales:categorias' %}" class="espejo-opcion">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="renombrar">
+                    <input type="hidden" name="categoria" value="{{ nodo.categoria.pk }}">
+                    <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+                    <label for="op-nombre" class="small texto-suave">Nombre</label>
+                    <input type="text" name="nombre" id="op-nombre" class="form-control form-control-sm" maxlength="80" value="{{ nodo.categoria.nombre }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Renombrar</button>
+                </form>
+                <form method="post" action="{% url 'canales:categorias' %}" class="espejo-opcion">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="ubicar">
+                    <input type="hidden" name="categoria" value="{{ nodo.categoria.pk }}">
+                    <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+                    <label for="op-padre" class="small texto-suave">Va</label>
+                    <select name="padre" id="op-padre" class="form-select form-select-sm">
+                        <option value="">Como categoría principal</option>
+                        {% for c in principales %}{% if c.pk != nodo.categoria.pk %}<option value="{{ c.pk }}" {% if nodo.categoria.padre_id == c.pk %}selected{% endif %}>Dentro de: {{ c.nombre }}</option>{% endif %}{% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Ubicar</button>
+                </form>
+                <form method="post" action="{% url 'canales:categorias' %}" class="espejo-opcion">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="ordenar">
+                    <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+                    <label for="op-orden" class="small texto-suave" title="Menor = aparece antes en la app">Orden</label>
+                    <input type="number" name="orden_{{ nodo.categoria.pk }}" id="op-orden" class="form-control form-control-sm" style="width:6rem" min="0" value="{{ nodo.categoria.orden }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Guardar orden</button>
+                </form>
+                <form method="post" action="{% url 'canales:categorias' %}" class="espejo-opcion">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="borrar">
+                    <input type="hidden" name="categoria" value="{{ nodo.categoria.pk }}">
+                    <input type="hidden" name="volver" value="{% url 'canales:organizar' %}?contenido={{ contenido }}">
+                    <span class="small texto-suave">Borrar</span>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" name="con_contenido" value="0"
+                            data-confirmar="¿Borrar la categoría «{{ nodo.categoria.nombre }}»? Lo que tiene queda sin categoría (en la app, en «Otros») y sus subcategorías pasan a ser principales.">
+                        Solo la categoría
+                    </button>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary text-danger" name="con_contenido" value="1"
+                            data-confirmar="¿Borrar «{{ nodo.categoria.nombre }}» CON TODO SU CONTENIDO{% if nodo.total %} ({{ nodo.total }}){% endif %} y sus subcategorías? Se eliminan del panel y de la app (en todas las pestañas). No se puede deshacer.">
+                        Con todo su contenido
+                    </button>
+                </form>
+            </div>
+        </details>
+        {% endif %}
+
+        {% if not datos.pagina.object_list %}
+        <div class="tarjeta">
+            <div class="vacio">
+                <i class="bi bi-inbox" aria-hidden="true"></i>
+                <p>{% if hay_filtros %}Nada coincide con los filtros.{% elif nodo.vacia %}Esta categoría está vacía. Elegí cosas en otra categoría y usá «Mover a…», o importá directo en ella.{% else %}No hay nada acá en esta pestaña.{% endif %}</p>
+            </div>
+        </div>
+        {% else %}
+        {# ── El contenido (elegir y la barra de abajo) ── #}
+        <form method="post" id="form-organizar" {% if contenido == 'serie' %}action="{% url 'canales:series_acciones' %}"{% endif %}>
+            {% csrf_token %}
+            <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+            {% for categoria, items in datos.grupos %}
+            {% if datos.grupos|length > 1 or datos.elegida == 'todas' %}
+            <h3 class="espejo-seccion">{% if categoria %}{{ categoria.nombre_en_app }}{% else %}Sin categoría{% endif %}</h3>
+            {% endif %}
+            <div class="espejo-grilla{% if contenido != 'vivo' %} con-poster{% endif %}">
+                {% for item in items %}
+                <label class="espejo-tarjeta{% if contenido == 'serie' %}{% if not item.completa %} fuera{% endif %}{% elif item.no_se_ve %} fuera{% endif %}">
+                    {% if puede_editar %}
+                    {% if contenido == 'serie' %}
+                    <input type="checkbox" class="form-check-input canal-elegir" name="serie" value="{{ item.nombre }}">
+                    {% else %}
+                    <input type="checkbox" class="form-check-input canal-elegir" name="canal" value="{{ item.pk }}">
+                    {% endif %}
+                    {% endif %}
+                    <span class="espejo-imagen" data-iniciales="{{ item.nombre|iniciales }}">{% if item.logo %}<img src="{{ item.logo }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% else %}{{ item.nombre|iniciales }}{% endif %}</span>
+                    <span class="espejo-nombre" title="{{ item.nombre }}">{{ item.nombre }}</span>
+                    <span class="espejo-detalle">
+                        {% if contenido == 'serie' %}
+                        {{ item.cantidad }} cap.{% if not item.completa %} · <span class="estado-mal" title="{{ item.por_que_no_se_ve }}">no se ve</span>{% endif %}{% if not item.activo %} · quitada{% endif %}
+                        {% else %}
+                        {% if not item.activo %}<span class="estado-mal">Quitado</span>{% elif item.no_se_ve %}<span class="estado-mal" title="{{ item.no_se_ve }}">No se ve</span>{% else %}Se ve{% endif %}
+                        {% endif %}
+                    </span>
+                    <button type="button" class="espejo-editar" data-datos="{{ item.datos }}">{% if puede_editar %}Editar{% else %}Ver{% endif %}</button>
+                </label>
+                {% endfor %}
+            </div>
+            {% endfor %}
+
+            {% include "parciales/_paginacion.html" with pagina=datos.pagina parametros=parametros %}
+
+            {% if puede_editar %}
+            <div class="acciones-catalogo">
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="elegir-todos">
+                    <label class="form-check-label" for="elegir-todos">Toda la página</label>
+                </div>
+                <span class="texto-suave small" id="cantidad-elegidos">Ninguno elegido</span>
+                <label for="categoria-destino" class="visually-hidden">Mover a categoría</label>
+                <select name="categoria" id="categoria-destino" class="form-select form-select-sm w-auto">
+                    <option value="">Mover a…</option>
+                    {% for c, nivel in arbol %}<option value="{{ c.pk }}">{% if nivel %}— {% endif %}{{ c.nombre }}</option>{% endfor %}
+                    <option value="ninguna">Sin categoría (Otros)</option>
+                </select>
+                <label for="nueva-categoria" class="visually-hidden">O una categoría nueva</label>
+                <input type="text" name="nueva_categoria" id="nueva-categoria" class="form-control form-control-sm" maxlength="80" placeholder="o una nueva">
+                {% if contenido == 'serie' %}
+                <button type="submit" class="btn btn-sm btn-primary" name="accion" value="mover" data-necesita-elegidos>Mover</button>
+                <span class="espejo-separador" aria-hidden="true"></span>
+                <button type="submit" class="btn btn-sm btn-outline-secondary" name="accion" value="a_peliculas" data-necesita-elegidos
+                        data-confirmar="¿Pasar a películas todos los capítulos de las series elegidas? Cada capítulo queda como una película suelta.">A películas</button>
+                <button type="submit" class="btn btn-sm btn-outline-secondary" name="accion" value="quitar" data-necesita-elegidos>Quitar de la app</button>
+                <button type="submit" class="btn btn-sm btn-outline-secondary" name="accion" value="mostrar" data-necesita-elegidos>Volver a mostrar</button>
+                {% else %}
+                <button type="submit" class="btn btn-sm btn-primary" formaction="{% url 'canales:catalogo_categoria' %}" data-necesita-elegidos>Mover</button>
+                <span class="espejo-separador" aria-hidden="true"></span>
+                <label for="contenido-destino" class="visually-hidden">Cambiar a</label>
+                <select name="contenido" id="contenido-destino" class="form-select form-select-sm w-auto">
+                    <option value="">Cambiar a…</option>
+                    {% if contenido != 'vivo' %}<option value="vivo">En vivo</option>{% endif %}
+                    {% if contenido != 'pelicula' %}<option value="pelicula">Película</option>{% endif %}
+                    <option value="serie">Serie</option>
+                </select>
+                <span style="display:none;gap:.5rem" data-solo-serie>
+                    <label for="nombre-serie" class="visually-hidden">Nombre de la serie</label>
+                    <input type="text" name="nombre_serie" id="nombre-serie" class="form-control form-control-sm" maxlength="90" placeholder="Nombre de la serie"
+                           title="Los elegidos quedan como capítulos de esa serie, numerados en orden: Serie S01 E01, E02...">
+                    <label for="temporada" class="visually-hidden">Temporada</label>
+                    <input type="number" name="temporada" id="temporada" class="form-control form-control-sm" style="width:5.5rem" min="1" max="99" value="1" title="Temporada">
+                </span>
+                <button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'canales:catalogo_contenido' %}" data-necesita-elegidos data-necesita-tipo>Cambiar</button>
+                <span class="espejo-separador" aria-hidden="true"></span>
+                <button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'canales:catalogo_quitar' %}" data-necesita-elegidos
+                        title="Deja de verse en la app, pero queda guardado: si vuelve en otra lista, no entra.">Quitar de la app</button>
+                <button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'canales:catalogo_mostrar' %}" data-necesita-elegidos>Volver a mostrar</button>
+                {% endif %}
+                <button type="submit" class="btn btn-sm btn-outline-secondary text-danger" formaction="{% url 'canales:organizar_eliminar' %}" data-necesita-elegidos
+                        data-confirmar="¿Eliminar lo elegido? Desaparece del panel y de la app. Si lo volvés a importar, vuelve a entrar (para que no vuelva, usá «Quitar de la app»).">
+                    <i class="bi bi-trash" aria-hidden="true"></i> Eliminar
+                </button>
+            </div>
+            {% endif %}
+        </form>
+        {% endif %}
+    </section>
+</div>
+
+{# ── Edición rápida (la llena el script con los datos de la tarjeta) ── #}
+<dialog class="detalle-canal" id="editar" aria-labelledby="editar-titulo">
+    <form method="post" action="{% url 'canales:organizar_editar' %}" class="detalle-canal-cuerpo" id="form-editar">
+        {% csrf_token %}
+        <input type="hidden" name="tipo">
+        <input type="hidden" name="canal">
+        <input type="hidden" name="serie">
+        <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+            <div>
+                <h2 class="h5 mb-1" id="editar-titulo"></h2>
+                <p class="small mb-0" id="editar-estado"></p>
+            </div>
+            <button type="button" class="btn-close" data-cerrar aria-label="Cerrar"></button>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="espejo-imagen" id="editar-vista"></div>
+            </div>
+            <div class="col-md-9">
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label for="editar-nombre" class="form-label">Nombre</label>
+                        <input type="text" name="nombre" id="editar-nombre" class="form-control" maxlength="120" required>
+                    </div>
+                    <div class="col-md-4" data-solo-canal>
+                        <label for="editar-numero" class="form-label">Número</label>
+                        <input type="text" name="numero" id="editar-numero" class="form-control" maxlength="10">
+                    </div>
+                    <div class="col-12">
+                        <label for="editar-logo" class="form-label">Imagen (logo o póster)</label>
+                        <input type="url" name="logo" id="editar-logo" class="form-control" maxlength="500" placeholder="https://.../imagen.jpg">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="editar-categoria" class="form-label">Categoría</label>
+                        <select name="categoria" id="editar-categoria" class="form-select">
+                            {% for c, nivel in arbol %}<option value="{{ c.pk }}">{% if nivel %}— {% endif %}{{ c.nombre }}</option>{% endfor %}
+                            <option value="ninguna">Sin categoría (Otros)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="editar-nueva" class="form-label">O una nueva</label>
+                        <input type="text" name="nueva_categoria" id="editar-nueva" class="form-control" maxlength="80">
+                    </div>
+                    <div class="col-md-6" data-solo-canal>
+                        <label for="editar-contenido" class="form-label">Es</label>
+                        <select name="contenido" id="editar-contenido" class="form-select">
+                            <option value="vivo">Un canal en vivo</option>
+                            <option value="pelicula">Una película</option>
+                            <option value="serie">Un capítulo de serie</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="activo" id="editar-activo">
+                            <label class="form-check-label" for="editar-activo">Se muestra en la app</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <h3 class="h6 mt-4">De dónde salió</h3>
+        <ul class="espejo-origenes" id="editar-origenes"></ul>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+            {% if puede_editar %}<button type="submit" class="btn btn-primary"><i class="bi bi-check-lg" aria-hidden="true"></i> Guardar</button>{% endif %}
+            <button type="button" class="btn btn-link" data-cerrar>Cerrar</button>
+            <a href="#" class="btn btn-link" id="editar-mas">Más opciones (fuentes, idioma…)</a>
+            {% if puede_editar %}<button type="button" class="btn btn-outline-secondary text-danger ms-auto" id="editar-eliminar"><i class="bi bi-trash" aria-hidden="true"></i> Eliminar</button>{% endif %}
+        </div>
+    </form>
+</dialog>
+<form method="post" action="{% url 'canales:organizar_eliminar' %}" id="form-eliminar-uno" hidden>
+    {% csrf_token %}
+    <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // ── Elegir varias y la barra de abajo ──
+    var form = document.getElementById('form-organizar');
+    if (form) {
+        var casillas = form.querySelectorAll('.canal-elegir');
+        var todos = document.getElementById('elegir-todos');
+        var cantidad = document.getElementById('cantidad-elegidos');
+        var tipo = document.getElementById('contenido-destino');
+        var soloSerie = form.querySelector('[data-solo-serie]');
+        var actualizar = function () {
+            var elegidos = Array.prototype.filter.call(casillas, function (c) { return c.checked; }).length;
+            if (cantidad) cantidad.textContent = elegidos ? elegidos + ' elegido' + (elegidos > 1 ? 's' : '') : 'Ninguno elegido';
+            form.querySelectorAll('[data-necesita-elegidos]').forEach(function (boton) {
+                boton.disabled = !elegidos || (boton.hasAttribute('data-necesita-tipo') && !(tipo && tipo.value));
+            });
+            if (todos) {
+                todos.checked = elegidos > 0 && elegidos === casillas.length;
+                todos.indeterminate = elegidos > 0 && elegidos < casillas.length;
+            }
+            if (soloSerie) soloSerie.style.display = tipo && tipo.value === 'serie' ? 'inline-flex' : 'none';
+        };
+        casillas.forEach(function (c) { c.addEventListener('change', actualizar); });
+        if (tipo) tipo.addEventListener('change', actualizar);
+        if (todos) {
+            todos.addEventListener('change', function () {
+                casillas.forEach(function (c) { c.checked = todos.checked; });
+                actualizar();
+            });
+        }
+        actualizar();
+    }
+    // Confirmar lo que no se puede deshacer (en cualquier formulario de la página)
+    document.querySelectorAll('form').forEach(function (f) {
+        f.addEventListener('submit', function (evento) {
+            var boton = evento.submitter;
+            if (boton && boton.dataset.confirmar && !window.confirm(boton.dataset.confirmar)) evento.preventDefault();
+        });
+    });
+
+    // ── Edición rápida ──
+    var dialogo = document.getElementById('editar');
+    var editar = document.getElementById('form-editar');
+    var vista = document.getElementById('editar-vista');
+    var logo = document.getElementById('editar-logo');
+    var actual = null;
+
+    function iniciales(texto) {
+        return (texto || '').split(/\s+/).filter(Boolean).slice(0, 2).map(function (p) { return p[0]; }).join('').toUpperCase() || '?';
+    }
+    function pintarImagen() {
+        vista.textContent = '';
+        if (logo.value.trim()) {
+            var imagen = document.createElement('img');
+            imagen.alt = '';
+            imagen.referrerPolicy = 'no-referrer';
+            imagen.src = logo.value.trim();
+            vista.appendChild(imagen);
+        } else {
+            vista.textContent = iniciales(editar.nombre.value);
+        }
+    }
+    function abrir(datos) {
+        actual = datos;
+        var esSerie = datos.tipo === 'serie';
+        editar.tipo.value = datos.tipo;
+        editar.canal.value = esSerie ? '' : datos.pk;
+        editar.serie.value = esSerie ? datos.nombre : '';
+        editar.nombre.value = datos.nombre;
+        editar.numero.value = datos.numero || '';
+        logo.value = datos.logo || '';
+        editar.categoria.value = String(datos.categoria);
+        editar.nueva_categoria.value = '';
+        if (!esSerie) editar.contenido.value = datos.contenido;
+        editar.activo.checked = !!datos.activo;
+        document.getElementById('editar-titulo').textContent = esSerie ? 'Serie: ' + datos.nombre + ' (' + datos.capitulos + ' capítulos)' : datos.nombre;
+        var estado = document.getElementById('editar-estado');
+        estado.textContent = datos.en_app ? 'Se ve en la app.' : 'No se ve en la app: ' + (datos.motivo || '');
+        estado.className = 'small mb-0 ' + (datos.en_app ? 'estado-bien' : 'estado-mal');
+        dialogo.querySelectorAll('[data-solo-canal]').forEach(function (el) { el.style.display = esSerie ? 'none' : ''; });
+        vista.classList.toggle('poster', datos.tipo === 'serie' || datos.contenido !== 'vivo');
+        document.getElementById('editar-mas').href = datos.mas;
+        var lista = document.getElementById('editar-origenes');
+        lista.textContent = '';
+        (datos.fuentes.length ? datos.fuentes : [{origen: 'No tiene fuentes', url: '', tipo: '', estado: ''}]).forEach(function (f) {
+            var li = document.createElement('li');
+            var origen = document.createElement(f.importacion ? 'a' : 'strong');
+            origen.textContent = f.origen;
+            if (f.importacion) { origen.href = f.importacion; origen.title = 'Ver esa importación'; }
+            li.appendChild(origen);
+            if (f.tipo) li.appendChild(document.createTextNode(' · ' + f.tipo + ' · ' + f.estado));
+            if (f.url) {
+                var enlace = document.createElement('a');
+                enlace.href = f.url;
+                enlace.target = '_blank';
+                enlace.rel = 'noopener noreferrer';
+                enlace.className = 'direccion';
+                enlace.textContent = f.url;
+                li.appendChild(enlace);
+            }
+            lista.appendChild(li);
+        });
+        pintarImagen();
+        dialogo.showModal();
+    }
+    document.querySelectorAll('.espejo-editar').forEach(function (boton) {
+        boton.addEventListener('click', function (evento) {
+            evento.preventDefault();   // que no elija la tarjeta
+            abrir(JSON.parse(boton.dataset.datos));
+        });
+    });
+    logo.addEventListener('input', pintarImagen);
+    dialogo.querySelectorAll('[data-cerrar]').forEach(function (b) { b.addEventListener('click', function () { dialogo.close(); }); });
+    dialogo.addEventListener('click', function (evento) { if (evento.target === dialogo) dialogo.close(); });
+    var eliminar = document.getElementById('editar-eliminar');
+    if (eliminar) {
+        eliminar.addEventListener('click', function () {
+            if (!actual || !window.confirm('¿Eliminar «' + actual.nombre + '»' + (actual.tipo === 'serie' ? ' con todos sus capítulos' : '') + '? Desaparece del panel y de la app. Si lo volvés a importar, vuelve a entrar.')) return;
+            var uno = document.getElementById('form-eliminar-uno');
+            var campo = document.createElement('input');
+            campo.type = 'hidden';
+            campo.name = actual.tipo === 'serie' ? 'serie' : 'canal';
+            campo.value = actual.tipo === 'serie' ? actual.nombre : actual.pk;
+            uno.appendChild(campo);
+            uno.submit();
+        });
+    }
+})();
+</script>
+{% endblock %}

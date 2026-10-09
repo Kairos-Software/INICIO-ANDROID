@@ -2,6 +2,7 @@
 Los canales de TV en vivo.
 
     Categoria  1 ──< Canal  1 ──< Fuente
+    Categoria  1 ──< Categoria    (subcategorías: "Música" > "Rock", un solo nivel)
 
     Importacion  1 ──< EntradaImportada  (una lista M3U subida y qué pasó con cada línea)
 
@@ -30,6 +31,10 @@ class Categoria(ModeloBase):
     # por línea). Al importar, una lista que diga "Argentina" va a la categoría
     # que tiene "Argentina" acá (ver organizar.categoria_por_nombre).
     otros_nombres = models.TextField(blank=True)
+    # Una subcategoría (ej: "Rock") va dentro de una categoría padre ("Música").
+    # Un solo nivel: un padre no puede estar dentro de otro (ver organizar.ubicar_categoria).
+    padre = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name='subcategorias', verbose_name='dentro de')
 
     class Meta:
         verbose_name = 'categoría'
@@ -42,6 +47,11 @@ class Categoria(ModeloBase):
 
     def __str__(self):
         return self.nombre
+
+    @property
+    def nombre_en_app(self):
+        """Como la muestra la app: las subcategorías con su padre adelante ("Música · Rock")."""
+        return f'{self.padre.nombre} · {self.nombre}' if self.padre_id and self.padre else self.nombre
 
 
 class Idioma(models.TextChoices):

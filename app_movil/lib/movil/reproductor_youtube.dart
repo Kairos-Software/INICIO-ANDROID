@@ -400,11 +400,25 @@ class _PantallaYoutubeState extends State<PantallaYoutube> {
     return '${episodio.codigo}${episodio.titulo.isEmpty ? '' : ' "${episodio.titulo}"'}';
   }
 
+  /// El WebView con el video. En Android, en "hybrid composition": se dibuja
+  /// directo en la pantalla. La forma de siempre copia cada imagen del video
+  /// a una textura antes de mostrarla y en aparatos con poco procesador (o en
+  /// un celular cargado) el video se traba.
+  Widget _vistaDelVideo(WebViewController web) {
+    final android = web.platform;
+    if (android is AndroidWebViewController) {
+      return WebViewWidget.fromPlatformCreationParams(
+        params: AndroidWebViewWidgetCreationParams(controller: android, displayWithHybridComposition: true),
+      );
+    }
+    return WebViewWidget(controller: web);
+  }
+
   @override
   Widget build(BuildContext context) {
     final web = _web;
     final error = _estado.error;
-    Widget video = web == null ? const SizedBox.expand() : WebViewWidget(controller: web);
+    Widget video = web == null ? const SizedBox.expand() : KeyedSubtree(key: ObjectKey(web), child: _vistaDelVideo(web));
     // En la TV el video no recibe el foco ni toques: las teclas las maneja esta pantalla
     if (widget.tv) video = ExcludeFocus(child: IgnorePointer(child: video));
 
