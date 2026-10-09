@@ -1089,6 +1089,27 @@ a.chip:hover, a.chip.activo { filter: brightness(1.25); box-shadow: 0 0 0 1px cu
 .espejo-origenes { display: grid; gap: .45rem; padding-left: 1.1rem; margin: 0; font-size: .85rem; }
 .espejo-origenes .direccion { display: block; color: var(--texto-apagado); font-size: .75rem; word-break: break-all; }
 
+/* Organizar: categorías de la sección (elegir para juntar), ayudas y la barra de abajo por pasos */
+.espejo-lado-titulo { margin: .1rem .35rem .25rem; font-size: 1rem; font-weight: 700; }
+.espejo-ayuda { margin: 0 .35rem .8rem; font-size: .75rem; line-height: 1.4; color: var(--texto-apagado); }
+.espejo-barra .espejo-ayuda, .espejo-opcion .espejo-ayuda { margin: 0; flex: 1 1 16rem; }
+.espejo-parecidas {
+    margin-bottom: .9rem; padding: .6rem .7rem; border-radius: var(--radio);
+    background: var(--dorado-fondo); border: 1px solid rgba(255, 186, 32, .25);
+}
+.espejo-parecidas-titulo { margin: 0 0 .4rem; font-size: .8rem; font-weight: 700; color: var(--dorado-claro); }
+.espejo-parecida + .espejo-parecida { margin-top: .6rem; padding-top: .6rem; border-top: 1px solid rgba(255, 186, 32, .18); }
+.espejo-fila { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); align-items: center; gap: .2rem; }
+.espejo-fila-casilla { display: flex; justify-content: center; }
+.espejo-juntar {
+    position: sticky; bottom: -.9rem; margin: .7rem -.9rem -.9rem; padding: .8rem .9rem;
+    background: var(--capa-alta); border-top: 1px solid var(--celeste-borde);
+}
+.espejo-nueva { margin-top: .9rem; }
+.espejo-barra { flex-direction: column; align-items: stretch; }
+.espejo-barra-fila { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; }
+.espejo-barra-fila .form-control { flex: 0 1 16rem; width: auto; }
+
 @media (max-width: 991.98px) {
     .espejo { grid-template-columns: minmax(0, 1fr); }
     .espejo-categorias { position: static; max-height: 18rem; }

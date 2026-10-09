@@ -2,7 +2,6 @@
 Los canales de TV en vivo.
 
     Categoria  1 ──< Canal  1 ──< Fuente
-    Categoria  1 ──< Categoria    (subcategorías: "Música" > "Rock", un solo nivel)
 
     Importacion  1 ──< EntradaImportada  (una lista M3U subida y qué pasó con cada línea)
 
@@ -24,36 +23,6 @@ from django.utils import timezone
 from herramientas.modelos import ModeloBase
 
 
-class Categoria(ModeloBase):
-    nombre = models.CharField(max_length=80)
-    orden = models.PositiveIntegerField(default=0, help_text='Menor = aparece primero.')
-    # Los nombres que tenía antes o de las categorías que se le juntaron (uno
-    # por línea). Al importar, una lista que diga "Argentina" va a la categoría
-    # que tiene "Argentina" acá (ver organizar.categoria_por_nombre).
-    otros_nombres = models.TextField(blank=True)
-    # Una subcategoría (ej: "Rock") va dentro de una categoría padre ("Música").
-    # Un solo nivel: un padre no puede estar dentro de otro (ver organizar.ubicar_categoria).
-    padre = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
-                              related_name='subcategorias', verbose_name='dentro de')
-
-    class Meta:
-        verbose_name = 'categoría'
-        verbose_name_plural = 'categorías'
-        ordering = ['orden', 'nombre']
-        constraints = [
-            models.UniqueConstraint(fields=['nombre'], condition=models.Q(eliminado_en__isnull=True),
-                                    name='categoria_nombre_unico'),
-        ]
-
-    def __str__(self):
-        return self.nombre
-
-    @property
-    def nombre_en_app(self):
-        """Como la muestra la app: las subcategorías con su padre adelante ("Música · Rock")."""
-        return f'{self.padre.nombre} · {self.nombre}' if self.padre_id and self.padre else self.nombre
-
-
 class Idioma(models.TextChoices):
     ESPANOL = 'es', 'Español'
     OTRO = 'otro', 'Otro idioma'
@@ -64,6 +33,34 @@ class Contenido(models.TextChoices):
     VIVO = 'vivo', 'En vivo'
     PELICULA = 'pelicula', 'Película'
     SERIE = 'serie', 'Serie'
+
+
+class Categoria(ModeloBase):
+    """
+    Una categoría de UNA sección de la app (En vivo, Películas o Series): la
+    "Infantil" de los canales no es la "Infantil" de las películas. Así, al
+    ordenar las películas solo aparecen categorías de películas.
+    """
+    nombre = models.CharField(max_length=80)
+    contenido = models.CharField('sección', max_length=10, choices=Contenido.choices, default=Contenido.VIVO,
+                                 db_index=True)
+    orden = models.PositiveIntegerField(default=0, help_text='Menor = aparece primero.')
+    # Los nombres que tenía antes o de las categorías que se le juntaron (uno
+    # por línea). Al importar, una lista que diga "Argentina" va a la categoría
+    # que tiene "Argentina" acá (ver organizar.categoria_por_nombre).
+    otros_nombres = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = 'categoría'
+        verbose_name_plural = 'categorías'
+        ordering = ['orden', 'nombre']
+        constraints = [
+            models.UniqueConstraint(fields=['contenido', 'nombre'], condition=models.Q(eliminado_en__isnull=True),
+                                    name='categoria_nombre_unico_por_seccion'),
+        ]
+
+    def __str__(self):
+        return self.nombre
 
 
 class Canal(ModeloBase):

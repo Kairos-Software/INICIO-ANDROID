@@ -230,7 +230,7 @@ def catalogo(request):
         'contenidos': Contenido.choices,
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
         'resumen': consultas.resumen(),
-        'todas_las_categorias': Categoria.objects.order_by('nombre'),
+        'todas_las_categorias': consultas.categorias_de(filtros['contenido']),
     })
 
 
@@ -250,7 +250,7 @@ def series(request):
         'categorias': consultas.categorias_con_canales(Contenido.SERIE),
         'origenes': consultas.origenes(Contenido.SERIE),
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
-        'todas_las_categorias': Categoria.objects.order_by('nombre'),
+        'todas_las_categorias': consultas.categorias_de(Contenido.SERIE),
     })
 
 
@@ -322,7 +322,7 @@ def organizar_contenido(request):
                                           pagina=request.GET.get('pagina'), **filtros)
     _preparar_para_editar(datos.pagina, contenido)
     nodo = next((n for n in datos.nodos if n['clave'] == datos.elegida), None)
-    arbol = consultas.categorias_en_arbol()
+    categorias = list(organizar.categorias_con_cantidades(contenido))
     # Los filtros de ahora, para los links del árbol (que cambian solo la categoría)
     base = request.GET.copy()
     for clave in ('categoria', 'pagina'):
@@ -336,8 +336,9 @@ def organizar_contenido(request):
         'hay_filtros': bool(filtros['texto'] or filtros['mostrar'] != 'todo' or filtros['origen']
                             or filtros['sin_logo']),
         'origenes': consultas.origenes(contenido),
-        'arbol': arbol,
-        'principales': [c for c, nivel in arbol if nivel == 0],
+        'categorias': categorias,
+        'parecidas': organizar.categorias_parecidas([c for c in categorias if c.total]),
+        'seccion': organizar.nombre_de_seccion(contenido),
         'parametros': _parametros_sin_pagina(request),
         'base': base.urlencode(),
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
@@ -355,14 +356,15 @@ def organizar_editar(request):
         return redirect(_volver(request))
     datos = form.cleaned_data
     try:
-        categoria = _categoria_elegida(request)
         if request.POST.get('tipo') == 'serie':
+            categoria = _categoria_elegida(request, Contenido.SERIE)
             nombre = request.POST.get('serie', '')
             cambios = organizar.editar_serie(nombre, request.user, nombre=datos['nombre'], logo=datos['logo'],
                                              categoria=categoria, activo=datos['activo'])
             titulo = datos['nombre'] or nombre
         else:
             canal = get_object_or_404(Canal, pk=request.POST.get('canal', '0'))
+            categoria = _categoria_elegida(request, datos['contenido'] or canal.contenido)
             extra = {'contenido': datos['contenido']} if datos['contenido'] else {}
             cambios = organizar.editar_canal(canal, request.user, nombre=datos['nombre'], logo=datos['logo'],
                                              categoria=categoria, activo=datos['activo'],
@@ -459,11 +461,20 @@ def catalogo_mostrar(request):
     return _volver_al_catalogo(request)
 
 
-def _categoria_elegida(request):
-    """La categoría de destino: una nueva (si se escribió) o una de la lista. None = sin categoría."""
+def _seccion_pedida(request):
+    """De qué sección se está hablando (los formularios lo mandan en "seccion")."""
+    seccion = request.POST.get('seccion') or request.GET.get('contenido') or ''
+    return seccion if seccion in Contenido.values else Contenido.VIVO
+
+
+def _categoria_elegida(request, contenido=None):
+    """
+    La categoría de destino: una nueva (si se escribió; se crea en `contenido`,
+    o en la sección que mandó el formulario) o una de la lista. None = sin categoría.
+    """
     nueva = request.POST.get('nueva_categoria', '').strip()
     if nueva:
-        return organizar.categoria_por_nombre(nueva, usuario=request.user)
+        return organizar.categoria_por_nombre(nueva, contenido or _seccion_pedida(request), usuario=request.user)
     elegida = request.POST.get('categoria', '')
     if elegida == 'ninguna':
         return None
@@ -487,16 +498,16 @@ def catalogo_categoria(request):
     return _volver_al_catalogo(request)
 
 
-def _avisar_cambio_de_tipo(request, cantidad, sin_numero, contenido):
+def _avisar_cambio_de_tipo(request, cantidad, contenido, nombre_serie=''):
     if not cantidad:
         messages.info(request, 'No había ninguno elegido.')
         return
-    destino = {Contenido.VIVO: 'canales en vivo', Contenido.PELICULA: 'películas', Contenido.SERIE: 'series'}[contenido]
-    messages.success(request, f'{cantidad} pasaron a {destino}.')
-    if sin_numero:
-        messages.warning(request, f'{sin_numero} no dicen temporada y capítulo en el nombre ("S01 E01"): la app '
-                                  f'los toma como series de un solo capítulo y no los muestra. Elegilos y pasalos '
-                                  f'a serie escribiendo el nombre de la serie, o editales el nombre.')
+    if contenido == Contenido.SERIE and nombre_serie:
+        messages.success(request, f'Listo: {cantidad} quedaron como capítulos de la serie "{nombre_serie}" '
+                                  f'(los ves en la sección Series).')
+        return
+    destino = {Contenido.VIVO: 'En vivo', Contenido.PELICULA: 'Películas', Contenido.SERIE: 'Series'}[contenido]
+    messages.success(request, f'{cantidad} pasaron a la sección {destino}.')
 
 
 @require_POST
@@ -509,13 +520,14 @@ def catalogo_contenido(request):
     except ValueError:
         messages.error(request, 'La temporada tiene que ser un número.')
         return _volver_al_catalogo(request)
+    nombre_serie = request.POST.get('nombre_serie', '').strip()
     try:
-        cantidad, sin_numero = organizar.cambiar_contenido(
-            _canales_elegidos(request), contenido, request.POST.get('nombre_serie', ''), temporada, request.user)
+        cantidad = organizar.cambiar_contenido(_canales_elegidos(request), contenido, nombre_serie, temporada,
+                                               request.user)
     except organizar.NoSePuede as error:
         messages.error(request, str(error))
         return _volver_al_catalogo(request)
-    _avisar_cambio_de_tipo(request, cantidad, sin_numero, contenido)
+    _avisar_cambio_de_tipo(request, cantidad, contenido, nombre_serie)
     return _volver_al_catalogo(request)
 
 
@@ -526,13 +538,22 @@ def series_acciones(request):
     capitulos = organizar.capitulos_de(request.POST.getlist('serie'))
     try:
         if request.POST.get('accion') == 'mover':
-            categoria = _categoria_elegida(request)
+            categoria = _categoria_elegida(request, Contenido.SERIE)
             cantidad = organizar.mover_a_categoria(capitulos, categoria, request.user)
             messages.success(request, f'Se movieron {cantidad} capítulo(s) a "{categoria or "Sin categoría"}".'
                              if cantidad else 'No se movió nada (ya estaban en esa categoría).')
         elif request.POST.get('accion') == 'a_peliculas':
-            cantidad, _ = organizar.cambiar_contenido(capitulos, Contenido.PELICULA, usuario=request.user)
-            _avisar_cambio_de_tipo(request, cantidad, 0, Contenido.PELICULA)
+            cantidad = organizar.cambiar_contenido(capitulos, Contenido.PELICULA, usuario=request.user)
+            _avisar_cambio_de_tipo(request, cantidad, Contenido.PELICULA)
+        elif request.POST.get('accion') == 'unir':
+            nombre_serie = request.POST.get('nombre_serie', '').strip()
+            try:
+                temporada = max(1, min(int(request.POST.get('temporada') or 1), 99))
+            except ValueError:
+                temporada = 1
+            cantidad = organizar.unir_en_una_serie(request.POST.getlist('serie'), nombre_serie, temporada,
+                                                   request.user)
+            _avisar_cambio_de_tipo(request, cantidad, Contenido.SERIE, nombre_serie)
         elif request.POST.get('accion') == 'quitar':
             cantidad = servicios.quitar_canales(capitulos, request.POST.get('motivo', ''), request.user)
             messages.success(request, f'Se quitaron de la app {cantidad} capítulo(s).' if cantidad
@@ -552,28 +573,28 @@ def series_acciones(request):
 # ── Categorías ───────────────────────────────────────────────────────
 
 def _accion_de_categorias(request):
-    """Hace lo que se pidió en la página de categorías y devuelve el mensaje (o lanza NoSePuede)."""
+    """Hace lo que se pidió con las categorías y devuelve el mensaje (o lanza NoSePuede)."""
     accion = request.POST.get('accion', '')
-    padre_pk = request.POST.get('padre', '')
-    padre = get_object_or_404(Categoria, pk=padre_pk) if padre_pk.isdigit() else None
     if accion == 'crear':
-        categoria = organizar.crear_categoria(request.POST.get('nombre', ''), request.user, padre=padre)
-        return (f'Se creó "{categoria.nombre_en_app}". Ahora elegí qué va adentro y usá "Mover a…", '
-                f'o importá directo en ella.')
-    if accion == 'ubicar':
-        categoria = get_object_or_404(Categoria, pk=request.POST.get('categoria', '0'))
-        organizar.ubicar_categoria(categoria, padre, request.user)
-        return (f'"{categoria}" ahora está dentro de "{padre}" (en la app: "{categoria.nombre_en_app}").' if padre
-                else f'"{categoria}" ahora es una categoría principal.')
+        contenido = _seccion_pedida(request)
+        categoria = organizar.crear_categoria(request.POST.get('nombre', ''), contenido, request.user)
+        return (f'Se creó la categoría "{categoria}" en {organizar.nombre_de_seccion(contenido)}. Para llenarla, '
+                f'elegí cosas y usá "Mover a…", o importá directo en ella.')
     if accion == 'renombrar':
         categoria = get_object_or_404(Categoria, pk=request.POST.get('categoria', '0'))
         viejo = categoria.nombre
         final = organizar.renombrar_categoria(categoria, request.POST.get('nombre', ''), request.user)
         return f'"{viejo}" ahora se llama "{final}".' if final.pk == categoria.pk else f'Ya existía "{final}": se juntaron.'
     if accion == 'juntar':
-        elegidas = Categoria.objects.filter(pk__in=[pk for pk in request.POST.getlist('elegida') if pk.isdigit()])
-        final = organizar.juntar_categorias(list(elegidas), request.POST.get('destino', ''), request.user)
-        return f'Se juntaron en "{final}". Las listas que traigan esos nombres van a ir a "{final}".'
+        elegidas = list(Categoria.objects.filter(
+            pk__in=[pk for pk in request.POST.getlist('elegida') if pk.isdigit()]))
+        destino = request.POST.get('destino', '').strip()
+        if not destino and request.POST.get('destino_pk', '').isdigit():
+            destino = get_object_or_404(Categoria, pk=request.POST['destino_pk']).nombre
+        juntadas = [c.nombre for c in elegidas if c.nombre != destino]
+        final = organizar.juntar_categorias(elegidas, destino, request.user)
+        return (f'Listo: {", ".join(juntadas)} ya no existen y todo su contenido está en "{final}". Si una lista '
+                f'nueva trae esos nombres, también va a "{final}".')
     if accion == 'borrar':
         categoria = get_object_or_404(Categoria, pk=request.POST.get('categoria', '0'))
         con_contenido = request.POST.get('con_contenido') == '1'
@@ -591,7 +612,7 @@ def _accion_de_categorias(request):
 
 @requiere_permiso('importar_canales')
 def categorias(request):
-    """Crear, renombrar, juntar, borrar y ordenar las categorías."""
+    """Crear, renombrar, juntar, borrar y ordenar las categorías (los formularios están en Organizar contenido)."""
     if request.method == 'POST':
         try:
             messages.success(request, _accion_de_categorias(request))
@@ -602,11 +623,7 @@ def categorias(request):
             volver = reverse('canales:categorias')
         return redirect(volver)
 
-    lista = list(organizar.categorias_con_cantidades())
-    return render(request, 'canales/categorias.html', {
-        'categorias': lista,
-        'parecidas': organizar.categorias_parecidas(lista),
-    })
+    return redirect('canales:organizar')
 
 
 # ── Editar un canal ──────────────────────────────────────────────────

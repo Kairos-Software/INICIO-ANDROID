@@ -29,12 +29,48 @@ def _texto_del_archivo(archivo):
     return archivo.read().decode('utf-8', errors='replace')
 
 
+# ── Categorías: cada una es de una sección (En vivo, Películas o Series) ──
+
+def _elegir_categoria_con_su_seccion(campo):
+    """La lista de categorías dice de qué sección es cada una ("Infantil · Películas")."""
+    campo.queryset = Categoria.objects.order_by('contenido', 'orden', 'nombre')
+    campo.required = False
+    campo.label_from_instance = lambda c: f'{c.nombre} · {organizar.nombre_de_seccion(c.contenido)}'
+
+
+def _categoria_de_su_seccion(datos, canal):
+    """
+    La categoría que queda: la nueva que se escribió, o la elegida. Siempre de
+    la sección del canal (si se eligió "Infantil" de otra sección, va a la
+    "Infantil" de la suya; si no existe, se crea).
+    """
+    contenido = datos.get('contenido') or canal.contenido
+    nueva = (datos.get('nueva_categoria') or '').strip()
+    elegida = datos.get('categoria')
+    if nueva:
+        datos['categoria'] = organizar.categoria_por_nombre(nueva, contenido)
+    elif elegida is not None and elegida.contenido != contenido:
+        datos['categoria'] = organizar.categoria_por_nombre(elegida.nombre, contenido)
+    else:
+        return
+    canal.categoria = datos['categoria']
+
+
 # ── Importar directo en una categoría (listas M3U y YouTube) ──
 
-def _opciones_de_categorias(vacia):
-    """Las categorías para elegir, con las subcategorías debajo de su principal ("— Rock")."""
-    from .consultas import categorias_en_arbol
-    return [('', vacia)] + [(str(c.pk), f'{"— " if nivel else ""}{c.nombre}') for c, nivel in categorias_en_arbol()]
+def _opciones_de_categorias(vacia, secciones):
+    """
+    Las categorías para elegir al importar, agrupadas por sección. El valor es
+    el NOMBRE: cada cosa importada va a la categoría con ese nombre de SU
+    sección (si no existe, se crea al cargar).
+    """
+    grupos = []
+    for contenido in secciones:
+        nombres = list(Categoria.objects.filter(contenido=contenido).order_by('orden', 'nombre')
+                       .values_list('nombre', flat=True))
+        if nombres:
+            grupos.append((organizar.nombre_de_seccion(contenido), [(n, n) for n in nombres]))
+    return [('', vacia), *grupos]
 
 
 def _campo_categoria_nueva():
@@ -44,11 +80,7 @@ def _campo_categoria_nueva():
 
 def _nombre_de_la_categoria(datos):
     """La categoría elegida para todo lo importado: su nombre ('' = la que diga cada entrada)."""
-    nueva = ' '.join((datos.get('categoria_nueva') or '').split())
-    if nueva:
-        return nueva
-    elegida = Categoria.objects.filter(pk=datos.get('categoria_destino') or 0).first()
-    return elegida.nombre if elegida else ''
+    return ' '.join((datos.get('categoria_nueva') or datos.get('categoria_destino') or '').split())
 
 
 class EditarDesdeOrganizarForm(forms.Form):
@@ -81,7 +113,8 @@ class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['categoria_destino'].choices = _opciones_de_categorias('Según el género de cada título')
+        self.fields['categoria_destino'].choices = _opciones_de_categorias(
+            'Según el género de cada título', [Contenido.PELICULA, Contenido.SERIE])
 
     def categoria(self):
         return _nombre_de_la_categoria(self.cleaned_data)
@@ -119,7 +152,8 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['categoria_destino'].choices = _opciones_de_categorias('La que dice la lista')
+        self.fields['categoria_destino'].choices = _opciones_de_categorias(
+            'La que dice la lista', [Contenido.VIVO, Contenido.PELICULA, Contenido.SERIE])
 
     def clean_archivo(self):
         archivo = self.cleaned_data['archivo']
@@ -166,8 +200,7 @@ class CanalForm(EstiloBootstrapMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['categoria'].queryset = Categoria.objects.order_by('nombre')
-        self.fields['categoria'].required = False
+        _elegir_categoria_con_su_seccion(self.fields['categoria'])
         self.fields['pais'].widget.attrs.update({'maxlength': 2, 'style': 'text-transform:uppercase'})
 
     def clean_pais(self):
@@ -183,10 +216,7 @@ class CanalForm(EstiloBootstrapMixin, forms.ModelForm):
         datos = super().clean()
         if datos.get('activo'):
             datos['motivo_quitado'] = ''
-        nueva = (datos.get('nueva_categoria') or '').strip()
-        if nueva:
-            datos['categoria'] = organizar.categoria_por_nombre(nueva)
-            self.instance.categoria = datos['categoria']
+        _categoria_de_su_seccion(datos, self.instance)
         return datos
 
 
@@ -222,8 +252,7 @@ class CanalNuevoForm(EstiloBootstrapMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['categoria'].queryset = Categoria.objects.order_by('nombre')
-        self.fields['categoria'].required = False
+        _elegir_categoria_con_su_seccion(self.fields['categoria'])
         self.fields['pais'].widget.attrs.update({'maxlength': 2, 'style': 'text-transform:uppercase'})
 
     def clean_pais(self):
@@ -231,8 +260,5 @@ class CanalNuevoForm(EstiloBootstrapMixin, forms.ModelForm):
 
     def clean(self):
         datos = super().clean()
-        nueva = (datos.get('nueva_categoria') or '').strip()
-        if nueva:
-            datos['categoria'] = organizar.categoria_por_nombre(nueva)
-            self.instance.categoria = datos['categoria']
+        _categoria_de_su_seccion(datos, self.instance)
         return datos

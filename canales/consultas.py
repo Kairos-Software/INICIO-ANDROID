@@ -4,8 +4,7 @@ Lo que el sistema BUSCA de los canales (capa Base).
 
 from dataclasses import dataclass, field
 
-from django.db.models import Count, Exists, F, OuterRef, Prefetch, Q
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 
 from . import clasificar
 from .models import Canal, Categoria, Contenido, Fuente, Importacion, hace_dias_oculta
@@ -18,15 +17,9 @@ TIPOS_QUE_REPRODUCE_LA_APP = [Fuente.Tipo.HLS, Fuente.Tipo.DASH, Fuente.Tipo.DIR
                               Fuente.Tipo.YOUTUBE, Fuente.Tipo.PAGINA, Fuente.Tipo.YT_VIDEO]
 TIPOS_DE_LA_APP_VIEJA = [Fuente.Tipo.HLS]
 
-# El orden de las categorías en la app: por su número de orden y nombre, y
-# cada categoría principal seguida de sus subcategorías ("Música", "Música ·
-# Rock", "Música · Pop"). Lo sin categoría ("Otros") va al final.
-ORDEN_DE_CATEGORIAS = (
-    Coalesce('categoria__padre__orden', 'categoria__orden').asc(nulls_last=True),
-    Coalesce('categoria__padre__nombre', 'categoria__nombre').asc(nulls_last=True),
-    F('categoria__padre').asc(nulls_first=True),
-    'categoria__orden', 'categoria__nombre',
-)
+# El orden de las categorías en la app: por su número de orden y su nombre.
+# Lo sin categoría ("Otros") va al final.
+ORDEN_DE_CATEGORIAS = ('categoria__orden', 'categoria__nombre')
 
 
 def tipos_pedidos(texto):
@@ -59,7 +52,7 @@ def canales_disponibles(tipos=None, contenido=Contenido.VIVO):
     return (
         Canal.objects
         .filter(activo=True, contenido=contenido, pk__in=fuentes_usables(tipos).values('canal'))
-        .select_related('categoria__padre')
+        .select_related('categoria')
         .prefetch_related(Prefetch('fuentes', queryset=fuentes, to_attr='fuentes_activas'))
         .order_by(*ORDEN_DE_CATEGORIAS, 'orden', 'nombre')
     )
@@ -276,46 +269,32 @@ def como_en_la_app(contenido=Contenido.VIVO):
     return list(grupos.values())
 
 
-# ── Organizar: todo el contenido por categoría, para ordenarlo y editarlo ──
+# ── Organizar: todo el contenido de una sección, por categoría ───────
 
-def categorias_en_arbol():
-    """[(categoría, nivel)]: cada principal (nivel 0) seguida de sus subcategorías (nivel 1), en el orden de la app."""
-    todas = list(Categoria.objects.select_related('padre').order_by('orden', 'nombre'))
-    ids = {c.pk for c in todas}
-    hijas = {}
-    for categoria in todas:
-        if categoria.padre_id in ids:
-            hijas.setdefault(categoria.padre_id, []).append(categoria)
-    arbol = []
-    for categoria in todas:
-        if categoria.padre_id in ids:
-            continue
-        arbol.append((categoria, 0))
-        arbol.extend((hija, 1) for hija in hijas.get(categoria.pk, []))
-    return arbol
+def categorias_de(contenido):
+    """Las categorías de una sección (En vivo, Películas o Series), en el orden de la app."""
+    return Categoria.objects.filter(contenido=contenido).order_by('orden', 'nombre')
 
 
 @dataclass
 class Organizacion:
     """Lo que muestra la pantalla Organizar (ver organizar_contenido)."""
-    nodos: list            # el árbol de la izquierda: [{'clave', 'categoria', 'nivel', 'cantidad', 'total'}, ...]
+    nodos: list            # las categorías de la izquierda: [{'clave', 'categoria', 'total', 'vacia'}, ...]
     elegida: str           # 'todas', 'ninguna' o el pk de la categoría
     pagina: object         # la página de lo elegido (canales o Serie)
     grupos: list           # la página agrupada: [(categoría o None, [items]), ...]
-    total: int             # cuántos hay en esta pestaña (con los filtros)
+    total: int             # cuántos hay en esta sección (con los filtros)
 
 
 def organizar_contenido(contenido=Contenido.VIVO, mostrar='todo', texto='', origen='', sin_logo=False,
                         categoria='', pagina=None, por_pagina=120):
     """
-    Todo lo cargado de un tipo (en vivo, películas o series), por categoría:
+    Todo lo cargado de una sección (en vivo, películas o series), por categoría:
       mostrar: 'todo' | 'app' (lo que ve la app) | 'fuera' (lo que no se ve: caído o quitado)
-      categoria: 'todas' | 'ninguna' | pk ('' = la primera que tenga algo; con `texto`, todas)
-    Elegir una categoría principal muestra también lo de sus subcategorías.
+      categoria: 'todas' | 'ninguna' | pk ('' = todas)
     """
     from django.core.paginator import Paginator
 
-    arbol = categorias_en_arbol()
     if contenido == Contenido.SERIE:
         items = series(texto=texto, origen=origen, sin_logo=sin_logo, estado='en_app' if mostrar == 'app' else '')
         if mostrar == 'fuera':
@@ -332,50 +311,34 @@ def organizar_contenido(contenido=Contenido.VIVO, mostrar='todo', texto='', orig
     for _, categoria_id in pares:
         cuantos[categoria_id] = cuantos.get(categoria_id, 0) + 1
     con_algo = set(Canal.objects.exclude(categoria=None).values_list('categoria_id', flat=True).distinct())
-    hijas = {}
-    for categoria_hija, nivel in arbol:
-        if nivel:
-            hijas.setdefault(categoria_hija.padre_id, []).append(categoria_hija.pk)
-    nodos = []
-    for cat, nivel in arbol:
-        total = cuantos.get(cat.pk, 0) + sum(cuantos.get(h, 0) for h in hijas.get(cat.pk, []))
-        vacia = cat.pk not in con_algo and not any(h in con_algo for h in hijas.get(cat.pk, []))
-        nodos.append({'clave': str(cat.pk), 'categoria': cat, 'nivel': nivel, 'cantidad': cuantos.get(cat.pk, 0),
-                      'total': total, 'vacia': vacia, 'se_ve': bool(total) or vacia})
-    # Una principal se ve si se ve alguna de sus subcategorías
-    for indice, nodo in enumerate(nodos):
-        if nodo['nivel'] == 0 and not nodo['se_ve']:
-            nodo['se_ve'] = any(n['se_ve'] for n in nodos[indice + 1:] if n['nivel'] == 1
-                                and n['categoria'].padre_id == nodo['categoria'].pk)
-    nodos = [n for n in nodos if n['se_ve']]
+    nodos = [{'clave': str(c.pk), 'categoria': c, 'total': cuantos.get(c.pk, 0), 'vacia': c.pk not in con_algo}
+             for c in categorias_de(contenido)]
+    # Sin filtros se ven todas (también las vacías, para llenarlas); con filtros, solo las que tienen algo
+    hay_filtros = texto or origen or sin_logo or mostrar != 'todo'
+    nodos = [n for n in nodos if n['total'] or (n['vacia'] and not hay_filtros)]
     if cuantos.get(None):
-        nodos.append({'clave': 'ninguna', 'categoria': None, 'nivel': 0, 'cantidad': cuantos[None],
-                      'total': cuantos[None], 'vacia': False, 'se_ve': True})
+        nodos.append({'clave': 'ninguna', 'categoria': None, 'total': cuantos[None], 'vacia': False})
 
-    elegida = categoria or ('todas' if texto else next((n['clave'] for n in nodos if n['total']), 'todas'))
+    elegida = categoria or 'todas'
     if elegida not in ('todas', 'ninguna') and not any(n['clave'] == elegida for n in nodos):
         elegida = 'todas'
-    if elegida == 'todas':
-        ids = None
-    elif elegida == 'ninguna':
-        ids = {None}
-    else:
-        ids = {int(elegida), *hijas.get(int(elegida), [])}
-
     posicion = {n['categoria'].pk if n['categoria'] else None: i for i, n in enumerate(nodos)}
     if contenido == Contenido.SERIE:
-        elegidos = [s for s, categoria_id in pares if ids is None or categoria_id in ids]
+        elegidos = [s for s, categoria_id in pares
+                    if elegida == 'todas' or str(categoria_id) == elegida or (elegida == 'ninguna' and not categoria_id)]
         elegidos.sort(key=lambda s: (posicion.get(s.categoria_id, len(posicion)), s.nombre.lower()))
+    elif elegida == 'todas':
+        elegidos = canales
+    elif elegida == 'ninguna':
+        elegidos = canales.filter(categoria=None)
     else:
-        elegidos = canales if ids is None else (
-            canales.filter(categoria=None) if ids == {None} else canales.filter(categoria_id__in=ids))
+        elegidos = canales.filter(categoria_id=int(elegida))
     pagina_elegida = Paginator(elegidos, por_pagina).get_page(pagina)
 
-    grupos = {}
     categorias = {n['categoria'].pk: n['categoria'] for n in nodos if n['categoria']}
+    grupos = {}
     for item in pagina_elegida:
-        categoria_id = item.categoria_id
-        grupos.setdefault(categoria_id, (categorias.get(categoria_id), []))[1].append(item)
+        grupos.setdefault(item.categoria_id, (categorias.get(item.categoria_id), []))[1].append(item)
     grupos = sorted(grupos.items(), key=lambda par: posicion.get(par[0], len(posicion)))
     return Organizacion(nodos=nodos, elegida=elegida, pagina=pagina_elegida, grupos=[g for _, g in grupos],
                         total=len(pares))
@@ -397,7 +360,7 @@ def catalogo(texto='', categoria='', idioma='', estado='', sin_logo=False, orige
     """
     usables = fuentes_usables().filter(canal=OuterRef('pk'))
     canales = (
-        Canal.objects.select_related('categoria__padre')
+        Canal.objects.select_related('categoria')
         .annotate(
             fuentes_total=Count('fuentes', distinct=True),
             fuentes_funcionan=Count('fuentes', filter=Q(fuentes__estado=Fuente.Estado.FUNCIONA), distinct=True),

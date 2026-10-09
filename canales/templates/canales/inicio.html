@@ -25,9 +25,6 @@
         <a href="{% url 'canales:youtube' %}" class="btn btn-outline-secondary">
             <i class="bi bi-youtube" aria-hidden="true"></i> Traer de YouTube
         </a>
-        <a href="{% url 'canales:categorias' %}" class="btn btn-outline-secondary">
-            <i class="bi bi-tags" aria-hidden="true"></i> Categorías
-        </a>
         {% endif %}
         {% if permisos.ver_estadisticas %}
         <a href="{% url 'canales:lo_mas_visto' %}" class="btn btn-outline-secondary">

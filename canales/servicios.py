@@ -375,7 +375,7 @@ def _agregar(entrada, resultado, indice, categorias, origen, usuario, ahora):
     nuevo = canal is None
     if nuevo:
         # Respeta lo que se ordenó en el panel: si "Argentina" se juntó en "Noticias", va a "Noticias"
-        categoria = organizar.categoria_por_nombre(entrada.categoria, categorias, usuario)
+        categoria = organizar.categoria_por_nombre(entrada.categoria, entrada.contenido, categorias, usuario)
         canal = Canal(nombre=entrada.nombre, numero=entrada.numero, logo=entrada.logo, categoria=categoria,
                       tvg_id=entrada.tvg_id, pais=entrada.pais, idioma=entrada.idioma, contenido=entrada.contenido)
         canal.marcar_autor(usuario)

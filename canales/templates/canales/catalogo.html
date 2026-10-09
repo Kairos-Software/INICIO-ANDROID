@@ -96,6 +96,7 @@
 <form method="post" id="form-catalogo">
     {% csrf_token %}
     <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+    <input type="hidden" name="seccion" value="{{ filtros.contenido }}">
     {# Para "quitar todos los del filtro": el servidor vuelve a aplicar el mismo filtro #}
     <input type="hidden" name="q" value="{{ filtros.texto }}">
     <input type="hidden" name="categoria" value="{{ filtros.categoria }}">
@@ -172,7 +173,7 @@
         <button type="submit" class="btn btn-sm btn-outline-secondary" formaction="{% url 'canales:catalogo_categoria' %}" data-necesita-elegidos>
             <i class="bi bi-folder-symlink" aria-hidden="true"></i> Mover elegidos
         </button>
-        <a href="{% url 'canales:categorias' %}" class="btn btn-sm btn-link">Ordenar categorías</a>
+        <a href="{% url 'canales:organizar' %}?contenido={{ filtros.contenido }}" class="btn btn-sm btn-link">Ordenar categorías</a>
     </div>
     <div class="acciones-catalogo">
         <label for="contenido-destino" class="small texto-suave mb-0">Cambiar a</label>
