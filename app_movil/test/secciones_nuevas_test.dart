@@ -2,6 +2,7 @@
 // aparecen en el menú de la TV y en los chips de Inicio del celular.
 import 'package:app_movil/api/cliente.dart';
 import 'package:app_movil/api/modelos.dart';
+import 'package:app_movil/movil/busqueda.dart';
 import 'package:app_movil/movil/datos.dart';
 import 'package:app_movil/movil/estructura.dart';
 import 'package:app_movil/sesion.dart';
@@ -97,6 +98,20 @@ void main() {
     expect(catalogo.canalPorId(20)?.nombre, 'Radio Mitre');
     final biblioteca = Biblioteca()..alternarMiLista('c:10');
     expect(catalogo.peliculasFavoritas(biblioteca).map((c) => c.nombre), ['Waka Waka']);
+  });
+
+  test('el buscador encuentra lo de las secciones nuevas, también por la categoría (el artista)', () async {
+    final catalogo = Catalogo(_Servidor());
+    await catalogo.cargar();
+    final porNombre = buscarEnCatalogo(catalogo, 'waka');
+    expect(porNombre.nuevas.single.$1.nombre, 'Música');
+    expect(porNombre.nuevas.single.$2.map((c) => c.nombre), ['Waka Waka']);
+    expect(porNombre.cuantos(QueBuscar.todo), 1);
+    expect(porNombre.cuantos(QueBuscar.peliculas), 0); // no se mezcla con Películas
+    final porArtista = buscarEnCatalogo(catalogo, 'shakira');
+    expect(porArtista.nuevas.single.$2.map((c) => c.nombre), ['Waka Waka', 'Hips Don\'t Lie']);
+    expect(buscarEnCatalogo(catalogo, 'mitre').nuevas.single.$1.nombre, 'Radio');
+    expect(buscarEnCatalogo(catalogo, 'nada parecido').nuevas, isEmpty);
   });
 
   test('con un servidor viejo (sin secciones nuevas) el catálogo carga igual', () async {

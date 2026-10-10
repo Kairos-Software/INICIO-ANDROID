@@ -10,14 +10,14 @@
 
 {% block encabezado %}
 <div class="pagina-encabezado">
-    <a href="{{ volver }}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Catálogo</a>
+    <a href="{{ volver }}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Volver</a>
     <h1 class="pagina-titulo">Editar canal</h1>
     <p class="pagina-bajada">Los cambios llegan solos a la app la próxima vez que actualice la lista (como mucho en 15 minutos).</p>
 </div>
 {% endblock %}
 
 {% block contenido %}
-<form method="post" novalidate>
+<form method="post" novalidate enctype="multipart/form-data">
     {% csrf_token %}
     <input type="hidden" name="volver" value="{{ volver }}">
     {{ fuentes.management_form }}
@@ -30,7 +30,8 @@
                 <div class="row g-3">
                     {% include "parciales/_campo.html" with campo=form.nombre ancho="col-md-8" %}
                     {% include "parciales/_campo.html" with campo=form.numero ancho="col-md-4" %}
-                    {% include "parciales/_campo.html" with campo=form.logo ancho="col-12" %}
+                    {% include "parciales/_campo.html" with campo=form.logo ancho="col-md-7" %}
+                    {% include "parciales/_campo.html" with campo=form.imagen ancho="col-md-5" %}
                     {% include "parciales/_campo.html" with campo=form.categoria %}
                     {% include "parciales/_campo.html" with campo=form.nueva_categoria %}
                     {% include "parciales/_campo.html" with campo=form.contenido ancho="col-md-4" %}
@@ -52,7 +53,7 @@
                         <div class="canal-meta"><span id="vista-numero" {% if not canal.numero %}hidden{% endif %}>{{ canal.numero }}</span></div>
                     </article>
                 </div>
-                <p class="small mt-3 mb-0" style="color:#9AA7A8">Para el logo sirve cualquier dirección de imagen (PNG, JPG, SVG). Si no carga, la app muestra las iniciales.</p>
+                <p class="small mt-3 mb-0" style="color:#9AA7A8">Para el logo sirve cualquier dirección de imagen (PNG, JPG, SVG), o subirla desde la compu. Si no carga, la app muestra las iniciales.</p>
             </section>
         </div>
     </div>
@@ -104,6 +105,8 @@
     // La vista previa cambia mientras se escribe
     var nombre = document.getElementById('{{ form.nombre.id_for_label }}');
     var logo = document.getElementById('{{ form.logo.id_for_label }}');
+    var subir = document.getElementById('{{ form.imagen.id_for_label }}');
+    var subida = '';
     var numero = document.getElementById('{{ form.numero.id_for_label }}');
     var vistaLogo = document.getElementById('vista-logo');
     var vistaNombre = document.getElementById('vista-nombre');
@@ -115,16 +118,19 @@
     function pintarLogo() {
         vistaLogo.dataset.iniciales = iniciales(nombre.value);
         vistaLogo.textContent = vistaLogo.dataset.iniciales;
-        if (logo.value.trim()) {
+        if (subida) URL.revokeObjectURL(subida);
+        subida = subir.files.length ? URL.createObjectURL(subir.files[0]) : '';
+        if (subida || logo.value.trim()) {
             var imagen = document.createElement('img');
             imagen.alt = '';
             imagen.referrerPolicy = 'no-referrer';
-            imagen.src = logo.value.trim();
+            imagen.src = subida || logo.value.trim();
             vistaLogo.replaceChildren(imagen);
         }
     }
     nombre.addEventListener('input', function () { vistaNombre.textContent = nombre.value; pintarLogo(); });
     logo.addEventListener('change', pintarLogo);
+    subir.addEventListener('change', pintarLogo);
     numero.addEventListener('input', function () { vistaNumero.textContent = numero.value; vistaNumero.hidden = !numero.value; });
 
     // Probar la fuente nueva tarda unos segundos

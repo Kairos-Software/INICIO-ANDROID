@@ -9,7 +9,8 @@
 ///     dice, para que se sepa;
 ///   - arriba de los resultados, los filtros Todo / En vivo / Películas /
 ///     Series, con cuántos encontró cada uno. Arranca en el de la sección
-///     desde donde se vino (desde Series, series).
+///     desde donde se vino (desde Series, series). En "Todo" también está lo
+///     de las secciones nuevas (Música, Radio...).
 /// La búsqueda en sí está en movil/busqueda.dart (es la misma del celular).
 library;
 
@@ -134,6 +135,29 @@ class _BuscarTvState extends State<BuscarTv> {
             subtitulo: 'Serie · ${serie.episodios.length} capítulos',
             alOk: () => abrirTv<void>(context, DetalleTv.serie(serie)),
           ),
+      if (_que == QueBuscar.todo)
+        for (final (seccion, lista) in encontrado.nuevas)
+          for (final canal in lista)
+            seccion.enVivo
+                ? _Resultado(
+                    imagen: LogoCanalTv(canal: canal, tamanioIniciales: 20, relleno: const EdgeInsets.all(6)),
+                    titulo: canal.nombre,
+                    subtitulo: [
+                      seccion.nombre,
+                      if (categoriaLegible(canal.categoria).isNotEmpty) categoriaLegible(canal.categoria),
+                    ].join(' · '),
+                    alOk: () => verCanalTv(context, canal, lista: seccion.canales),
+                  )
+                : _Resultado(
+                    imagen: Imagen(url: canal.logo, nombre: canal.nombre, tamanioIniciales: 16),
+                    poster: true,
+                    titulo: sinAnio(canal.nombre),
+                    subtitulo: [
+                      seccion.nombre,
+                      if (categoriaLegible(canal.categoria).isNotEmpty) categoriaLegible(canal.categoria),
+                    ].join(' · '),
+                    alOk: () => abrirTv<void>(context, DetalleTv.pelicula(canal)),
+                  ),
     ].take(_maximo).toList();
     if (resultados.isEmpty) return resultados;
     // El primero lleva el nodo al que se llega con DERECHA desde el teclado

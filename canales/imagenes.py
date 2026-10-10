@@ -23,7 +23,7 @@ from io import BytesIO
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageDraw, ImageOps, UnidentifiedImageError
 
 from . import clasificar
 from .models import Canal, PortadaDeSerie
@@ -52,8 +52,11 @@ def guardar_subida(archivo, request):
     if formato not in FORMATOS:
         raise ImagenInvalida(f'Las imágenes {formato} no se aceptan: tiene que ser JPG, PNG o WEBP.')
 
+    if _tiene_transparencia(imagen):
+        imagen = imagen.convert('RGBA')        # antes de girarla: si no, se pierde lo transparente
     imagen = ImageOps.exif_transpose(imagen)   # las fotos de celular vienen "acostadas" con un dato aparte
     imagen.thumbnail((LADO_MAXIMO, LADO_MAXIMO))
+    imagen = sacar_cuadritos(imagen)
     salida = BytesIO()
     if _tiene_transparencia(imagen):
         # Un logo con fondo transparente: PNG, para que no quede un recuadro negro
@@ -67,7 +70,82 @@ def guardar_subida(archivo, request):
 
 
 def _tiene_transparencia(imagen):
-    return imagen.mode in ('RGBA', 'LA') or (imagen.mode == 'P' and 'transparency' in imagen.info)
+    return imagen.mode in ('RGBA', 'LA', 'PA') or 'transparency' in imagen.info
+
+
+# ── El fondo "de cuadritos" falso ────────────────────────────────────
+# Muchos "PNG sin fondo" que se bajan de internet NO son transparentes: tienen
+# los cuadritos grises y blancos pintados (son parte de la imagen). Se
+# reconocen en el borde: dos grises que se alternan una y otra vez. Ese fondo
+# (lo que está pegado al borde y es de esos dos grises) pasa a transparente.
+
+TOLERANCIA = 8           # cuánto puede variar cada gris (compresión JPG)
+MINIMO_DE_CAMBIOS = 6    # cuántas veces tienen que alternarse en un lado para ser cuadritos
+
+
+def sacar_cuadritos(imagen):
+    """La imagen con el fondo de cuadritos pintado vuelto transparente (o la misma, si no lo tiene)."""
+    grises = _grises_de_cuadritos(imagen)
+    if grises is None:
+        return imagen
+    imagen = imagen.convert('RGBA')
+    ancho, alto = imagen.size
+    # Los puntos que son de alguno de los dos grises (sin color)
+    luz = imagen.convert('L')
+    parecidos = luz.point(lambda v: 255 if any(abs(v - g) <= TOLERANCIA for g in grises) else 0)
+    sin_color = imagen.convert('RGB').convert('HSV').getchannel('S').point(lambda v: 255 if v <= 24 else 0)
+    candidatos = ImageChops.multiply(parecidos, sin_color)
+    # De esos, solo los pegados al borde (el fondo): un gris adentro del logo se queda
+    for x, y in _borde(ancho, alto):
+        if candidatos.getpixel((x, y)) == 255:
+            ImageDraw.floodfill(candidatos, (x, y), 128, thresh=0)
+    fondo = candidatos.point(lambda v: 255 if v == 128 else 0)
+    imagen.putalpha(ImageChops.subtract(imagen.getchannel('A'), fondo))
+    return imagen
+
+
+def _borde(ancho, alto):
+    yield from ((x, y) for y in (0, alto - 1) for x in range(ancho))
+    yield from ((x, y) for x in (0, ancho - 1) for y in range(1, alto - 1))
+
+
+def _grises_de_cuadritos(imagen):
+    """Los dos grises del fondo de cuadritos, si el borde lo tiene; si no, None."""
+    if imagen.width < 16 or imagen.height < 16:
+        return None
+    rgba = imagen.convert('RGBA')
+    lados = [
+        [rgba.getpixel((x, 0)) for x in range(rgba.width)],
+        [rgba.getpixel((x, rgba.height - 1)) for x in range(rgba.width)],
+        [rgba.getpixel((0, y)) for y in range(rgba.height)],
+        [rgba.getpixel((rgba.width - 1, y)) for y in range(rgba.height)],
+    ]
+    puntos = [p for lado in lados for p in lado]
+    # Grises opacos (lo transparente de verdad no cuenta: esa imagen ya está bien)
+    grises = [p[0] for p in puntos if p[3] == 255 and max(p[:3]) - min(p[:3]) <= 12]
+    if len(grises) < len(puntos) * 0.8:
+        return None
+    # Los dos tonos más comunes, separados entre sí
+    cuantos = {}
+    for g in grises:
+        cuantos[g // 4] = cuantos.get(g // 4, 0) + 1
+    tonos = sorted(cuantos, key=cuantos.get, reverse=True)
+    primero = tonos[0] * 4 + 2
+    segundo = next((t * 4 + 2 for t in tonos[1:] if abs(t * 4 + 2 - primero) > 2 * TOLERANCIA), None)
+    if segundo is None:
+        return None
+    de_cada_uno = [sum(1 for g in grises if abs(g - tono) <= TOLERANCIA) for tono in (primero, segundo)]
+    if min(de_cada_uno) < len(puntos) * 0.2 or sum(de_cada_uno) < len(puntos) * 0.75:
+        return None
+    # Y que se alternen a lo largo de los lados (cuadritos, no dos franjas)
+    def cambios(lado):
+        tonos_del_lado = [0 if abs(p[0] - primero) <= TOLERANCIA else 1 if abs(p[0] - segundo) <= TOLERANCIA else None
+                          for p in lado]
+        conocidos = [t for t in tonos_del_lado if t is not None]
+        return sum(1 for a, b in zip(conocidos, conocidos[1:]) if a != b)
+    if sum(1 for lado in lados if cambios(lado) >= MINIMO_DE_CAMBIOS) < 2:
+        return None
+    return primero, segundo
 
 
 def _archivo_subido(url):

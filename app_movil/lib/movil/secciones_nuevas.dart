@@ -24,15 +24,19 @@ IconData iconoDeSeccion(String icono) => switch (icono) {
   _ => Icons.auto_awesome_rounded,
 };
 
-Future<void> abrirSeccionNueva(BuildContext context, SeccionNueva seccion) =>
-    abrirPantalla<void>(context, PantallaSeccionNueva(clave: seccion.clave, nombre: seccion.nombre));
+/// Con [canal] (desde el buscador), una "en vivo" (radio) arranca con ese.
+Future<void> abrirSeccionNueva(BuildContext context, SeccionNueva seccion, {int? canal}) =>
+    abrirPantalla<void>(context, PantallaSeccionNueva(clave: seccion.clave, nombre: seccion.nombre, canal: canal));
 
 class PantallaSeccionNueva extends StatelessWidget {
-  const PantallaSeccionNueva({super.key, required this.clave, required this.nombre});
+  const PantallaSeccionNueva({super.key, required this.clave, required this.nombre, this.canal});
 
   /// Por clave (y no la sección misma): al volver a pedir el catálogo llegan secciones nuevas.
   final String clave;
   final String nombre;
+
+  /// El canal con el que arranca (solo en las "en vivo").
+  final int? canal;
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +60,11 @@ class PantallaSeccionNueva extends StatelessWidget {
             return const Vacio(icono: Icons.inbox_outlined, texto: 'Esta sección ya no tiene nada para ver.');
           }
           return seccion.enVivo
-              ? SeccionEnVivo(visible: true, nueva: clave)
+              ? SeccionEnVivo(
+                  visible: true,
+                  nueva: clave,
+                  pedido: canal == null ? null : PedidoEnVivo(canal: canal),
+                )
               : SeccionGrilla(contenido: 'pelicula', nueva: clave);
         },
       ),

@@ -313,6 +313,13 @@ class Importacion(models.Model):
     def __str__(self):
         return f'{self.archivo} ({self.creada:%d/%m/%Y %H:%M})'
 
+    @property
+    def contenido_principal(self):
+        """La sección de la mayoría de lo que trajo (para ir a verlo en Organizar contenido)."""
+        fila = (self.entradas.values('contenido').annotate(cuantas=models.Count('pk')).order_by('-cuantas')
+                .first())
+        return self.seccion or (fila['contenido'] if fila else Contenido.VIVO)
+
 
 class EntradaImportada(models.Model):
     """Un canal de la lista importada y qué pasó con él (y por qué)."""

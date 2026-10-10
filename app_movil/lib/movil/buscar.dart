@@ -3,7 +3,8 @@
 ///
 /// Abajo del campo, los chips Todo / En vivo / Películas / Series (con cuántos
 /// encontró cada uno). Arranca en el de la sección desde donde se abrió: desde
-/// Series busca series. La búsqueda en sí está en busqueda.dart (es la misma
+/// Series busca series. En "Todo" también aparece lo de las secciones nuevas
+/// (Música, Radio...). La búsqueda en sí está en busqueda.dart (es la misma
 /// que la de la TV).
 library;
 
@@ -16,6 +17,7 @@ import 'datos.dart';
 import 'estilo.dart';
 import 'estructura.dart';
 import 'grilla.dart';
+import 'secciones_nuevas.dart';
 
 class PantallaBuscar extends StatefulWidget {
   const PantallaBuscar({super.key, required this.irA, this.que = QueBuscar.todo});
@@ -65,6 +67,7 @@ class _PantallaBuscarState extends State<PantallaBuscar> {
     final canales = muestra(QueBuscar.enVivo) ? encontrado.canales : const <Canal>[];
     final peliculas = muestra(QueBuscar.peliculas) ? encontrado.peliculas : const <Canal>[];
     final series = muestra(QueBuscar.series) ? encontrado.series : const <Serie>[];
+    final nuevas = _que == QueBuscar.todo ? encontrado.nuevas : const <(SeccionNueva, List<Canal>)>[];
 
     return Scaffold(
       backgroundColor: Tono.fondo,
@@ -189,6 +192,35 @@ class _PantallaBuscarState extends State<PantallaBuscar> {
                       ),
                     ),
                   ],
+                // Las secciones nuevas: las "en vivo" (radios) como los canales, las otras como películas
+                for (final (seccion, lista) in nuevas) ...[
+                  SliverToBoxAdapter(
+                    child: EncabezadoSeccion(
+                      titulo: seccion.nombre,
+                      icono: Icon(iconoDeSeccion(seccion.icono), size: 20, color: Tono.celeste),
+                    ),
+                  ),
+                  if (seccion.enVivo) ...[
+                    SliverList.builder(
+                      itemCount: lista.length,
+                      itemBuilder: (context, i) => _ResultadoCanal(
+                        canal: lista[i],
+                        alTocar: () => abrirSeccionNueva(context, seccion, canal: lista[i].id),
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: Espacio.lg)),
+                  ] else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(Espacio.margen, 0, Espacio.margen, Espacio.lg),
+                      sliver: SliverLayoutBuilder(
+                        builder: (context, limites) => SliverGrid.builder(
+                          gridDelegate: grillaPosters(limites.crossAxisExtent),
+                          itemCount: lista.length,
+                          itemBuilder: (context, i) => tarjetaPelicula(context, lista[i], tipo: seccion.nombre),
+                        ),
+                      ),
+                    ),
+                ],
               ],
             ),
     );

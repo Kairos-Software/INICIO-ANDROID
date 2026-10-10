@@ -6,9 +6,9 @@ from io import BytesIO
 from pathlib import Path
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
-from PIL import Image
+from PIL import Image, ImageDraw
 from rest_framework.test import APIClient
 
 from api import tokens
@@ -101,6 +101,87 @@ class SubirImagenTests(TestCase):
         respuesta = self.client.get(reverse('canales:organizar'), {'contenido': 'pelicula'})
         self.assertContains(respuesta, 'enctype="multipart/form-data"')
         self.assertContains(respuesta, 'name="imagen"')
+
+    def _editar_en_su_pagina(self, **datos):
+        return self.client.post(reverse('canales:canal_editar', args=[self.pelicula.pk]), {
+            'nombre': self.pelicula.nombre, 'logo': self.pelicula.logo, 'contenido': 'pelicula', 'orden': 0,
+            'activo': 'on', 'fuentes-TOTAL_FORMS': 0, 'fuentes-INITIAL_FORMS': 0, **datos})
+
+    def test_tambien_desde_editar_del_catalogo(self):
+        self.assertContains(self.client.get(reverse('canales:canal_editar', args=[self.pelicula.pk])), 'name="imagen"')
+        self.assertEqual(self._editar_en_su_pagina(imagen=_imagen()).status_code, 302)
+        self.pelicula.refresh_from_db()
+        self.assertRegex(self.pelicula.logo, r'/media/canales/imagenes/[0-9a-f]{32}\.jpg$')
+        self._editar_en_su_pagina(logo='https://ejemplo.com/otra.jpg')   # la subida vieja se borra
+        self.assertEqual(_archivos(), [])
+
+    def test_desde_editar_lo_que_no_es_imagen_muestra_el_error(self):
+        respuesta = self._editar_en_su_pagina(nombre='Otro', imagen=SimpleUploadedFile('x.png', b'nada', 'image/png'))
+        self.assertContains(respuesta, 'no es una imagen')
+        self.pelicula.refresh_from_db()
+        self.assertEqual(self.pelicula.nombre, 'EL REGRESO (2019) Película completa')
+
+
+def _cuadritos(lado=320, cuadro=16, claro=(255, 255, 255), oscuro=(204, 204, 204)):
+    """Un "PNG sin fondo" de internet: un logo rojo con los cuadritos PINTADOS (y un gris igual adentro)."""
+    imagen = Image.new('RGB', (lado, lado), claro)
+    dibujo = ImageDraw.Draw(imagen)
+    for y in range(0, lado, cuadro):
+        for x in range(0, lado, cuadro):
+            if (x // cuadro + y // cuadro) % 2:
+                dibujo.rectangle([x, y, x + cuadro - 1, y + cuadro - 1], fill=oscuro)
+    dibujo.ellipse([lado // 4, lado // 4, 3 * lado // 4, 3 * lado // 4], fill=(220, 20, 20))
+    dibujo.rectangle([lado // 2 - 8, lado // 2 - 8, lado // 2 + 8, lado // 2 + 8], fill=oscuro)
+    return imagen
+
+
+class FondoDeCuadritosTests(TestCase):
+
+    def test_los_cuadritos_pintados_pasan_a_transparente(self):
+        limpia = imagenes.sacar_cuadritos(_cuadritos())
+        self.assertEqual(limpia.mode, 'RGBA')
+        self.assertEqual(limpia.getpixel((0, 0))[3], 0)            # el fondo
+        self.assertEqual(limpia.getpixel((319, 170))[3], 0)
+        self.assertEqual(limpia.getpixel((100, 160))[3], 255)      # el logo
+        self.assertEqual(limpia.getpixel((160, 160))[3], 255)      # el gris de adentro del logo se queda
+
+    def test_tambien_los_oscuros_y_en_jpg(self):
+        buffer = BytesIO()
+        _cuadritos(claro=(60, 60, 60), oscuro=(40, 40, 40)).save(buffer, 'JPEG', quality=80)
+        buffer.seek(0)
+        with Image.open(buffer) as jpg:
+            self.assertEqual(imagenes.sacar_cuadritos(jpg).getpixel((0, 0))[3], 0)
+
+    def test_lo_que_no_es_cuadritos_no_se_toca(self):
+        blanca = Image.new('RGB', (300, 300), 'white')
+        ImageDraw.Draw(blanca).ellipse([50, 50, 250, 250], fill='blue')
+        franjas = Image.new('RGB', (300, 300), 'white')
+        ImageDraw.Draw(franjas).rectangle([0, 150, 300, 300], fill=(204, 204, 204))
+        transparente = Image.new('RGBA', (300, 300), (0, 0, 0, 0))
+        for imagen in (blanca, franjas, transparente, Image.new('RGB', (8, 8), 'gray')):
+            self.assertIs(imagenes.sacar_cuadritos(imagen), imagen)
+
+    @override_settings(MEDIA_ROOT=MEDIA_TEMPORAL)
+    def test_al_subirla_queda_png_transparente(self):
+        buffer = BytesIO()
+        _cuadritos().save(buffer, 'PNG')
+        url = imagenes.guardar_subida(SimpleUploadedFile('logo.png', buffer.getvalue(), 'image/png'),
+                                      RequestFactory().get('/'))
+        self.assertTrue(url.endswith('.png'))
+        with Image.open(Path(MEDIA_TEMPORAL) / imagenes._archivo_subido(url)) as guardada:
+            self.assertEqual(guardada.getpixel((0, 0))[3], 0)
+
+    @override_settings(MEDIA_ROOT=MEDIA_TEMPORAL)
+    def test_un_png_con_color_transparente_no_pierde_la_transparencia(self):
+        # PNG "RGB" con un color marcado como transparente (tRNS): antes quedaba JPG con ese color de fondo
+        buffer = BytesIO()
+        imagen = Image.new('RGB', (100, 100), (0, 255, 0))
+        ImageDraw.Draw(imagen).ellipse([20, 20, 80, 80], fill='red')
+        imagen.save(buffer, 'PNG', transparency=(0, 255, 0))
+        url = imagenes.guardar_subida(SimpleUploadedFile('logo.png', buffer.getvalue(), 'image/png'),
+                                      RequestFactory().get('/'))
+        with Image.open(Path(MEDIA_TEMPORAL) / imagenes._archivo_subido(url)) as guardada:
+            self.assertEqual((guardada.format, guardada.getpixel((0, 0))[3]), ('PNG', 0))
 
 
 @override_settings(MEDIA_ROOT=MEDIA_TEMPORAL)

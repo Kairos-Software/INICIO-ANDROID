@@ -164,6 +164,19 @@ class PantallasTests(TestCase):
     def setUp(self):
         self.client.force_login(Usuario.objects.create_superuser('admin', 'admin@test.com', 'x'))
 
+    def test_el_catalogo_tecnico_tiene_las_secciones_nuevas(self):
+        secciones.crear('Radio', Seccion.Forma.VIVO, Seccion.Icono.RADIO)
+        importar_m3u('#EXTM3U\n#EXTINF:-1 group-title="AM",Radio Mitre\nhttp://radio/mitre.m3u8\n', seccion='radio')
+        importar_m3u('#EXTM3U\n#EXTINF:-1 group-title="Noticias",Canal 26\nhttp://tv/26.m3u8\n')
+        # El catálogo viejo lleva a Organizar, a la misma sección
+        organizar_ = reverse('canales:organizar')
+        for pedido, va in (('radio', 'radio'), ('serie', 'serie'), ('cualquiera', 'vivo')):
+            self.assertRedirects(self.client.get(reverse('canales:catalogo'), {'contenido': pedido}),
+                                 f'{organizar_}?contenido={va}', fetch_redirect_response=False)
+        radio = self.client.get(organizar_, {'contenido': 'radio'})
+        self.assertContains(radio, 'Radio Mitre')
+        self.assertNotContains(radio, 'Canal 26')
+
     def test_crear_una_seccion_desde_organizar(self):
         respuesta = self.client.post(reverse('canales:secciones'), {
             'accion': 'crear', 'nombre': 'Música', 'forma': 'pelicula', 'icono': 'musica'})

@@ -5,7 +5,9 @@
 ///
 /// [QueBuscar] es el filtro de arriba de los resultados (Todo, En vivo,
 /// Películas, Series). Arranca en el de la sección donde se estaba: buscar
-/// desde Series busca series.
+/// desde Series busca series. Lo de las secciones nuevas (Música, Radio...)
+/// aparece en "Todo", cada una con su título; ahí también se busca por la
+/// categoría (en Música, el artista: "shakira" trae sus videos).
 library;
 
 import '../api/modelos.dart';
@@ -36,7 +38,12 @@ String sinTildes(String texto) {
 
 /// Lo que se encontró, por tipo (cada lista con [maximo] como mucho).
 class Encontrado {
-  const Encontrado({this.canales = const [], this.peliculas = const [], this.series = const []});
+  const Encontrado({
+    this.canales = const [],
+    this.peliculas = const [],
+    this.series = const [],
+    this.nuevas = const [],
+  });
 
   static const nada = Encontrado();
 
@@ -44,8 +51,12 @@ class Encontrado {
   final List<Canal> peliculas;
   final List<Serie> series;
 
+  /// Lo de cada sección nueva (Música, Radio...), solo las que encontraron algo.
+  final List<(SeccionNueva, List<Canal>)> nuevas;
+
   int cuantos(QueBuscar que) => switch (que) {
-    QueBuscar.todo => canales.length + peliculas.length + series.length,
+    QueBuscar.todo =>
+      canales.length + peliculas.length + series.length + nuevas.fold(0, (total, n) => total + n.$2.length),
     QueBuscar.enVivo => canales.length,
     QueBuscar.peliculas => peliculas.length,
     QueBuscar.series => series.length,
@@ -75,9 +86,16 @@ Encontrado buscarEnCatalogo(Catalogo catalogo, String texto, {int maximo = 40, b
     return [...empiezan, ...contienen].take(maximo).toList();
   }
 
+  bool deLaCategoria(Canal canal) => ' ${sinTildes(categoriaLegible(canal.categoria))}'.contains(' $buscado');
+
   return Encontrado(
     canales: filtrar(catalogo.canales, (c) => c.nombre, conNumeros ? (c) => catalogo.numeroDe(c) == buscado : null),
     peliculas: filtrar(catalogo.peliculas, (p) => p.nombre),
     series: filtrar(catalogo.series, (s) => s.nombre),
+    nuevas: [
+      for (final seccion in catalogo.seccionesNuevas)
+        if (filtrar(seccion.canales, (c) => c.nombre, deLaCategoria) case final lista when lista.isNotEmpty)
+          (seccion, lista),
+    ],
   );
 }

@@ -297,23 +297,42 @@ class Organizacion:
     total: int             # cuántos hay en esta sección (con los filtros)
 
 
-def organizar_contenido(contenido=Contenido.VIVO, mostrar='todo', texto='', origen='', sin_logo=False,
+# Lo que se puede elegir en "Qué mostrar" de Organizar
+MOSTRAR = {
+    'todo': 'Todo lo cargado',
+    'app': 'Solo lo que ve la app',
+    'fuera': 'Lo que NO se ve (caído o quitado)',
+    'caidos': 'No se ve porque sus señales no andan',
+    'quitados': 'Quitado a mano',
+}
+
+
+def organizar_contenido(contenido=Contenido.VIVO, mostrar='todo', texto='', origen='', sin_logo=False, idioma='',
                         categoria='', pagina=None, por_pagina=120):
     """
     Todo lo cargado de una sección (en vivo, películas o series), por categoría:
-      mostrar: 'todo' | 'app' (lo que ve la app) | 'fuera' (lo que no se ve: caído o quitado)
+      mostrar: una de MOSTRAR ('fuera' = 'caidos' + 'quitados')
+      idioma: 'es' | 'otro' | 'sin_dato' | '' (todos)
       categoria: 'todas' | 'ninguna' | pk ('' = todas)
     """
     from django.core.paginator import Paginator
 
     if contenido == Contenido.SERIE:
-        items = series(texto=texto, origen=origen, sin_logo=sin_logo, estado='en_app' if mostrar == 'app' else '')
+        items = series(texto=texto, origen=origen, sin_logo=sin_logo, idioma=idioma,
+                       estado='en_app' if mostrar == 'app' else '')
+        def alguno_activo(serie):
+            return any(c.canal.activo for c in serie.capitulos)
         if mostrar == 'fuera':
             items = [s for s in items if not s.completa]
+        elif mostrar == 'caidos':
+            items = [s for s in items if not s.completa and alguno_activo(s)]
+        elif mostrar == 'quitados':
+            items = [s for s in items if not alguno_activo(s)]
         pares = [(s, s.categoria_id) for s in items]
     else:
-        canales = catalogo(texto=texto, contenido=contenido, origen=origen, sin_logo=sin_logo,
-                           estado='en_app' if mostrar == 'app' else '')
+        estado = {'app': 'en_app', 'caidos': 'fuera', 'quitados': 'quitados'}.get(mostrar, '')
+        canales = catalogo(texto=texto, contenido=contenido, origen=origen, sin_logo=sin_logo, idioma=idioma,
+                           estado=estado)
         if mostrar == 'fuera':
             canales = canales.filter(Q(activo=False) | Q(tiene_usable=False))
         pares = list(canales.values_list('pk', 'categoria_id'))
@@ -325,7 +344,7 @@ def organizar_contenido(contenido=Contenido.VIVO, mostrar='todo', texto='', orig
     nodos = [{'clave': str(c.pk), 'categoria': c, 'total': cuantos.get(c.pk, 0), 'vacia': c.pk not in con_algo}
              for c in categorias_de(contenido)]
     # Sin filtros se ven todas (también las vacías, para llenarlas); con filtros, solo las que tienen algo
-    hay_filtros = texto or origen or sin_logo or mostrar != 'todo'
+    hay_filtros = texto or origen or sin_logo or idioma or mostrar != 'todo'
     nodos = [n for n in nodos if n['total'] or (n['vacia'] and not hay_filtros)]
     if cuantos.get(None):
         nodos.append({'clave': 'ninguna', 'categoria': None, 'total': cuantos[None], 'vacia': False})

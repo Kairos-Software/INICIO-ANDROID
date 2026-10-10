@@ -5,7 +5,7 @@
 
 {% block encabezado %}
 <div class="pagina-encabezado">
-    <a href="{% url 'canales:series' %}" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Series</a>
+    <a href="{% url 'canales:organizar' %}?contenido=serie" class="volver"><i class="bi bi-arrow-left" aria-hidden="true"></i> Series</a>
     <div class="serie-hero">
         <div class="serie-hero-portada">
             {% if serie.logo %}<img src="{{ serie.logo }}" alt="" referrerpolicy="no-referrer">

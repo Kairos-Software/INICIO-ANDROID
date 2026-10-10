@@ -3,10 +3,10 @@ Pantallas de canales del panel:
 
   /canales/                         resumen, subir una lista, verificar todas (de a tandas) e importaciones anteriores
   /canales/importaciones/<id>/      la prueba de una lista: el avance, qué es apto, qué no y por qué, y cargar las aptas
-  /canales/catalogo/                canales en vivo y películas, con filtros para quitar los que no sirven
-  /canales/series/                  series agrupadas, con búsqueda, filtros y paginación
   /canales/organizar/               TODO en un lugar: árbol de categorías (con subcategorías) y su contenido para
-                                    editar, mover, cambiar el tipo, quitar o eliminar, y de dónde salió cada cosa
+                                    editar, mover, cambiar el tipo, quitar o eliminar, de dónde salió cada cosa y
+                                    los datos técnicos de cada señal (formato, códec, error, cuándo se probó)
+  /canales/catalogo/ y /series/     las pantallas viejas: llevan a Organizar contenido con los mismos filtros
   /canales/series/detalle/          temporadas, capítulos, disponibilidad y fuentes de una serie
   /canales/canal/<id>/editar/       nombre, logo, categoría... de un canal, y sus fuentes
   /canales/youtube/                 traer las películas de un canal oficial de YouTube (se prueban y cargan como una lista)
@@ -14,7 +14,6 @@ Pantallas de canales del panel:
   /canales/lo-mas-visto/            lo más visto (canales, películas y series), sin datos de clientes
   /canales/categorias/              ordenar las categorías: crear, renombrar, juntar, borrar y el orden en la app
   /canales/secciones/               crear, cambiar y borrar secciones nuevas de la app (Música, Radio...)
-  (y en el catálogo y en Series: mover a otra categoría y cambiar el tipo de lo elegido)
 
 Lo que tarda (verificar) se hace de a tandas: la página llama una y otra
 vez a las direcciones ".../lote/" (responden JSON) y va mostrando el avance.
@@ -22,7 +21,7 @@ vez a las direcciones ".../lote/" (responden JSON) y va mostrando el avance.
 
 import json
 from functools import partial
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
@@ -31,7 +30,9 @@ from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.formats import date_format
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.timezone import localtime
 from django.views.decorators.http import require_POST
 
 from usuarios.decoradores import requiere_permiso
@@ -41,12 +42,10 @@ from . import consultas, estadisticas, imagenes, organizar, secciones, servicios
 from .clasificar import formato, idioma_y_pais, limpiar_nombre
 from .forms import (CanalForm, CanalNuevoForm, EditarDesdeOrganizarForm, FuentesFormSet, ImportarListaForm,
                     ProbarLinkForm, QuitarCanalesForm, TraerDeYoutubeForm)
-from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Idioma, Importacion, Seccion
+from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Importacion, Seccion
 from .verificacion import Resultado, verificar_url, verificar_varias
 
-CANALES_POR_PAGINA = 120
 ENTRADAS_POR_PAGINA = 100
-SERIES_POR_PAGINA = 24
 
 
 def _parametros_sin_pagina(request):
@@ -213,48 +212,29 @@ def _filtros_catalogo(datos):
     }
 
 
+# El catálogo (datos técnicos) y la lista de Series eran pantallas aparte: ahora
+# todo está en Organizar contenido. Sus direcciones viejas (links guardados,
+# el panel en otra pestaña) llevan ahí con los mismos filtros.
+_MOSTRAR_DEL_CATALOGO = {'en_app': 'app', 'fuera': 'caidos', 'quitados': 'quitados', 'incompleta': 'fuera'}
+
+
+def _a_organizar(request, contenido):
+    filtros = _filtros_catalogo(request.GET)
+    parametros = {'contenido': contenido, 'q': filtros['texto'], 'idioma': filtros['idioma'],
+                  'origen': filtros['origen'], 'categoria': filtros['categoria'],
+                  'mostrar': _MOSTRAR_DEL_CATALOGO.get(filtros['estado'], ''), 'sin_logo': '1' if filtros['sin_logo'] else ''}
+    return redirect(f"{reverse('canales:organizar')}?{urlencode({k: v for k, v in parametros.items() if v})}")
+
+
 @requiere_permiso('ver_canales')
 def catalogo(request):
-    filtros = _filtros_catalogo(request.GET)
-    if filtros['contenido'] not in (Contenido.VIVO, Contenido.PELICULA):
-        filtros['contenido'] = Contenido.VIVO
-    pagina = Paginator(consultas.catalogo(**filtros), CANALES_POR_PAGINA).get_page(request.GET.get('pagina'))
-    for canal in pagina:
-        canal.no_se_ve = consultas.por_que_no_se_ve(canal)
-    return render(request, 'canales/catalogo.html', {
-        'pagina': pagina,
-        'grupos': consultas.agrupar_por_categoria(pagina),
-        'filtros': filtros,
-        'hay_filtros': any(valor for clave, valor in filtros.items() if clave != 'contenido'),
-        'parametros': _parametros_sin_pagina(request),
-        'categorias': consultas.categorias_con_canales(filtros['contenido']),
-        'origenes': consultas.origenes(filtros['contenido']),
-        'idiomas': Idioma.choices,
-        'contenidos': Contenido.choices,
-        'puede_editar': chequear_permiso(request.user, 'importar_canales'),
-        'resumen': consultas.resumen(),
-        'todas_las_categorias': consultas.categorias_de(filtros['contenido']),
-    })
+    contenido = request.GET.get('contenido', '')
+    return _a_organizar(request, contenido if secciones.es_valida(contenido) else Contenido.VIVO)
 
 
 @requiere_permiso('ver_canales')
 def series(request):
-    """Series agrupadas, sin repetir un bloque por cada capítulo importado."""
-    filtros = _filtros_catalogo(request.GET)
-    del filtros['contenido']
-    if filtros['estado'] not in ('en_app', 'incompleta', 'fuera'):
-        filtros['estado'] = ''
-    pagina = Paginator(consultas.series(**filtros), SERIES_POR_PAGINA).get_page(request.GET.get('pagina'))
-    return render(request, 'canales/series.html', {
-        'pagina': pagina,
-        'filtros': filtros,
-        'hay_filtros': any(filtros.values()),
-        'parametros': _parametros_sin_pagina(request),
-        'categorias': consultas.categorias_con_canales(Contenido.SERIE),
-        'origenes': consultas.origenes(Contenido.SERIE),
-        'puede_editar': chequear_permiso(request.user, 'importar_canales'),
-        'todas_las_categorias': consultas.categorias_de(Contenido.SERIE),
-    })
+    return _a_organizar(request, Contenido.SERIE)
 
 
 def como_en_la_app(request):
@@ -263,9 +243,16 @@ def como_en_la_app(request):
 
 
 def _origenes_de(fuentes, importaciones):
-    """Para la edición rápida: de dónde salió cada fuente (lista, canal de YouTube, a mano) y cómo está."""
+    """
+    Para la edición rápida: cada señal en el orden en que la prueba la app, de
+    dónde salió (lista, canal de YouTube, a mano) y sus datos técnicos: cómo
+    está, el códec, el error y cuándo se probó.
+    """
     return [{'origen': f.origen or 'No se sabe', 'url': f.url, 'tipo': f.get_tipo_display(),
-             'estado': f.get_estado_display(), 'importacion': importaciones.get(f.origen, '')} for f in fuentes]
+             'estado': f.get_estado_display(), 'caida': f.estado == Fuente.Estado.CAIDA,
+             'codec': f.codec, 'error': f.error, 'activa': f.activa,
+             'probada': date_format(localtime(f.verificada), 'j/m/Y H:i') if f.verificada else '',
+             'importacion': importaciones.get(f.origen, '')} for f in fuentes]
 
 
 def _preparar_para_editar(pagina, contenido):
@@ -318,9 +305,10 @@ def organizar_contenido(request):
         contenido = Contenido.VIVO
     filtros = {
         'texto': request.GET.get('q', '').strip(),
-        'mostrar': request.GET.get('mostrar') if request.GET.get('mostrar') in ('app', 'fuera') else 'todo',
+        'mostrar': request.GET.get('mostrar') if request.GET.get('mostrar') in consultas.MOSTRAR else 'todo',
         'origen': request.GET.get('origen', ''),
         'sin_logo': request.GET.get('sin_logo') == '1',
+        'idioma': request.GET.get('idioma') if request.GET.get('idioma') in ('es', 'otro', 'sin_dato') else '',
     }
     datos = consultas.organizar_contenido(contenido, categoria=request.GET.get('categoria', ''),
                                           pagina=request.GET.get('pagina'), **filtros)
@@ -338,7 +326,8 @@ def organizar_contenido(request):
         'nodo': nodo,
         'filtros': filtros,
         'hay_filtros': bool(filtros['texto'] or filtros['mostrar'] != 'todo' or filtros['origen']
-                            or filtros['sin_logo']),
+                            or filtros['sin_logo'] or filtros['idioma']),
+        'que_mostrar': consultas.MOSTRAR.items(),
         'origenes': consultas.origenes(contenido),
         'categorias': categorias,
         'parecidas': organizar.categorias_parecidas([c for c in categorias if c.total]),
@@ -444,11 +433,11 @@ def _canales_elegidos(request):
     return Canal.objects.filter(pk__in=list(pks))
 
 
-def _volver(request):
-    """A dónde volver (la misma página y filtros del catálogo). Solo direcciones de este sitio."""
+def _volver(request, contenido=Contenido.VIVO):
+    """A dónde volver (la misma página y filtros de antes). Solo direcciones de este sitio."""
     volver = request.POST.get('volver') or request.GET.get('volver') or ''
     if not url_has_allowed_host_and_scheme(volver, allowed_hosts={request.get_host()}):
-        volver = reverse('canales:catalogo')
+        volver = f"{reverse('canales:organizar')}?contenido={contenido}"
     return volver
 
 
@@ -586,10 +575,7 @@ def series_acciones(request):
                              else 'No había ninguna quitada.')
     except organizar.NoSePuede as error:
         messages.error(request, str(error))
-    volver = request.POST.get('volver') or ''
-    if not url_has_allowed_host_and_scheme(volver, allowed_hosts={request.get_host()}):
-        volver = reverse('canales:series')
-    return redirect(volver)
+    return redirect(_volver(request, Contenido.SERIE))
 
 
 # ── Categorías ───────────────────────────────────────────────────────
@@ -692,24 +678,41 @@ def secciones_acciones(request):
 @requiere_permiso('importar_canales')
 def canal_editar(request, pk):
     canal = get_object_or_404(Canal.objects.select_related('categoria'), pk=pk)
-    form = CanalForm(request.POST or None, instance=canal)
+    logo_viejo = canal.logo
+    form = CanalForm(request.POST or None, request.FILES or None, instance=canal)
     fuentes = FuentesFormSet(request.POST or None, queryset=canal.fuentes.all(), prefix='fuentes')
-    if request.method == 'POST' and form.is_valid() and fuentes.is_valid():
+    if request.method == 'POST' and form.is_valid() and fuentes.is_valid() and _subir_logo(request, form):
         canal, nueva = servicios.guardar_canal(form, fuentes, request.user, verificar_url)
+        if canal.logo != logo_viejo:
+            imagenes.soltar(logo_viejo)   # si era una subida y nadie más la usa, se borra
         messages.success(request, f'Se guardó "{canal.nombre}".')
+        volver = _volver(request, canal.contenido)
         if nueva is not None:
             if nueva.estado == nueva.Estado.CAIDA:
                 messages.warning(request, f'La fuente nueva se agregó, pero no funciona: {nueva.error}')
             else:
                 messages.success(request, f'Fuente nueva agregada ({nueva.get_tipo_display()}, '
                                           f'{nueva.get_estado_display().lower()}).')
-        return redirect(_volver(request))
+        return redirect(volver)
     return render(request, 'canales/editar.html', {
         'canal': canal,
         'form': form,
         'fuentes': fuentes,
-        'volver': _volver(request),
+        'volver': _volver(request, canal.contenido),
     })
+
+
+def _subir_logo(request, form):
+    """Si se subió una imagen, la guarda y la deja como logo. False si no sirve (el error queda en el form)."""
+    archivo = form.cleaned_data.get('imagen')
+    if not archivo:
+        return True
+    try:
+        form.instance.logo = imagenes.guardar_subida(archivo, request)
+    except imagenes.ImagenInvalida as error:
+        form.add_error('imagen', str(error))
+        return False
+    return True
 
 
 # ── Probar un link y agregarlo a mano ────────────────────────────────

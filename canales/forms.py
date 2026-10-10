@@ -296,6 +296,12 @@ class CanalForm(EstiloBootstrapMixin, forms.ModelForm):
         help_text='Una dirección más para este canal (.m3u8, video directo, YouTube, Twitch...). '
                   'Se prueba al guardar.',
     )
+    imagen = forms.FileField(
+        label='O subí la imagen desde la compu', required=False,
+        help_text='JPG, PNG o WEBP (se achica sola; si tiene el fondo de cuadritos pintado, se lo saca). '
+                  'Si subís una, gana sobre la dirección de arriba.',
+        widget=forms.FileInput(attrs={'accept': 'image/jpeg,image/png,image/webp'}),
+    )
 
     class Meta:
         model = Canal

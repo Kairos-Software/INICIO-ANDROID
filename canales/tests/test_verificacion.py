@@ -387,7 +387,7 @@ class PantallaCanalesTests(TestCase):
         self.assertEqual(self.subir().status_code, 403)
         self.assertEqual(self.client.post(reverse('canales:verificar_lote')).status_code, 403)
         self.assertEqual(self.client.post(reverse('canales:importacion_lote', args=[importacion.pk])).status_code, 403)
-        self.assertEqual(self.client.get(reverse('canales:catalogo')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('canales:organizar')).status_code, 200)
         self.assertEqual(self.client.post(reverse('canales:catalogo_quitar')).status_code, 403)
 
     def test_sin_permiso_de_ver(self):
@@ -397,7 +397,8 @@ class PantallaCanalesTests(TestCase):
 
 
 class CatalogoTests(TestCase):
-    URL = reverse('canales:catalogo')
+    """Los datos técnicos y los filtros que eran del catálogo: ahora en Organizar contenido."""
+    URL = reverse('canales:organizar')
 
     def setUp(self):
         importar_m3u(LISTA + '#EXTINF:-1 group-title="USA | VIP-A",USA: NBC\nhttps://anda/nbc.m3u8\n',
@@ -424,10 +425,37 @@ class CatalogoTests(TestCase):
         Canal.objects.create(nombre='Lost S01 E01', contenido='serie', categoria=series)
         borrado = Canal.objects.create(nombre='Viejo', categoria=Categoria.objects.create(nombre='Borrada'))
         borrado.eliminar()
-        en_vivo = [c.nombre for c in self.client.get(self.URL).context['categorias']]
+        en_vivo = [n['categoria'].nombre for n in self.client.get(self.URL).context['datos'].nodos if n['categoria']]
         self.assertNotIn('SERIES | NETFLIX', en_vivo)
-        self.assertNotIn('Borrada', en_vivo)
         self.assertIn('Noticias', en_vivo)
+        con_filtro = self.client.get(self.URL, {'idioma': 'es'}).context['datos'].nodos
+        self.assertNotIn('Borrada', [n['categoria'].nombre for n in con_filtro if n['categoria']])
+
+    def test_filtrar_por_estado(self):
+        Fuente.objects.filter(canal__nombre='Canal 26').update(estado=Fuente.Estado.CAIDA)
+        Canal.objects.filter(nombre='NBC').update(activo=False)
+        caidos = self.client.get(self.URL, {'mostrar': 'caidos'})
+        self.assertContains(caidos, 'Canal 26')
+        self.assertNotContains(caidos, 'NBC')
+        quitados = self.client.get(self.URL, {'mostrar': 'quitados'})
+        self.assertContains(quitados, 'NBC')
+        self.assertNotContains(quitados, 'Canal 26')
+
+    def test_el_cuadro_editar_trae_los_datos_tecnicos(self):
+        Fuente.objects.filter(canal__nombre='Canal 26').update(estado=Fuente.Estado.CAIDA, codec='mpeg2',
+                                                               error='No respondió a tiempo.')
+        respuesta = self.client.get(self.URL)
+        self.assertContains(respuesta, '&quot;codec&quot;: &quot;mpeg2&quot;')
+        self.assertContains(respuesta, 'a tiempo.')   # (en el JSON la tilde va escapada)
+        self.assertContains(respuesta, '&quot;probada&quot;: &quot;')
+
+    def test_la_direccion_vieja_lleva_a_organizar_con_los_filtros(self):
+        respuesta = self.client.get(reverse('canales:catalogo'), {'contenido': 'pelicula', 'estado': 'fuera',
+                                                                   'idioma': 'otro', 'q': 'nbc'})
+        self.assertRedirects(respuesta, self.URL + '?contenido=pelicula&q=nbc&idioma=otro&mostrar=caidos',
+                             fetch_redirect_response=False)
+        self.assertRedirects(self.client.get(reverse('canales:series'), {'estado': 'en_app'}),
+                             self.URL + '?contenido=serie&mostrar=app', fetch_redirect_response=False)
 
     def test_quitar_y_volver_a_mostrar(self):
         canal = Canal.objects.get(nombre='Canal 26')
@@ -447,7 +475,7 @@ class CatalogoTests(TestCase):
 
     def test_volver_solo_a_este_sitio(self):
         respuesta = self.client.post(reverse('canales:catalogo_mostrar'), {'volver': 'https://otro-sitio.com/'})
-        self.assertRedirects(respuesta, self.URL, fetch_redirect_response=False)
+        self.assertRedirects(respuesta, reverse('canales:organizar') + '?contenido=vivo', fetch_redirect_response=False)
 
 
 @mock.patch('api.v1.canales.verificar_url')
@@ -601,7 +629,7 @@ class EditarCanalTests(TestCase):
     def test_cambiar_nombre_logo_y_categoria_nueva(self):
         respuesta = self.client.post(self.url, self.datos(nombre='Canal 26 Noticias', logo='https://logos.ejemplo.com/nuevo.png',
                                                           nueva_categoria='Argentina'))
-        self.assertRedirects(respuesta, reverse('canales:catalogo'), fetch_redirect_response=False)
+        self.assertRedirects(respuesta, reverse('canales:organizar') + '?contenido=vivo', fetch_redirect_response=False)
         self.canal.refresh_from_db()
         self.assertEqual((self.canal.nombre, self.canal.logo, self.canal.categoria.nombre, self.canal.pais),
                          ('Canal 26 Noticias', 'https://logos.ejemplo.com/nuevo.png', 'Argentina', 'AR'))
