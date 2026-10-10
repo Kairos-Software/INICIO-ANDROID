@@ -304,13 +304,51 @@ def _orden_natural(texto):
     return [int(parte) if parte.isdigit() else parte for parte in re.split(r'(\d+)', clasificar.sin_acentos(texto))]
 
 
-def _titulo_del_capitulo(nombre, nombre_serie):
+def titulo_del_capitulo(nombre, nombre_serie):
     """Lo que queda del nombre para usarlo como título del capítulo (sin la serie ni "S01 E02")."""
     serie, _, _, titulo = clasificar.episodio(nombre)
     titulo = titulo if titulo or serie != nombre else nombre
     titulo = re.sub(re.escape(nombre_serie), ' ', titulo, flags=re.I)
     titulo = re.sub(r'\(\s*\d{4}\s*\)', ' ', titulo)
     return ' '.join(titulo.split()).strip(' -:|.')
+
+
+def nombre_de_serie_valido(nombre):
+    """
+    El nombre limpio para una serie nueva o unida. NoSePuede si está vacío o
+    si tiene algo que la app tomaría como número de capítulo ("4x4 Aventuras",
+    "Flash S2 E3"): los capítulos quedarían mal agrupados.
+    """
+    nombre = _limpio(nombre, 90).strip(' -:|._')
+    if not nombre:
+        raise NoSePuede('Escribí el nombre de la serie.')
+    serie, temporada, numero, _ = clasificar.episodio(f'{nombre} S01 E01')
+    if serie != nombre or (temporada, numero) != (1, 1):
+        raise NoSePuede(f'El nombre "{nombre}" tiene algo que la app confundiría con un número de capítulo '
+                        f'(como "S2 E5" o "4x4"). Escribilo de otra forma.')
+    return nombre
+
+
+def nombre_de_capitulo(nombre_serie, temporada, numero, titulo=''):
+    """'Masha y el Oso', 1, 5, 'Sin amigos' -> 'Masha y el Oso S01 E05 Sin amigos' (como lo lee la app)."""
+    return f'{nombre_serie} S{int(temporada):02d} E{int(numero):02d}{f" {titulo}" if titulo else ""}'[:120]
+
+
+def ultimo_capitulo(nombre_serie, temporada=1, excluir=()):
+    """
+    El número de capítulo más alto que ya existe en esa temporada de la serie
+    (0 si no hay ninguno), para seguir numerando desde ahí y no repetir.
+    Compara el nombre como la app (sin mayúsculas, CON acentos: para la app
+    "Pocoyo" y "Pocoyó" son dos series distintas).
+    """
+    buscada, ultimo = nombre_serie.strip().lower(), 0
+    candidatos = (Canal.objects.filter(contenido=Contenido.SERIE, nombre__istartswith=nombre_serie.strip())
+                  .exclude(pk__in=list(excluir)).values_list('nombre', flat=True))
+    for nombre in candidatos:
+        serie, de_temporada, numero, _ = clasificar.episodio(nombre)
+        if serie.lower() == buscada and de_temporada == int(temporada) and numero:
+            ultimo = max(ultimo, numero)
+    return ultimo
 
 
 @transaction.atomic
@@ -329,7 +367,10 @@ def cambiar_contenido(canales, contenido, nombre_serie='', temporada=1, usuario=
     """
     if contenido not in Contenido.values:
         raise NoSePuede('Tipo de contenido desconocido.')
-    nombre_serie = _limpio(nombre_serie, 90)
+    if contenido == Contenido.SERIE and _limpio(nombre_serie):
+        nombre_serie = nombre_de_serie_valido(nombre_serie)
+    else:
+        nombre_serie = ''
     elegidos = sorted(canales.select_related('categoria'), key=lambda c: _orden_natural(c.nombre))
     if not elegidos:
         return 0
@@ -340,13 +381,15 @@ def cambiar_contenido(canales, contenido, nombre_serie='', temporada=1, usuario=
                             f'capítulo (ej. "{sueltos[0][:40]}"), y solos quedarían como series de un capítulo que '
                             f'la app no muestra.')
     ahora, quien, indice = timezone.now(), _usuario(usuario), indice_de_categorias()
-    for numero, canal in enumerate(elegidos, start=1):
+    # Si la serie ya tiene capítulos (de otra tanda o importación), se sigue desde el último
+    primero = ultimo_capitulo(nombre_serie, temporada, excluir=[c.pk for c in elegidos]) + 1 if nombre_serie else 1
+    for numero, canal in enumerate(elegidos, start=primero):
         if canal.categoria is not None and canal.categoria.contenido != contenido:
             canal.categoria = categoria_por_nombre(canal.categoria.nombre, contenido, indice, usuario)
         canal.contenido = contenido
-        if contenido == Contenido.SERIE and nombre_serie:
-            titulo = _titulo_del_capitulo(canal.nombre, nombre_serie)
-            canal.nombre = f'{nombre_serie} S{int(temporada):02d} E{numero:02d}{f" {titulo}" if titulo else ""}'[:120]
+        if nombre_serie:
+            canal.nombre = nombre_de_capitulo(nombre_serie, temporada, numero,
+                                              titulo_del_capitulo(canal.nombre, nombre_serie))
         canal.modificado, canal.modificado_por = ahora, quien
     Canal.objects.bulk_update(elegidos, ['contenido', 'nombre', 'categoria', 'modificado', 'modificado_por'])
     detalle = f' como la serie "{nombre_serie}" (temporada {temporada})' if nombre_serie else ''
@@ -394,16 +437,23 @@ def eliminar_contenido(canales, usuario=None):
 
 @transaction.atomic
 def renombrar_serie(nombre, nuevo, usuario=None):
-    """Le cambia el nombre a una serie: a cada capítulo ("Viejo S01 E02 Título" -> "Nuevo S01 E02 Título")."""
-    nuevo = _limpio(nuevo, 90)
-    if not nuevo:
-        raise NoSePuede('Escribí el nombre nuevo de la serie.')
+    """
+    Le cambia el nombre a una serie: a cada capítulo ("Viejo S01 E02 Título"
+    -> "Nuevo S01 E02 Título"). Si ya hay OTRA serie con ese nombre no se
+    puede (quedarían dos capítulos 1): para eso está "Unir en una sola serie".
+    """
+    nuevo = nombre_de_serie_valido(nuevo)
     capitulos = list(capitulos_de([nombre]))
+    propios = [canal.pk for canal in capitulos]
+    temporadas = {clasificar.episodio(canal.nombre)[1] for canal in capitulos}
+    if any(ultimo_capitulo(nuevo, temporada, excluir=propios) for temporada in temporadas):
+        raise NoSePuede(f'Ya hay otra serie "{nuevo}": sus capítulos se pisarían con estos. Para juntarlas, '
+                        f'elegí las dos y usá "Unir en una sola serie".')
     for canal in capitulos:
         _, temporada, numero, titulo = clasificar.episodio(canal.nombre)
         if numero is None:
             continue
-        canal.nombre = f'{nuevo} S{temporada:02d} E{numero:02d}{f" {titulo}" if titulo else ""}'[:120]
+        canal.nombre = nombre_de_capitulo(nuevo, temporada, numero, titulo)
         canal.marcar_autor(usuario)
     Canal.objects.bulk_update(capitulos, ['nombre', 'modificado_por'])
     if capitulos:
@@ -465,7 +515,8 @@ def editar_serie(serie, usuario=None, **datos):
         capitulos.update(activo=datos['activo'], motivo_quitado='' if datos['activo'] else 'Quitado a mano.',
                          modificado=ahora, modificado_por=quien)
         cambios.append('activo')
-    if datos.get('nombre') and _clave(datos['nombre']) != _clave(serie):
+    # Con comparar el texto alcanza: así también se puede corregir un acento ("Pocoyo" -> "Pocoyó")
+    if datos.get('nombre') and _limpio(datos['nombre'], 90) != _limpio(serie, 90):
         renombrar_serie(serie, datos['nombre'], usuario)
         cambios.append('nombre')
     elif cambios:

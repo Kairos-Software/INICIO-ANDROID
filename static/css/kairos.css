@@ -552,6 +552,8 @@ textarea.form-control { min-height: 96px; }
 }
 .form-control:disabled, .form-select:disabled, fieldset:disabled .form-control { background-color: var(--capa-baja); color: var(--texto-apagado); }
 .form-control.is-invalid, .form-select.is-invalid { border-color: var(--rubi-claro); }
+/* La lista de categorías cuando vale la nueva que se escribió al lado (sistema.js) */
+.form-select.categoria-anulada { opacity: .45; text-decoration: line-through; }
 .form-control-sm { min-height: 34px; padding: .3rem .7rem; font-size: .8125rem; border-radius: var(--radio-chico); }
 .form-select {
     padding-right: 2.4rem;

@@ -290,7 +290,7 @@
                     <input type="text" name="nombre_serie" class="form-control form-control-sm" maxlength="90" placeholder="Nombre de la serie (ej: Pocoyó)" data-obligatorio>
                     <input type="number" name="temporada" class="form-control form-control-sm" style="width:6rem" min="1" max="99" value="1" title="Temporada">
                     <button type="submit" class="btn btn-sm btn-primary" name="accion" value="unir">Unir</button>
-                    <span class="espejo-ayuda">Todas las elegidas quedan como UNA serie con ese nombre: sus videos pasan a ser los capítulos 1, 2, 3… (en orden alfabético). Sirve para juntar «series» de un capítulo.</span>
+                    <span class="espejo-ayuda">Todas las elegidas quedan como UNA serie con ese nombre: sus videos pasan a ser los capítulos 1, 2, 3… (en orden alfabético). Si esa serie ya tiene capítulos, siguen después del último (así se puede unir de a una página). Sirve para juntar «series» de un capítulo.</span>
                 </div>
                 <div class="espejo-barra-fila" data-accion="a_peliculas" hidden>
                     <button type="submit" class="btn btn-sm btn-primary" name="accion" value="a_peliculas">Pasar a Películas</button>
@@ -468,7 +468,7 @@
                 form.querySelector('.espejo-barra-serie').style.display = aSerie ? 'inline-flex' : 'none';
                 form.querySelector('.espejo-barra-serie [name=nombre_serie]').required = aSerie && !form.querySelector('[data-accion=seccion]').hidden;
                 ayudaSeccion.textContent = aSerie
-                    ? 'Los elegidos quedan como UNA serie con ese nombre: capítulos 1, 2, 3… en orden alfabético.'
+                    ? 'Los elegidos quedan como UNA serie con ese nombre: capítulos 1, 2, 3… en orden alfabético (si la serie ya existe, siguen después de su último capítulo).'
                     : 'Los elegidos se mueven a esa sección (con una categoría del mismo nombre allá).';
             }
             var unir = form.querySelector('[data-accion=unir] [data-obligatorio]');
@@ -519,6 +519,7 @@
         logo.value = datos.logo || '';
         editar.categoria.value = String(datos.categoria);
         editar.nueva_categoria.value = '';
+        editar.nueva_categoria.dispatchEvent(new Event('input', {bubbles: true}));   // la lista vuelve a valer (sistema.js)
         if (editar.contenido) editar.contenido.value = datos.contenido;
         editar.activo.checked = !!datos.activo;
         document.getElementById('editar-titulo').textContent = esSerie ? 'Serie «' + datos.nombre + '» (' + datos.capitulos + ' capítulos)' : datos.nombre;

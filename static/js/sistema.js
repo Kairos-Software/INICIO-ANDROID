@@ -182,6 +182,37 @@
         }
     });
 
+    // Categoría: "elegí de la lista" u "o una nueva" — vale UNA sola. Escribir
+    // una nueva vacía la lista (o la apaga, si no tiene opción vacía: lo escrito
+    // es lo que vale); elegir de la lista borra lo escrito. Sirve en todos los
+    // formularios del panel que tengan los dos campos.
+    const NOMBRES_LISTA = ['categoria', 'categoria_destino'];
+    const NOMBRES_NUEVA = ['nueva_categoria', 'categoria_nueva'];
+    function camposDelFormulario(campo, nombres, etiqueta) {
+        if (!campo.form) return [];
+        return Array.prototype.filter.call(campo.form.elements, function (el) {
+            return el.tagName === etiqueta && nombres.indexOf(el.name) >= 0;
+        });
+    }
+    document.addEventListener('input', function (evento) {
+        const nueva = evento.target;
+        if (nueva.tagName !== 'INPUT' || NOMBRES_NUEVA.indexOf(nueva.name) < 0) return;
+        const escrita = nueva.value.trim() !== '';
+        camposDelFormulario(nueva, NOMBRES_LISTA, 'SELECT').forEach(function (lista) {
+            const vacia = Array.prototype.some.call(lista.options, function (o) { return o.value === ''; });
+            if (escrita && vacia) lista.value = '';
+            lista.classList.toggle('categoria-anulada', escrita && !vacia);
+            lista.title = escrita && !vacia ? 'Vale la categoría nueva que escribiste (borrala para elegir de la lista)' : '';
+        });
+    });
+    document.addEventListener('change', function (evento) {
+        const lista = evento.target;
+        if (lista.tagName !== 'SELECT' || NOMBRES_LISTA.indexOf(lista.name) < 0 || !lista.value) return;
+        camposDelFormulario(lista, NOMBRES_NUEVA, 'INPUT').forEach(function (nueva) { nueva.value = ''; });
+        lista.classList.remove('categoria-anulada');
+        lista.title = '';
+    });
+
     // Logos de canales que no cargan (dirección vieja, o http dentro de https):
     // en su lugar quedan las iniciales del canal, como en la app.
     // Uso: <span data-iniciales="TN"><img src="..." alt=""></span>

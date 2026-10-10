@@ -32,17 +32,21 @@ from .verificacion import CAIDA, FUNCIONA, SIN_VERIFICAR, TIEMPO_MAXIMO, Resulta
 TIPO = 'yt_video'
 
 # Canales oficiales revisados el 2026-10-08 (verificados por YouTube, dejan
-# insertar sus videos, en español): (nombre, link, categoría, minutos mínimos).
-# Categoría vacía = según el género de cada título.
+# insertar sus videos, en español): (nombre, link, categoría, minutos mínimos, serie).
+# Categoría vacía = según el género de cada título. Con serie: todos sus
+# videos son capítulos de esa serie (y la categoría es de Series).
 SUGERIDOS = (
-    ('Movie Central Español', 'https://www.youtube.com/@MovieCentralEspanol', '', 60),
-    ('V Español', 'https://www.youtube.com/channel/UCH6uKFPQcZLihwbnzxnw1dA', '', 60),
-    ('Peppa Pig Español Latino', 'https://www.youtube.com/channel/UCrreHSUa5rnuCVDeO8dX4eA', 'Infantiles', 20),
-    ('Bluey Español', 'https://www.youtube.com/channel/UCYvpkMpzo1S_rmcj2Axmbig', 'Infantiles', 20),
-    ('PAW Patrol en Español', 'https://www.youtube.com/channel/UCJNBZaQWMIHACqvHT_k2cWw', 'Infantiles', 20),
-    ('Masha y el Oso', 'https://www.youtube.com/channel/UCuSo4gcgxJRf4Bzu43wwVyg', 'Infantiles', 20),
-    ('Pocoyó Español', 'https://www.youtube.com/channel/UCnB5W_ZJgiDFnklejRGADxw', 'Infantiles', 20),
-    ('Plim Plim', 'https://www.youtube.com/channel/UCYQo8CdhXD22qfwUBUw591Q', 'Infantiles', 20),
+    ('Movie Central Español', 'https://www.youtube.com/@MovieCentralEspanol', '', 60, ''),
+    ('V Español', 'https://www.youtube.com/channel/UCH6uKFPQcZLihwbnzxnw1dA', '', 60, ''),
+    ('Peppa Pig Español Latino', 'https://www.youtube.com/channel/UCrreHSUa5rnuCVDeO8dX4eA', 'Series Infantiles', 20,
+     'Peppa Pig'),
+    ('Bluey Español', 'https://www.youtube.com/channel/UCYvpkMpzo1S_rmcj2Axmbig', 'Series Infantiles', 20, 'Bluey'),
+    ('PAW Patrol en Español', 'https://www.youtube.com/channel/UCJNBZaQWMIHACqvHT_k2cWw', 'Series Infantiles', 20,
+     'Paw Patrol'),
+    ('Masha y el Oso', 'https://www.youtube.com/channel/UCuSo4gcgxJRf4Bzu43wwVyg', 'Series Infantiles', 20,
+     'Masha y el Oso'),
+    ('Pocoyó Español', 'https://www.youtube.com/channel/UCnB5W_ZJgiDFnklejRGADxw', 'Series Infantiles', 20, 'Pocoyó'),
+    ('Plim Plim', 'https://www.youtube.com/channel/UCYQo8CdhXD22qfwUBUw591Q', 'Series Infantiles', 20, 'Plim Plim'),
 )
 _ID = re.compile(r'^[\w-]{11}$')
 
@@ -67,6 +71,13 @@ class Video:
 class Listado:
     nombre: str
     videos: list = field(default_factory=list)
+    # Un canal da sus videos del más nuevo al más viejo; una lista de
+    # reproducción, en el orden que le puso su dueño (casi siempre el de los capítulos)
+    nuevos_primero: bool = True
+
+    def en_orden(self):
+        """Los videos del primero (el más viejo, o el 1 de la lista) al último: el orden de los capítulos."""
+        return list(reversed(self.videos)) if self.nuevos_primero else list(self.videos)
 
 
 class NoSePudo(Exception):
@@ -118,20 +129,24 @@ def videos_del_canal(url):
     import yt_dlp   # se importa recién acá: tarda en cargar
     opciones = {'quiet': True, 'no_warnings': True, 'skip_download': True, 'extract_flat': 'in_playlist',
                 'socket_timeout': 20, 'logger': _Silencio()}
+    direccion_del_listado = _direccion_del_listado(url)
     try:
         with yt_dlp.YoutubeDL(opciones) as ytdl:
-            informacion = ytdl.extract_info(_direccion_del_listado(url), download=False) or {}
+            informacion = ytdl.extract_info(direccion_del_listado, download=False) or {}
     except NoSePudo:
         raise
     except Exception as error:   # yt-dlp lanza sus propias excepciones
-        raise NoSePudo(f'YouTube no entregó la lista de videos ({str(error).replace("ERROR: ", "")[:150]}).') from error
+        raise NoSePudo(f'YouTube no entregó la lista de videos ({str(error).replace("ERROR: ", "")[:150]}). Si pasa '
+                       f'con todos los canales, YouTube cambió algo: hay que actualizar yt-dlp en el servidor '
+                       f'(ver despliegue/README.md).') from error
     videos = [Video(e['id'], (e.get('title') or '').strip(), int(e.get('duration') or 0))
               for e in informacion.get('entries') or []
               if e and _ID.match(e.get('id') or '')]
     if not videos:
         raise NoSePudo('El canal no tiene videos (o es privado).')
     nombre = informacion.get('channel') or informacion.get('uploader') or informacion.get('title') or 'YouTube'
-    return Listado(nombre=re.sub(r'\s+-\s+Videos$', '', nombre).strip(), videos=videos)
+    return Listado(nombre=re.sub(r'\s+-\s+Videos$', '', nombre).strip(), videos=videos,
+                   nuevos_primero='/playlist?' not in direccion_del_listado)
 
 
 class _Silencio:

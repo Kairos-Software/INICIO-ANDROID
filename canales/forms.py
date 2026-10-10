@@ -83,6 +83,13 @@ def _nombre_de_la_categoria(datos):
     return ' '.join((datos.get('categoria_nueva') or datos.get('categoria_destino') or '').split())
 
 
+def _no_las_dos(form, datos):
+    """Elegir de la lista Y escribir una nueva confunde (¿cuál vale?): se pide una sola."""
+    if datos.get('categoria_destino') and (datos.get('categoria_nueva') or '').strip():
+        form.add_error('categoria_nueva', f'Elegiste "{datos["categoria_destino"]}" en la lista y además escribiste '
+                                          f'una nueva: dejá solo una de las dos.')
+
+
 class EditarDesdeOrganizarForm(forms.Form):
     """La edición rápida de "Organizar contenido" (la categoría se lee aparte: views._categoria_elegida)."""
     nombre = forms.CharField(max_length=120)
@@ -100,9 +107,18 @@ class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
                   'suben (con la tilde de verificado).',
         widget=forms.TextInput(attrs={'placeholder': 'https://www.youtube.com/@canal', 'inputmode': 'url'}),
     )
+    es_serie = forms.BooleanField(
+        label='Es una serie: cada video es un capítulo', required=False,
+        help_text='Para canales de UNA serie (Masha y el Oso, Pocoyó...). Los capítulos se numeran del más viejo al '
+                  'más nuevo y en la app quedan en Series → la categoría que elijas → la serie. Si ya la trajiste '
+                  'antes, los nuevos siguen la numeración.',
+    )
+    nombre_serie = forms.CharField(label='Nombre de la serie', max_length=90, required=False,
+                                   help_text='Como se va a ver en la app.')
     categoria_destino = forms.ChoiceField(
         label='Categoría', required=False,
-        help_text='Sin elegir: cada película va según el género que dice su título (Acción, Terror...).',
+        help_text='Películas: sin elegir, cada una va según el género que dice su título (Acción, Terror...). '
+                  'Una serie: elegí una de Series (por ejemplo, Series Infantiles).',
     )
     categoria_nueva = _campo_categoria_nueva()
     minimo_minutos = forms.IntegerField(
@@ -116,8 +132,35 @@ class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
         self.fields['categoria_destino'].choices = _opciones_de_categorias(
             'Según el género de cada título', [Contenido.PELICULA, Contenido.SERIE])
 
+    def clean(self):
+        datos = super().clean()
+        _no_las_dos(self, datos)
+        es_serie = datos.get('es_serie')
+        if es_serie:
+            try:
+                datos['nombre_serie'] = organizar.nombre_de_serie_valido(datos.get('nombre_serie', ''))
+            except organizar.NoSePuede as error:
+                self.add_error('nombre_serie', str(error))
+            if not _nombre_de_la_categoria(datos):
+                self.add_error('categoria_destino', 'Elegí en qué categoría de Series va (por ejemplo, Series '
+                                                    'Infantiles), o escribí una nueva.')
+        elegida = datos.get('categoria_destino')
+        if elegida and not datos.get('categoria_nueva'):
+            seccion = Contenido.SERIE if es_serie else Contenido.PELICULA
+            if not Categoria.objects.filter(contenido=seccion, nombre=elegida).exists():
+                self.add_error('categoria_destino', (
+                    f'"{elegida}" es una categoría de Películas: para una serie elegí una de Series (o escribí una '
+                    f'nueva).' if es_serie else
+                    f'"{elegida}" es una categoría de Series: si los videos son capítulos de una serie, marcá "Es una '
+                    f'serie". Si son películas, elegí una de Películas.'))
+        return datos
+
     def categoria(self):
         return _nombre_de_la_categoria(self.cleaned_data)
+
+    def serie(self):
+        """El nombre de la serie ('' = son películas)."""
+        return self.cleaned_data['nombre_serie'] if self.cleaned_data.get('es_serie') else ''
 
 
 class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
@@ -166,6 +209,11 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
             raise forms.ValidationError('No se encontró ningún canal en el archivo. ¿Es una lista M3U?')
         self.texto = texto
         return archivo
+
+    def clean(self):
+        datos = super().clean()
+        _no_las_dos(self, datos)
+        return datos
 
     def opciones(self):
         opciones = {campo: self.cleaned_data[campo] for campo in ('descartar_vod', 'solo_espanol', 'descartar_adultos',

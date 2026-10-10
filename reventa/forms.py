@@ -69,9 +69,10 @@ class ClienteForm(EstiloBootstrapMixin, forms.ModelForm):
         widgets = {'notas': forms.Textarea(attrs={'rows': 3})}
 
     def __init__(self, *args, elegir_revendedor=False, **kwargs):
-        # Los campos se eligen ANTES de super().__init__: EstiloBootstrapMixin
-        # ya valida el formulario ahí adentro (lee self.errors), así que sacar
-        # un campo después dejaría errores viejos de ese campo.
+        # Los campos que no van se sacan de la clase antes de armar el formulario
+        # (así ni se dibujan ni se validan). Lo que se ajusta después de
+        # super().__init__ (la lista de revendedores, si es obligatorio) también
+        # cuenta al validar: EstiloBootstrapMixin valida recién en full_clean.
         instancia = kwargs.get('instance')
         sacar = set()
         if not elegir_revendedor:

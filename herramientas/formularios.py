@@ -31,7 +31,7 @@ class EstiloBootstrapMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for nombre, campo in self.fields.items():
+        for campo in self.fields.values():
             widget = campo.widget
 
             # La opción vacía de los desplegables viene en inglés
@@ -47,7 +47,16 @@ class EstiloBootstrapMixin:
                 clase = 'form-select'
             else:
                 clase = 'form-control'
-            clases = [widget.attrs.get('class', ''), clase]
-            if self.is_bound and nombre in self.errors:
-                clases.append('is-invalid')
-            widget.attrs['class'] = ' '.join(c for c in clases if c)
+            widget.attrs['class'] = ' '.join(c for c in (widget.attrs.get('class', ''), clase) if c)
+
+    def full_clean(self):
+        # Se marca DESPUÉS de validar, no en __init__: si no, se validaba antes
+        # de que el formulario hijo terminara de armar sus campos (por ejemplo,
+        # las opciones de un desplegable) y una opción buena salía "no válida".
+        super().full_clean()
+        for nombre in self.errors:
+            if nombre in self.fields:
+                widget = self.fields[nombre].widget
+                clases = widget.attrs.get('class', '').split()
+                if 'is-invalid' not in clases:
+                    widget.attrs['class'] = ' '.join([*clases, 'is-invalid'])

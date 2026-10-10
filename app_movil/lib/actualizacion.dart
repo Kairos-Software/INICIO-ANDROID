@@ -150,6 +150,11 @@ class _VigilarActualizacionState extends State<VigilarActualizacion> with Widget
 
 enum _Paso { preguntar, bajando, listo, error }
 
+/// El cartel solo (para las pruebas: normalmente lo abre [VigilarActualizacion]).
+@visibleForTesting
+Widget cartelDeActualizacion({required String version, String notas = '', String descarga = ''}) =>
+    _CartelActualizacion(version: version, notas: notas, descarga: descarga);
+
 class _CartelActualizacion extends StatefulWidget {
   const _CartelActualizacion({required this.version, required this.notas, required this.descarga});
 
@@ -170,10 +175,37 @@ class _CartelActualizacionState extends State<_CartelActualizacion> {
   String? _ruta;
   http.Client? _cliente;
 
+  /// El cartel entero y su botón principal (Actualizar / Instalar / Reintentar).
+  final _alcance = FocusScopeNode(debugLabel: 'cartel de actualización');
+  final _principal = FocusNode(debugLabel: 'botón principal de la actualización');
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addListener(_retenerFoco);
+  }
+
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_retenerFoco);
+    _alcance.dispose();
+    _principal.dispose();
     _cliente?.close();
     super.dispose();
+  }
+
+  /// El control remoto no se va del cartel mientras está abierto. En la TV,
+  /// si el cartel aparecía mientras el inicio todavía cargaba, al terminar de
+  /// cargar el primer canal se quedaba con el foco: las flechas movían los
+  /// canales de atrás y no los botones del cartel.
+  void _retenerFoco() {
+    if (_alcance.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _alcance.hasFocus) return;
+      // Si se abrió algo encima del cartel, el foco es de eso
+      if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+      (_alcance.focusedChild ?? (_principal.context != null ? _principal : _alcance)).requestFocus();
+    });
   }
 
   Future<void> _bajar() async {
@@ -252,39 +284,42 @@ class _CartelActualizacionState extends State<_CartelActualizacion> {
     final tv = medidas.size.width >= 900;
     final cartel = PopScope(
       canPop: !bajando,
-      child: AlertDialog(
-        backgroundColor: Tono.capaAlta,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        icon: const Icon(Icons.system_update_rounded, color: Tono.celeste, size: 40),
-        title: Text(
-          'Hay una versión nueva',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontFamily: Letra.titulos, fontWeight: FontWeight.w700, color: Tono.texto),
-        ),
-        content: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: tv ? 720 : 420),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Kairos TV ${widget.version} (tenés la ${Aparato.version}).',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Tono.textoSuave),
-                ),
-                if (widget.notas.isNotEmpty) ...[
+      child: FocusScope(
+        node: _alcance,
+        child: AlertDialog(
+          backgroundColor: Tono.capaAlta,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          icon: const Icon(Icons.system_update_rounded, color: Tono.celeste, size: 40),
+          title: Text(
+            'Hay una versión nueva',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: Letra.titulos, fontWeight: FontWeight.w700, color: Tono.texto),
+          ),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: tv ? 720 : 420),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Kairos TV ${widget.version} (tenés la ${Aparato.version}).',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Tono.textoSuave),
+                  ),
+                  if (widget.notas.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(widget.notas, style: const TextStyle(color: Tono.texto, height: 1.4)),
+                  ],
                   const SizedBox(height: 16),
-                  Text(widget.notas, style: const TextStyle(color: Tono.texto, height: 1.4)),
+                  ..._estado(),
                 ],
-                const SizedBox(height: 16),
-                ..._estado(),
-              ],
+              ),
             ),
           ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: _botones(),
         ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: _botones(),
       ),
     );
     return tv
@@ -355,19 +390,37 @@ class _CartelActualizacionState extends State<_CartelActualizacion> {
         // autofocus: en la TV el control remoto arranca parado en "Actualizar"
         return [
           despues,
-          FilledButton(autofocus: true, style: principal, onPressed: _bajar, child: const Text('Actualizar')),
+          FilledButton(
+            autofocus: true,
+            focusNode: _principal,
+            style: principal,
+            onPressed: _bajar,
+            child: const Text('Actualizar'),
+          ),
         ];
       case _Paso.bajando:
         return const [];
       case _Paso.listo:
         return [
           despues,
-          FilledButton(autofocus: true, style: principal, onPressed: _instalar, child: const Text('Instalar')),
+          FilledButton(
+            autofocus: true,
+            focusNode: _principal,
+            style: principal,
+            onPressed: _instalar,
+            child: const Text('Instalar'),
+          ),
         ];
       case _Paso.error:
         return [
           despues,
-          FilledButton(autofocus: true, style: principal, onPressed: _bajar, child: const Text('Reintentar')),
+          FilledButton(
+            autofocus: true,
+            focusNode: _principal,
+            style: principal,
+            onPressed: _bajar,
+            child: const Text('Reintentar'),
+          ),
         ];
     }
   }

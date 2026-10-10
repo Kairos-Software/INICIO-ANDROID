@@ -132,6 +132,38 @@ class CambiarTipoTests(TestCase):
         [serie] = consultas.series()
         self.assertEqual((serie.nombre, serie.cantidad), ('Pocoyó', 3))
 
+    def test_unir_en_varias_tandas_sigue_la_numeracion(self):
+        # De a una página por vez (de a 120): la segunda tanda sigue donde quedó la primera, no repite el 1
+        for titulo in ('A comer', 'Bailando', 'El tornado', 'La fiesta'):
+            _canal(titulo, Contenido.SERIE)
+        organizar.unir_en_una_serie(['A comer', 'Bailando'], 'Pocoyó')
+        organizar.unir_en_una_serie(['El tornado', 'La fiesta'], 'Pocoyó')
+        self.assertEqual(sorted(Canal.objects.values_list('nombre', flat=True)),
+                         ['Pocoyó S01 E01 A comer', 'Pocoyó S01 E02 Bailando', 'Pocoyó S01 E03 El tornado',
+                          'Pocoyó S01 E04 La fiesta'])
+        # Volver a unir la serie entera la renumera desde el 1 (no se cuenta a sí misma)
+        organizar.unir_en_una_serie(['Pocoyó'], 'Pocoyó')
+        self.assertEqual(Canal.objects.get(nombre__contains='A comer').nombre, 'Pocoyó S01 E01 A comer')
+
+    def test_nombres_de_serie_que_la_app_confundiria(self):
+        for malo in ('4x4 Aventuras', 'Flash S2 E3', '   '):
+            with self.assertRaises(organizar.NoSePuede, msg=malo):
+                organizar.nombre_de_serie_valido(malo)
+        self.assertEqual(organizar.nombre_de_serie_valido('  Masha  y el Oso - '), 'Masha y el Oso')
+        for bueno in ('Los 4 Fantásticos', 'Flash S2', 'Héroes E5'):   # sin el par "S2 E3", la app no se confunde
+            self.assertEqual(organizar.nombre_de_serie_valido(bueno), bueno)
+
+    def test_renombrar_una_serie(self):
+        for n in (1, 2, 3):
+            _canal(f'Pocoyo S01 E0{n} Capítulo', Contenido.SERIE)
+            _canal(f'Bluey S01 E0{n}', Contenido.SERIE)
+        # Corregir solo un acento también se puede
+        organizar.editar_serie('Pocoyo', nombre='Pocoyó')
+        self.assertEqual(Canal.objects.filter(nombre__startswith='Pocoyó S01').count(), 3)
+        # Con el nombre de OTRA serie no: se pisarían los capítulos (para eso está "Unir")
+        with self.assertRaisesMessage(organizar.NoSePuede, 'Ya hay otra serie "Bluey"'):
+            organizar.renombrar_serie('Pocoyó', 'Bluey')
+
     def test_series_enteras_a_peliculas(self):
         for n in (1, 2, 3):
             _canal(f'Arrow S01 E0{n}', Contenido.SERIE)
@@ -210,7 +242,14 @@ class OrganizarTests(TestCase):
             'serie': ['El tornado', 'A comer', 'Bailando'], 'accion': 'unir', 'nombre_serie': 'Pocoyó',
             'temporada': '1'}, follow=True)
         self.assertContains(respuesta, 'capítulos de la serie')
+        self.assertNotContains(respuesta, 'la app solo muestra series')
         self.assertEqual([(s.nombre, s.cantidad, s.completa) for s in consultas.series()], [('Pocoyó', 3, True)])
+
+    def test_avisa_si_la_serie_queda_muy_corta_para_la_app(self):
+        _con_fuente('El tornado', contenido=Contenido.PELICULA)
+        respuesta = self.client.post(reverse('canales:catalogo_contenido'), {
+            'canal': [Canal.objects.get().pk], 'contenido': 'serie', 'nombre_serie': 'Pocoyó'}, follow=True)
+        self.assertContains(respuesta, 'tiene 1 capítulo(s) y la app solo muestra series con 3 o más')
 
     def test_edicion_rapida(self):
         canal = _con_fuente('Zenón', self.noticias)

@@ -7,8 +7,8 @@ from unittest import mock
 from django.test import TestCase
 from django.urls import reverse
 
-from canales import consultas, servicios, youtube
-from canales.models import Canal, Contenido, EntradaImportada, Fuente
+from canales import clasificar, consultas, servicios, youtube
+from canales.models import Canal, Categoria, Contenido, EntradaImportada, Fuente
 from canales.verificacion import CAIDA, FUNCIONA, Resultado, verificar_url
 from usuarios.models import Usuario
 
@@ -154,6 +154,82 @@ class ImportarTests(TestCase):
         self.assertEqual(segunda.entradas.get(tvg_id='aaaaaaaaaa1').estado, Estado.REPETIDA)
 
 
+def _masha(*ids):
+    """Un canal de una serie, como lo da YouTube: del video más nuevo al más viejo."""
+    return youtube.Listado('Masha y el Oso', [
+        youtube.Video(video_id, f'Masha y el Oso 💥 Episodio {video_id[-1]}', 1500)
+        for video_id in reversed(ids)])
+
+
+class ComoUnaSerieTests(TestCase):
+
+    def setUp(self):
+        Categoria.objects.create(nombre='Series Infantiles', contenido=Contenido.SERIE)
+
+    def _traer(self, listado, verificar=_todas_funcionan, **opciones):
+        importacion = servicios.crear_importacion_de_youtube(
+            listado, categoria='Series Infantiles', serie='Masha y el Oso', minimo_minutos=20, **opciones)
+        servicios.procesar_lote(importacion, verificar, segundos=None)
+        servicios.cargar_lote(importacion)
+        return importacion
+
+    def _capitulos(self):
+        return list(Canal.objects.filter(contenido=Contenido.SERIE).order_by('nombre').values_list('nombre', 'tvg_id'))
+
+    def test_todos_son_capitulos_del_mas_viejo_al_mas_nuevo(self):
+        importacion = self._traer(_masha('mmmmmmmmmm1', 'mmmmmmmmmm2', 'mmmmmmmmmm3'))
+        self.assertEqual(importacion.serie, 'Masha y el Oso')
+        self.assertEqual(self._capitulos(), [('Masha y el Oso S01 E01 Episodio 1', 'mmmmmmmmmm1'),
+                                             ('Masha y el Oso S01 E02 Episodio 2', 'mmmmmmmmmm2'),
+                                             ('Masha y el Oso S01 E03 Episodio 3', 'mmmmmmmmmm3')])
+        self.assertEqual(set(Canal.objects.values_list('categoria__nombre', 'categoria__contenido')),
+                         {('Series Infantiles', Contenido.SERIE)})
+        serie, = consultas.series()
+        self.assertEqual((serie.nombre, serie.completa), ('Masha y el Oso', True))
+
+    def test_los_que_no_pasan_no_dejan_huecos(self):
+        # El más viejo no deja verse fuera de YouTube: igual hay capítulo 1 (la app no muestra series sin él)
+        def el_primero_no(fuentes, **_):
+            return {url: Resultado(CAIDA if url.endswith('1') else FUNCIONA, tipo=tipo)
+                    for url, tipo in fuentes.items()}
+        self._traer(_masha(*[f'mmmmmmmmmm{n}' for n in range(1, 6)]), verificar=el_primero_no)
+        self.assertEqual([numero for numero in (clasificar.episodio(n)[2] for n, _ in self._capitulos())],
+                         [1, 2, 3, 4])
+        self.assertEqual(self._capitulos()[0][1], 'mmmmmmmmmm2')
+
+    def test_lo_nuevo_sigue_la_numeracion(self):
+        self._traer(_masha('mmmmmmmmmm1', 'mmmmmmmmmm2', 'mmmmmmmmmm3'))
+        # Semanas después el canal subió dos más: siguen en el 4 y el 5, los viejos no se repiten
+        segunda = self._traer(_masha(*[f'mmmmmmmmmm{n}' for n in range(1, 6)]))
+        self.assertEqual(segunda.entradas.filter(estado=Estado.REPETIDA).count(), 3)
+        self.assertEqual([n for n, _ in self._capitulos()][-2:],
+                         ['Masha y el Oso S01 E04 Episodio 4', 'Masha y el Oso S01 E05 Episodio 5'])
+
+    def test_una_lista_de_reproduccion_va_en_su_orden(self):
+        listado = _masha('mmmmmmmmmm1', 'mmmmmmmmmm2', 'mmmmmmmmmm3')
+        listado.videos.reverse()
+        listado.nuevos_primero = False
+        self._traer(listado)
+        self.assertEqual(self._capitulos()[0], ('Masha y el Oso S01 E01 Episodio 1', 'mmmmmmmmmm1'))
+
+    def test_no_se_carga_a_medio_probar(self):
+        importacion = servicios.crear_importacion_de_youtube(
+            _masha('mmmmmmmmmm1', 'mmmmmmmmmm2', 'mmmmmmmmmm3'), serie='Masha y el Oso', minimo_minutos=20)
+        servicios.procesar_lote(importacion, _todas_funcionan, tamanio=1, segundos=None)
+        servicios.cargar_lote(importacion)
+        self.assertFalse(Canal.objects.exists())
+
+    def test_los_capitulos_que_dice_el_titulo_van_juntos(self):
+        # Sin "es una serie": la serie que numera el título queda entera en UNA categoría (la que más dicen)
+        listado = youtube.Listado('V', [
+            youtube.Video('nnnnnnnnnn1', 'En la Oscuridad T1 | Episodio 1 | Serie de TERROR', 2700),
+            youtube.Video('nnnnnnnnnn2', 'En la Oscuridad T1 | Episodio 2 | Suspenso', 2700),
+            youtube.Video('nnnnnnnnnn3', 'En la Oscuridad T1 | Episodio 3 | Serie de TERROR', 2700),
+        ])
+        importacion = servicios.crear_importacion_de_youtube(listado, minimo_minutos=40)
+        self.assertEqual(set(importacion.entradas.values_list('categoria', flat=True)), {'Terror'})
+
+
 class PantallaTests(TestCase):
 
     def setUp(self):
@@ -162,7 +238,8 @@ class PantallaTests(TestCase):
     def test_muestra_los_canales_revisados(self):
         respuesta = self.client.get(reverse('canales:youtube'))
         self.assertContains(respuesta, 'Movie Central Español')
-        self.assertContains(respuesta, 'data-categoria="Infantiles"')
+        self.assertContains(respuesta,
+                            'data-categoria="Series Infantiles" data-minutos="20" data-serie="Masha y el Oso"')
 
     def test_traer_un_canal(self):
         listado = youtube.Listado('Bluey', [youtube.Video('ccccccccccc', 'Bluey en la playa | Bluey', 3600)])
@@ -174,6 +251,53 @@ class PantallaTests(TestCase):
         self.assertRedirects(respuesta, reverse('canales:importacion', args=[entrada.importacion_id]) + '?empezar=1',
                              fetch_redirect_response=False)
         self.assertEqual(entrada.categoria, 'Infantiles')
+
+    def test_elegir_una_categoria_de_la_lista(self):
+        # Se validaba antes de cargar las opciones y toda categoría elegida salía "no válida"
+        Categoria.objects.create(nombre='Cine', contenido=Contenido.PELICULA)
+        listado = youtube.Listado('Movie Central', [youtube.Video('ddddddddddd', 'Tormenta Blanca | Drama', 6000)])
+        with mock.patch('canales.youtube.videos_del_canal', return_value=listado):
+            respuesta = self.client.post(reverse('canales:youtube'), {
+                'url': 'https://www.youtube.com/@MovieCentralEspanol', 'categoria_destino': 'Cine',
+                'minimo_minutos': 60, 'solo_espanol': 'on'})
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertEqual(EntradaImportada.objects.get().categoria, 'Cine')
+
+    def _pedir(self, **datos):
+        listado = _masha('mmmmmmmmmm1', 'mmmmmmmmmm2', 'mmmmmmmmmm3')
+        with mock.patch('canales.youtube.videos_del_canal', return_value=listado):
+            return self.client.post(reverse('canales:youtube'), {
+                'url': 'https://www.youtube.com/@MashaYElOso', 'minimo_minutos': 20, **datos})
+
+    def test_traer_como_serie(self):
+        Categoria.objects.create(nombre='Series Infantiles', contenido=Contenido.SERIE)
+        respuesta = self._pedir(es_serie='on', nombre_serie='  Masha y el Oso ', categoria_destino='Series Infantiles')
+        self.assertEqual(respuesta.status_code, 302)
+        importacion = EntradaImportada.objects.first().importacion
+        self.assertEqual(importacion.serie, 'Masha y el Oso')
+        self.assertEqual(set(importacion.entradas.values_list('contenido', flat=True)), {Contenido.SERIE})
+
+    def test_lo_que_falta_o_no_cuadra_se_explica(self):
+        Categoria.objects.create(nombre='Series Infantiles', contenido=Contenido.SERIE)
+        Categoria.objects.create(nombre='Infantil', contenido=Contenido.PELICULA)
+        casos = [
+            ({'es_serie': 'on', 'categoria_destino': 'Series Infantiles'}, 'Escribí el nombre de la serie.'),
+            ({'es_serie': 'on', 'nombre_serie': 'Masha'}, 'Elegí en qué categoría de Series va'),
+            ({'es_serie': 'on', 'nombre_serie': 'Masha', 'categoria_destino': 'Infantil'},
+             '&quot;Infantil&quot; es una categoría de Películas'),
+            ({'categoria_destino': 'Series Infantiles'}, 'marcá &quot;Es una serie&quot;'),
+            ({'categoria_destino': 'Infantil', 'categoria_nueva': 'Infantiles'}, 'dejá solo una de las dos'),
+            ({'es_serie': 'on', 'nombre_serie': '4x4 Aventuras', 'categoria_nueva': 'Series Infantiles'},
+             'la app confundiría con un número de capítulo'),
+        ]
+        for datos, mensaje in casos:
+            self.assertContains(self._pedir(**datos), mensaje, msg_prefix=str(datos))
+        self.assertFalse(EntradaImportada.objects.exists())
+
+    def test_marca_en_rojo_el_campo_con_error(self):
+        respuesta = self.client.post(reverse('canales:youtube'), {'url': '', 'minimo_minutos': 60})
+        self.assertContains(respuesta, 'inputmode="url" maxlength="300" class="form-control is-invalid"')
+        self.assertContains(respuesta, 'name="minimo_minutos" value="60" min="1" max="600" class="form-control" ')
 
     def test_avisa_si_no_se_pudo_leer(self):
         with mock.patch('canales.youtube.videos_del_canal', side_effect=youtube.NoSePudo('El canal no tiene videos.')):

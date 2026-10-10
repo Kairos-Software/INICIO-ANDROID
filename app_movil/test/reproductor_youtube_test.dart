@@ -37,20 +37,32 @@ void main() {
     expect(celular, contains('"origin":"$sitioDeKairos"'));
     expect(celular, contains('"start":120'));
     expect(celular, contains('"controls":1'));
-    expect(paginaDelReproductor('NvQqHzqClf0', controles: false), contains('"controls":0'));   // TV: el control remoto
+    expect(paginaDelReproductor('NvQqHzqClf0', controles: false), contains('"controls":0')); // TV: el control remoto
+    expect(celular, contains('var LIMITE = 0;'));
+  });
+
+  test('en la TV el video se pide como mucho en Full HD', () {
+    final tv = paginaDelReproductor('NvQqHzqClf0', controles: false, limite: ControlYoutube.limiteTv);
+    expect(tv, contains('var LIMITE = 1920;'));
+    // El reproductor se arma más chico y se agranda: YouTube elige la calidad por su tamaño
+    expect(tv, contains("marco.style.transform = 'scale(' + escala + ')'"));
   });
 
   test('entiende lo que avisa el reproductor', () {
     final estado = EstadoYoutube();
     var avisos = 0;
+    var avances = 0;
     estado.addListener(() => avisos++);
+    estado.avance.addListener(() => avances++);
     expect(estado.cargando, isTrue);
     estado
       ..recibir('{"e":"listo"}')
       ..recibir('{"e":"estado","v":1}')
       ..recibir('{"e":"tiempo","t":65.5,"d":5400}')
+      ..recibir('{"e":"tiempo","t":65.5,"d":5400}')
       ..recibir('esto no es json');
-    expect(avisos, 3);
+    // Por dónde va avisa aparte (y solo si cambió): la pantalla no se redibuja cada segundo
+    expect((avisos, avances), (2, 1));
     expect(estado.reproduciendo, isTrue);
     expect(estado.posicion, const Duration(milliseconds: 65500));
     expect(estado.duracion, const Duration(minutes: 90));

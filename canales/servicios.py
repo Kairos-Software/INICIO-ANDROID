@@ -184,7 +184,8 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
     return importacion
 
 
-def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_minutos=40, solo_espanol=True):
+def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_minutos=40, solo_espanol=True,
+                                 serie='', temporada=1):
     """
     Como crear_importacion, pero con los videos de un canal oficial de YouTube
     (youtube.videos_del_canal): cada video es una película, o un capítulo si
@@ -193,17 +194,30 @@ def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_min
       categoria: dónde van todos ("Infantiles"); vacía = según el género del título.
       minimo_minutos: los más cortos se descartan (avances, clips, Shorts).
       solo_espanol: se descarta lo que el título dice que está en inglés.
+      serie: TODOS los videos son capítulos de esta serie ("Masha y el Oso"),
+             numerados del más viejo al más nuevo, siguiendo después del último
+             que ya esté cargado. Los números definitivos se ponen al terminar
+             de probar (_numerar_capitulos): así no quedan huecos por los que
+             no pasan y siempre hay capítulo 1.
     """
+    if serie:
+        serie = organizar.nombre_de_serie_valido(serie)
+    temporada = max(1, min(int(temporada or 1), 99))
     archivo = f'YouTube: {listado.nombre}'[:150]
     importacion = Importacion.objects.create(
         archivo=archivo, usuario=usuario if getattr(usuario, 'pk', None) else None, solo_espanol=solo_espanol,
+        serie=serie, temporada=temporada,
     )
     ya_guardadas = set(Fuente.objects.values_list('url', flat=True))
     vistas = set()
-    nombres = youtube.nombres_distintos([video.titulo for video in listado.videos])
+    # Una serie va en el orden de sus capítulos (posición 1 = el primero); películas, como vienen
+    videos = listado.en_orden() if serie else listado.videos
+    nombres = youtube.nombres_distintos([video.titulo for video in videos])
+    generos = _genero_de_cada_serie(videos) if not (serie or categoria) else {}
+    numero = organizar.ultimo_capitulo(serie, temporada) if serie else 0
     entradas = []
-    for posicion, (video, nombre) in enumerate(zip(listado.videos, nombres), start=1):
-        capitulo = youtube.capitulo(video.titulo)
+    for posicion, (video, nombre) in enumerate(zip(videos, nombres), start=1):
+        capitulo = None if serie else youtube.capitulo(video.titulo)
         nombre = capitulo or nombre
         idioma = 'otro' if youtube.en_ingles(video.titulo) else 'es'
         estado, motivo = Estado.PENDIENTE, ''
@@ -220,14 +234,24 @@ def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_min
             estado, motivo = Estado.DESCARTADA, 'El título dice que está en inglés.'
         elif clasificar.para_adultos(video.titulo, ''):
             estado, motivo = Estado.DESCARTADA, 'Es contenido para adultos.'
-        elif _sin_nombre(nombre):
+        elif _sin_nombre(nombre) and not serie:
             estado, motivo = Estado.DESCARTADA, 'No tiene un nombre definido.'
         vistas.add(video.url)
+        if serie and estado == Estado.PENDIENTE:
+            numero += 1   # provisorio: el definitivo, al terminar de probar
+            nombre = organizar.nombre_de_capitulo(serie, temporada, numero,
+                                                  organizar.titulo_del_capitulo(nombre, serie))
+        if categoria:
+            de_la_categoria = categoria
+        elif capitulo:   # todos los capítulos de una serie, en la misma categoría
+            de_la_categoria = generos.get(clasificar.episodio(capitulo)[0].lower(), '')
+        else:
+            de_la_categoria = youtube.genero(video.titulo)
         entradas.append(EntradaImportada(
             importacion=importacion, posicion=posicion,
             nombre_original=video.titulo[:200], nombre=(nombre or 'Sin nombre')[:120], logo=video.imagen,
-            categoria=(categoria or youtube.genero(video.titulo))[:80], tvg_id=video.id, idioma=idioma,
-            contenido=Contenido.SERIE if capitulo else Contenido.PELICULA,
+            categoria=de_la_categoria[:80], tvg_id=video.id, idioma=idioma,
+            contenido=Contenido.SERIE if (serie or capitulo) else Contenido.PELICULA,
             url=video.url, tipo=youtube.TIPO, estado=estado, motivo=motivo,
         ))
     EntradaImportada.objects.bulk_create(entradas, batch_size=1000)
@@ -237,10 +261,46 @@ def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_min
     if not importacion.para_verificar:
         importacion.terminada = timezone.now()
     importacion.save(update_fields=['total', 'para_verificar', 'terminada'])
+    como = f' como la serie "{serie}"' if serie else ''
     registrar(usuario, Accion.CREAR,
-              f'Trajo los videos del canal de YouTube "{listado.nombre}": {importacion.total} video(s), '
+              f'Trajo los videos del canal de YouTube "{listado.nombre}"{como}: {importacion.total} video(s), '
               f'{importacion.para_verificar} para verificar.', modulo='canales')
     return importacion
+
+
+def _genero_de_cada_serie(videos):
+    """
+    {serie: género} de las series que el título numera ("T1 E2"): el género que
+    más dicen sus capítulos. Así una serie no queda repartida en varias
+    categorías (la app la mostraría en la del capítulo que llegue primero).
+    """
+    votos = {}
+    for video in videos:
+        capitulo = youtube.capitulo(video.titulo)
+        genero = youtube.genero(video.titulo)
+        if capitulo and genero:
+            por_genero = votos.setdefault(clasificar.episodio(capitulo)[0].lower(), {})
+            por_genero[genero] = por_genero.get(genero, 0) + 1
+    return {serie: max(por_genero, key=por_genero.get) for serie, por_genero in votos.items()}
+
+
+def _numerar_capitulos(importacion):
+    """
+    Traída como UNA serie: al terminar de probar, los capítulos que pasaron se
+    numeran de corrido desde el último que ya esté cargado (o desde el 1). Así
+    no quedan huecos por los que no pasaron y la serie siempre tiene su
+    capítulo 1 (la app no muestra series sin él).
+    """
+    if not importacion.serie:
+        return
+    aptas = list(importacion.entradas.filter(estado=Estado.APTA).order_by('posicion'))
+    numero = organizar.ultimo_capitulo(importacion.serie, importacion.temporada)
+    for entrada in aptas:
+        numero += 1
+        entrada.nombre = organizar.nombre_de_capitulo(
+            importacion.serie, importacion.temporada, numero,
+            organizar.titulo_del_capitulo(entrada.nombre, importacion.serie))
+    EntradaImportada.objects.bulk_update(aptas, ['nombre'])
 
 
 # ── Paso 2: probar de a tandas ───────────────────────────────────────
@@ -476,6 +536,7 @@ def procesar_lote(importacion, verificar=None, tamanio=TAMANIO_LOTE, segundos=SE
         EntradaImportada.objects.bulk_update(pendientes, CAMPOS_DE_LA_PRUEBA)
 
         if not importacion.entradas.filter(estado=Estado.PENDIENTE).exists():
+            _numerar_capitulos(importacion)
             _revisar_series(importacion)
             importacion.terminada = timezone.now()
             importacion.save(update_fields=['terminada'])
@@ -494,6 +555,9 @@ def cargar_lote(importacion, tamanio=TAMANIO_CARGA):
     canales nuevos se crearon en esta tanda.
     """
     canales_nuevos = 0
+    if importacion.entradas.filter(estado=Estado.PENDIENTE).exists():
+        # Recién al terminar de probar se revisan las series y se numeran los capítulos
+        return {**progreso(importacion), 'canales_nuevos': 0}
     with transaction.atomic():
         if not _bloquear(importacion):
             return {**progreso(importacion), 'ocupada': True, 'canales_nuevos': 0}
@@ -592,7 +656,7 @@ def importar_m3u(texto, origen='', usuario=None, verificar=None, **opciones):
             break
         pendientes_antes = avance['pendientes']
     nuevos = 0
-    while avance['aptas']:
+    while avance['aptas'] and not avance['pendientes']:
         avance = cargar_lote(importacion)
         nuevos += avance['canales_nuevos']
     agregadas = importacion.entradas.filter(estado=Estado.AGREGADA).values('url')

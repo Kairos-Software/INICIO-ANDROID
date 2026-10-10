@@ -218,6 +218,11 @@ class Importacion(models.Model):
     a_fondo = models.BooleanField('prueba a fondo', default=False)
     # Cuándo se cargaron las aptas (null = todavía no)
     cargada = models.DateTimeField(null=True, blank=True)
+    # Traer de YouTube como UNA serie: todos los videos son capítulos de esta
+    # serie, numerados del más viejo al más nuevo ('' = películas sueltas).
+    # Los números definitivos se ponen al terminar de probar (servicios._numerar_capitulos).
+    serie = models.CharField('serie', max_length=90, blank=True)
+    temporada = models.PositiveSmallIntegerField(default=1)
 
     class Meta:
         verbose_name = 'importación'

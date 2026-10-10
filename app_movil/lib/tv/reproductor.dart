@@ -23,7 +23,10 @@
 ///       quedan), Abajo va a la línea de tiempo y, desde ahí, Arriba vuelve a Pausa.
 ///   Atrás: esconde la barra; si no está, sale.
 ///   Guarda por dónde va cada 5 s y al terminar un capítulo sigue con el próximo.
-///   Las de canales oficiales de YouTube van en su reproductor (movil/reproductor_youtube.dart).
+///
+/// YOUTUBE OFICIAL (ReproductorYoutubeTv): igual que las películas, pero el
+///   video es el reproductor de YouTube (movil/reproductor_youtube.dart). Sin
+///   Ajustes: la calidad la elige YouTube.
 ///
 /// Las opciones y la barra se esconden solas a los 5 s (en pausa, no); la guía a los 15 s.
 library;
@@ -70,7 +73,7 @@ Future<void> reproducirPeliculaTv(BuildContext context, Canal pelicula, {bool de
   return abrirTv<void>(
     context,
     fuenteDeYoutube(pelicula) != null
-        ? PantallaYoutube(canal: pelicula, tv: true, desde: desde)
+        ? ReproductorYoutubeTv(canal: pelicula, desde: desde)
         : ReproductorVodTv(canal: pelicula, desde: desde),
   );
 }
@@ -82,7 +85,7 @@ Future<void> reproducirSerieTv(BuildContext context, Serie serie, {Episodio? epi
   return abrirTv<void>(
     context,
     fuenteDeYoutube(elegido.canal) != null
-        ? PantallaYoutube(canal: elegido.canal, tv: true, serie: serie, episodio: elegido, desde: desde)
+        ? ReproductorYoutubeTv(canal: elegido.canal, serie: serie, episodio: elegido, desde: desde)
         : ReproductorVodTv(canal: elegido.canal, serie: serie, episodio: elegido, desde: desde),
   );
 }
@@ -997,6 +1000,418 @@ class _ReproductorVodTvState extends State<ReproductorVodTv> {
                     ),
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Películas y capítulos de YouTube oficial ───────────────────────
+
+/// Se maneja igual que [ReproductorVodTv] (el cartel al empezar, la barra con
+/// Pausa, Siguiente episodio, Favoritos y la línea de tiempo, que se esconde
+/// sola), pero el video es el reproductor oficial de YouTube.
+///
+/// Mientras se ve, encima del video no queda nada dibujado y la pantalla no
+/// se redibuja cada segundo (por dónde va lo escucha solo la línea de tiempo,
+/// y solo con la barra a la vista): todo lo que se dibuja encima de un video
+/// de YouTube le cuesta a la TV.
+class ReproductorYoutubeTv extends StatefulWidget {
+  const ReproductorYoutubeTv({super.key, required this.canal, this.serie, this.episodio, this.desde});
+
+  final Canal canal;
+  final Serie? serie;
+  final Episodio? episodio;
+  final Duration? desde;
+
+  @override
+  State<ReproductorYoutubeTv> createState() => _ReproductorYoutubeTvState();
+}
+
+class _ReproductorYoutubeTvState extends State<ReproductorYoutubeTv> {
+  static const _salto = Duration(seconds: 10);
+
+  ControlYoutube? _control;
+  final _raiz = FocusNode(debugLabel: 'reproductor de YouTube', skipTraversal: true);
+  final _botonPausa = FocusNode(debugLabel: 'pausa');
+  final _linea = FocusNode(debugLabel: 'línea de tiempo');
+  final _reintentar = FocusNode(debugLabel: 'probar de nuevo');
+
+  /// La barra con los botones y la línea de tiempo (toma el foco).
+  bool _controles = false;
+
+  /// El título abajo, al empezar (solo informa: no atrapa "Atrás").
+  bool _cartel = true;
+  bool _habiaError = false;
+  Episodio? _episodioDelCartel;
+  Timer? _ocultar;
+  Timer? _cerrarCartel;
+
+  ControlYoutube get _video => _control!;
+
+  @override
+  void initState() {
+    super.initState();
+    WakelockPlus.enable().catchError((Object _) {});
+    _episodioDelCartel = widget.episodio;
+    _esconderCartelDespues();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _raiz.requestFocus();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _control ??=
+        ControlYoutube(
+            api: SesionScope.leer(context).api,
+            biblioteca: DatosScope.of(context).biblioteca,
+            canal: widget.canal,
+            serie: widget.serie,
+            episodio: widget.episodio,
+            tv: true,
+          )
+          ..abrir(desde: widget.desde)
+          ..addListener(_alCambiar); // después de abrir: acá todavía no se puede redibujar
+  }
+
+  @override
+  void dispose() {
+    _ocultar?.cancel();
+    _cerrarCartel?.cancel();
+    _control?.dispose();
+    for (final nodo in [_raiz, _botonPausa, _linea, _reintentar]) {
+      nodo.dispose();
+    }
+    WakelockPlus.disable().catchError((Object _) {});
+    super.dispose();
+  }
+
+  void _alCambiar() {
+    if (!mounted) return;
+    final estado = _video.estado;
+    // Si falló, el foco va a "Probar de nuevo"
+    final error = estado.error != null;
+    if (error && !_habiaError) {
+      _controles = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _reintentar.context != null) _reintentar.requestFocus();
+      });
+    }
+    _habiaError = error;
+    // Arrancó (o siguió) con la barra a la vista: que se esconda sola
+    if (estado.reproduciendo && _controles && !(_ocultar?.isActive ?? false)) _reiniciarEspera();
+    // Pasó solo al capítulo siguiente: el cartel con el título nuevo
+    if (_video.episodio != _episodioDelCartel) {
+      _episodioDelCartel = _video.episodio;
+      _cartel = true;
+      _esconderCartelDespues();
+    }
+    setState(() {});
+  }
+
+  void _pasarA(Episodio episodio) {
+    _video.pasarA(episodio);
+    _cerrarControles();
+  }
+
+  void _esconderCartelDespues() {
+    _cerrarCartel?.cancel();
+    _cerrarCartel = Timer(_esperaCartel, () {
+      if (mounted) setState(() => _cartel = false);
+    });
+  }
+
+  /// Muestra la barra y le lleva el foco a [nodo] (Pausa, o la línea de tiempo si se está adelantando).
+  void _abrirControles(FocusNode nodo) {
+    final yaEstaban = _controles;
+    setState(() {
+      _controles = true;
+      _cartel = false;
+    });
+    if (!yaEstaban) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _controles) nodo.requestFocus();
+      });
+    }
+    _reiniciarEspera();
+  }
+
+  /// Mientras se reproduce, la barra se esconde sola. En pausa queda a la vista.
+  void _reiniciarEspera() {
+    _ocultar?.cancel();
+    _ocultar = Timer(_esperaControles, () {
+      if (mounted && _controles && _video.estado.reproduciendo) _cerrarControles();
+    });
+  }
+
+  void _cerrarControles() {
+    _ocultar?.cancel();
+    setState(() => _controles = false);
+    (_video.estado.error != null && _reintentar.context != null ? _reintentar : _raiz).requestFocus();
+  }
+
+  void _saltar(Duration cuanto) {
+    _video.saltar(cuanto);
+    _abrirControles(_linea);
+  }
+
+  void _pausa() {
+    _video.alternarPausa();
+    _abrirControles(_botonPausa);
+  }
+
+  KeyEventResult _tecla(FocusNode _, KeyEvent evento) {
+    if (evento is KeyUpEvent) return KeyEventResult.ignored;
+    final tecla = evento.logicalKey;
+    // Las teclas de reproducción del control funcionan siempre
+    if (tecla == LogicalKeyboardKey.mediaPlayPause ||
+        tecla == LogicalKeyboardKey.mediaPlay ||
+        tecla == LogicalKeyboardKey.mediaPause) {
+      _pausa();
+      return KeyEventResult.handled;
+    }
+    if (tecla == LogicalKeyboardKey.mediaFastForward || tecla == LogicalKeyboardKey.mediaRewind) {
+      _saltar(tecla == LogicalKeyboardKey.mediaFastForward ? _salto * 3 : -_salto * 3);
+      return KeyEventResult.handled;
+    }
+    if (_controles) {
+      _reiniciarEspera(); // se está usando: no se esconde
+      return KeyEventResult.ignored; // las flechas recorren la barra
+    }
+    // Con el error a la vista, las flechas y OK son de sus botones
+    if (_video.estado.error != null && !_raiz.hasPrimaryFocus) return KeyEventResult.ignored;
+    if (tecla == LogicalKeyboardKey.arrowLeft || tecla == LogicalKeyboardKey.arrowRight) {
+      _saltar(tecla == LogicalKeyboardKey.arrowRight ? _salto : -_salto);
+      return KeyEventResult.handled;
+    }
+    if (teclasOk.contains(tecla)) {
+      _pausa();
+      return KeyEventResult.handled;
+    }
+    if (tecla == LogicalKeyboardKey.arrowUp ||
+        tecla == LogicalKeyboardKey.arrowDown ||
+        tecla == LogicalKeyboardKey.info ||
+        tecla == LogicalKeyboardKey.contextMenu) {
+      _abrirControles(_botonPausa);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final video = _video;
+    final estado = video.estado;
+    final serie = widget.serie;
+    final episodio = video.episodio;
+    final clave = serie?.clave ?? Biblioteca.claveDe(video.canal);
+    final favorito = video.biblioteca.estaEnMiLista(clave);
+    final titulo = serie?.nombre ?? sinAnio(video.canal.nombre);
+    final subtitulo = episodio == null
+        ? 'Película'
+        : 'Temporada ${episodio.temporada} · Episodio ${episodio.numero}'
+              '${episodio.titulo.isEmpty ? '' : ' · ${episodio.titulo}'}';
+    final siguiente = video.siguiente;
+    final error = estado.error;
+    final textoDelTitulo = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(titulo, maxLines: 1, overflow: TextOverflow.ellipsis, style: LetraTv.tarjeta.copyWith(fontSize: 24)),
+        Text(
+          subtitulo,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: LetraTv.ayuda.copyWith(fontSize: 17, color: Tono.textoSuave),
+        ),
+      ],
+    );
+
+    return PopScope(
+      // "Atrás": si la barra está a la vista, la esconde; si no, sale
+      canPop: !_controles,
+      onPopInvokedWithResult: (salio, _) {
+        if (!salio) _cerrarControles();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Focus(
+          focusNode: _raiz,
+          onKeyEvent: _tecla,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              VistaYoutube(control: video),
+              if (error == null && !estado.listo) const _CargandoYoutube(),
+              if (error != null)
+                _FallaYoutubeTv(
+                  mensaje: EstadoYoutube.mensajeDe(error),
+                  nodo: _reintentar,
+                  alReintentar: video.reintentar,
+                ),
+              if (_controles || _cartel)
+                Positioned(
+                  top: MargenTv.arriba,
+                  left: MargenTv.derecha,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: Tono.capaAlta.withValues(alpha: .85),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: Tono.bordeSuave.withValues(alpha: .6)),
+                    ),
+                    child: Text(
+                      episodio == null ? 'PELÍCULA' : 'T${episodio.temporada} · E${episodio.numero}',
+                      style: const TextStyle(
+                        fontFamily: Letra.texto,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .6,
+                        color: Tono.texto,
+                      ),
+                    ),
+                  ),
+                ),
+              // El cartel del principio: título y cómo se maneja (solo informa)
+              if (_cartel && !_controles && error == null)
+                Positioned(
+                  left: MargenTv.derecha,
+                  right: MargenTv.derecha,
+                  bottom: MargenTv.abajo,
+                  child: _PanelControles(
+                    fila: [Expanded(child: textoDelTitulo)],
+                    ayuda: 'OK: pausa  ·  ← →: atrasar / adelantar 10 s  ·  ↑ ↓: opciones  ·  Atrás: salir',
+                  ),
+                ),
+              if (_controles)
+                Positioned(
+                  left: MargenTv.derecha,
+                  right: MargenTv.derecha,
+                  bottom: MargenTv.abajo,
+                  child: _PanelControles(
+                    ayuda: '← →: elegir  ·  ↓: línea de tiempo  ·  Atrás: ocultar',
+                    alMoverse: _reiniciarEspera,
+                    fila: [
+                      _BotonCuadrado(
+                        icono: estado.reproduciendo ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                        etiqueta: estado.reproduciendo ? 'Pausa' : 'Seguir',
+                        nodo: _botonPausa,
+                        alOk: () {
+                          video.alternarPausa();
+                          _reiniciarEspera();
+                        },
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(child: textoDelTitulo),
+                      if (siguiente != null && fuenteDeYoutube(siguiente.canal) != null) ...[
+                        BotonTv(
+                          texto: 'Siguiente episodio',
+                          icono: Icons.skip_next_rounded,
+                          alto: 62,
+                          alOk: () => _pasarA(siguiente),
+                        ),
+                        const SizedBox(width: 18),
+                      ],
+                      _BotonCuadrado(
+                        icono: favorito ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        color: favorito ? Tono.rubi : null,
+                        etiqueta: favorito ? 'Quitar de favoritos' : 'Agregar a favoritos',
+                        alOk: () {
+                          alternarFavoritoTv(context, clave);
+                          _reiniciarEspera();
+                          setState(() {});
+                        },
+                      ),
+                    ],
+                    // Por dónde va: lo único que se redibuja cada segundo, y solo con la barra a la vista
+                    debajo: ValueListenableBuilder<Duration>(
+                      valueListenable: estado.avance,
+                      builder: (context, posicion, _) => _LineaDeTiempo(
+                        nodo: _linea,
+                        posicion: posicion,
+                        duracion: estado.duracion,
+                        alSaltar: (cuanto) {
+                          video.saltar(cuanto);
+                          _reiniciarEspera();
+                        },
+                        alSubir: () {
+                          _botonPausa.requestFocus();
+                          _reiniciarEspera();
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Mientras YouTube carga (se saca apenas arranca: una animación encima del video también cuesta).
+class _CargandoYoutube extends StatelessWidget {
+  const _CargandoYoutube();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 64, height: 64, child: CircularProgressIndicator(strokeWidth: 5, color: Tono.celeste)),
+          const SizedBox(height: 22),
+          Text('Conectando con YouTube…', style: LetraTv.cuerpo.copyWith(color: Tono.texto)),
+        ],
+      ),
+    );
+  }
+}
+
+/// YouTube no lo dejó ver (o no cargó): el motivo y "Probar de nuevo".
+class _FallaYoutubeTv extends StatelessWidget {
+  const _FallaYoutubeTv({required this.mensaje, required this.nodo, required this.alReintentar});
+
+  final String mensaje;
+  final FocusNode nodo;
+  final VoidCallback alReintentar;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: Container(
+          width: 820,
+          padding: const EdgeInsets.all(48),
+          decoration: BoxDecoration(
+            color: Tono.capaBaja.withValues(alpha: .95),
+            borderRadius: BorderRadius.circular(Curva.portada),
+            border: Border.all(color: Tono.rubi.withValues(alpha: .5)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, size: 56, color: Tono.rubiClaro),
+              const SizedBox(height: 18),
+              const Text('Esto no está disponible ahora', textAlign: TextAlign.center, style: LetraTv.pantalla),
+              const SizedBox(height: 10),
+              Text(mensaje, textAlign: TextAlign.center, style: LetraTv.cuerpo),
+              const SizedBox(height: 30),
+              BotonTv(
+                texto: 'Probar de nuevo',
+                icono: Icons.refresh_rounded,
+                principal: true,
+                autofocus: true,
+                nodo: nodo,
+                alOk: alReintentar,
+              ),
+              const SizedBox(height: 14),
+              const Text('Atrás: volver', style: LetraTv.ayuda),
             ],
           ),
         ),

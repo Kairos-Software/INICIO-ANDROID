@@ -92,7 +92,7 @@ def traer_de_youtube(request):
             form.add_error('url', str(error))
         else:
             importacion = servicios.crear_importacion_de_youtube(
-                listado, request.user, categoria=form.categoria(),
+                listado, request.user, categoria=form.categoria(), serie=form.serie(),
                 minimo_minutos=datos['minimo_minutos'], solo_espanol=datos['solo_espanol'])
             return redirect(f'{importacion_url(importacion)}?empezar=1')
     return render(request, 'canales/youtube.html', {'form': form, 'sugeridos': youtube.SUGERIDOS})
@@ -505,6 +505,10 @@ def _avisar_cambio_de_tipo(request, cantidad, contenido, nombre_serie=''):
     if contenido == Contenido.SERIE and nombre_serie:
         messages.success(request, f'Listo: {cantidad} quedaron como capítulos de la serie "{nombre_serie}" '
                                   f'(los ves en la sección Series).')
+        total = organizar.capitulos_de([nombre_serie]).count()
+        if total < consultas.MINIMO_DE_CAPITULOS:
+            messages.warning(request, f'Ojo: "{nombre_serie}" tiene {total} capítulo(s) y la app solo muestra series '
+                                      f'con {consultas.MINIMO_DE_CAPITULOS} o más. Sumale capítulos para que aparezca.')
         return
     destino = {Contenido.VIVO: 'En vivo', Contenido.PELICULA: 'Películas', Contenido.SERIE: 'Series'}[contenido]
     messages.success(request, f'{cantidad} pasaron a la sección {destino}.')

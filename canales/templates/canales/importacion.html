@@ -25,6 +25,9 @@
             {% if importacion.descartar_sin_logo %}· sin los que no tienen logo{% endif %}
             {% if importacion.a_fondo %}· prueba a fondo{% endif %}
         </p>
+        {% if importacion.serie %}
+        <p class="pagina-bajada"><i class="bi bi-collection-play" aria-hidden="true"></i> Como la serie <strong>{{ importacion.serie }}</strong>: cada video es un capítulo. Los números definitivos se ponen al terminar de probar, de corrido, para que no queden huecos por los que no pasan.</p>
+        {% endif %}
     </div>
     <a href="{% url 'canales:catalogo' %}?origen={{ importacion.archivo|urlencode }}" class="btn btn-outline-secondary">
         <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i> Ver sus canales en el catálogo
@@ -282,7 +285,8 @@
     var total = {{ avance.aptas }};
     var tarea = Tandas({
         url: '{% url "canales:importacion_cargar" importacion.pk %}',
-        termino: function (r) { return !r.aptas; },
+        // Si alguien la puso a probar de nuevo (otra pestaña), no se carga hasta que termine
+        termino: function (r) { return !r.aptas || r.pendientes > 0; },
         alAvanzar: function (r) {
             estado.textContent = r.ocupada ? 'Otra pestaña está trabajando con esta lista: esperando…'
                 : 'Cargando… ' + Tandas.numero(total - r.aptas) + ' de ' + Tandas.numero(total) + '. No cierres esta página.';

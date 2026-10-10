@@ -35,7 +35,7 @@ void reproducirPelicula(BuildContext context, Canal pelicula, {Duration? desde})
   abrirPantalla<void>(
     context,
     fuenteDeYoutube(pelicula) != null
-        ? PantallaYoutube(canal: pelicula, tv: false, desde: dondeQuedo)
+        ? PantallaYoutube(canal: pelicula, desde: dondeQuedo)
         : PantallaReproductorVod(canal: pelicula, desde: dondeQuedo),
   );
 }
@@ -51,7 +51,7 @@ void reproducirEpisodio(BuildContext context, Serie serie, Episodio episodio, {D
   abrirPantalla<void>(
     context,
     fuenteDeYoutube(episodio.canal) != null
-        ? PantallaYoutube(canal: episodio.canal, tv: false, serie: serie, episodio: episodio, desde: dondeQuedo)
+        ? PantallaYoutube(canal: episodio.canal, serie: serie, episodio: episodio, desde: dondeQuedo)
         : PantallaReproductorVod(canal: episodio.canal, serie: serie, episodio: episodio, desde: dondeQuedo),
   );
 }
