@@ -21,6 +21,7 @@ import 'estilo.dart';
 import 'estructura.dart';
 import 'grilla.dart';
 import 'reproductor_vod.dart';
+import 'secciones_nuevas.dart';
 
 class SeccionInicio extends StatelessWidget {
   const SeccionInicio({super.key});
@@ -62,7 +63,10 @@ class SeccionInicio extends StatelessWidget {
               const _DirectosDestacados(),
               const _ContinuarViendo(),
               const _Tendencias(),
-              if (catalogo.canales.isEmpty && catalogo.peliculas.isEmpty && catalogo.series.isEmpty)
+              if (catalogo.canales.isEmpty &&
+                  catalogo.peliculas.isEmpty &&
+                  catalogo.series.isEmpty &&
+                  catalogo.seccionesNuevas.isEmpty)
                 const Vacio(icono: Icons.tv_off_rounded, texto: 'Todavía no hay contenido disponible.'),
             ],
           ),
@@ -72,7 +76,8 @@ class SeccionInicio extends StatelessWidget {
   }
 }
 
-/// "categoryChips": Todo · En Vivo · Películas · Series · y las categorías de TV.
+/// "categoryChips": Todo · En Vivo · Películas · Series · las secciones nuevas
+/// (Música, Radio...: se abren en su pantalla) · y las categorías de TV.
 class _Chips extends StatelessWidget {
   const _Chips();
 
@@ -99,6 +104,15 @@ class _Chips extends StatelessWidget {
           ],
           if (catalogo.series.isNotEmpty) ...[
             ChipFiltro(texto: 'Series', activo: false, alTocar: () => irA(Seccion.series)),
+            const SizedBox(width: Espacio.xs),
+          ],
+          for (final seccion in catalogo.seccionesNuevas) ...[
+            ChipFiltro(
+              texto: seccion.nombre,
+              icono: iconoDeSeccion(seccion.icono),
+              activo: false,
+              alTocar: () => abrirSeccionNueva(context, seccion),
+            ),
             const SizedBox(width: Espacio.xs),
           ],
           for (final categoria in categorias) ...[

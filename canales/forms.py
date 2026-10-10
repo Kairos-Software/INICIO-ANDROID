@@ -5,9 +5,9 @@ from django.core.validators import URLValidator
 
 from herramientas.formularios import EstiloBootstrapMixin
 
-from . import organizar
+from . import organizar, secciones
 from .m3u import leer_m3u
-from .models import Canal, Categoria, Contenido, Fuente
+from .models import Canal, Categoria, Contenido, Fuente, Seccion
 
 # Una lista con películas y series (miles de entradas) puede pesar varios MB.
 # OJO: nginx también tiene que aceptarlo (client_max_body_size en despliegue/nginx).
@@ -35,7 +35,14 @@ def _elegir_categoria_con_su_seccion(campo):
     """La lista de categorías dice de qué sección es cada una ("Infantil · Películas")."""
     campo.queryset = Categoria.objects.order_by('contenido', 'orden', 'nombre')
     campo.required = False
-    campo.label_from_instance = lambda c: f'{c.nombre} · {organizar.nombre_de_seccion(c.contenido)}'
+    nombres = dict(secciones.todas())
+    campo.label_from_instance = lambda c: f'{c.nombre} · {nombres.get(c.contenido, c.contenido)}'
+
+
+def _elegir_seccion(campo):
+    """La sección de un canal o película: las fijas y las nuevas (Música, Radio...)."""
+    return forms.ChoiceField(label='Sección', choices=secciones.todas(), required=bool(campo.required),
+                             initial=campo.initial)
 
 
 def _categoria_de_su_seccion(datos, canal):
@@ -58,19 +65,29 @@ def _categoria_de_su_seccion(datos, canal):
 
 # ── Importar directo en una categoría (listas M3U y YouTube) ──
 
-def _opciones_de_categorias(vacia, secciones):
+def _opciones_de_categorias(vacia, de_las_secciones):
     """
     Las categorías para elegir al importar, agrupadas por sección. El valor es
     el NOMBRE: cada cosa importada va a la categoría con ese nombre de SU
     sección (si no existe, se crea al cargar).
     """
     grupos = []
-    for contenido in secciones:
+    for contenido in de_las_secciones:
         nombres = list(Categoria.objects.filter(contenido=contenido).order_by('orden', 'nombre')
                        .values_list('nombre', flat=True))
         if nombres:
-            grupos.append((organizar.nombre_de_seccion(contenido), [(n, n) for n in nombres]))
+            grupos.append((secciones.nombre(contenido), [(n, n) for n in nombres]))
     return [('', vacia), *grupos]
+
+
+def _categoria_de_otra_seccion(form, datos, seccion):
+    """La categoría elegida tiene que ser de la sección a la que va todo (si no, se explica)."""
+    elegida = datos.get('categoria_destino')
+    if not elegida or (datos.get('categoria_nueva') or '').strip() or not seccion:
+        return
+    if not Categoria.objects.filter(contenido=seccion, nombre=elegida).exists():
+        form.add_error('categoria_destino', f'"{elegida}" no es una categoría de {secciones.nombre(seccion)}: '
+                                            f'elegí una de esa sección, o escribí una nueva.')
 
 
 def _campo_categoria_nueva():
@@ -98,6 +115,10 @@ class EditarDesdeOrganizarForm(forms.Form):
     contenido = forms.ChoiceField(choices=Contenido.choices, required=False)
     activo = forms.BooleanField(required=False)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['contenido'].choices = secciones.todas()
+
 
 class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
     """Traer las películas de un canal oficial de YouTube (canales/youtube.py)."""
@@ -115,22 +136,39 @@ class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
     )
     nombre_serie = forms.CharField(label='Nombre de la serie', max_length=90, required=False,
                                    help_text='Como se va a ver en la app.')
+    temporada = forms.IntegerField(
+        label='Temporada', min_value=1, max_value=99, initial=1, required=False,
+        help_text='Si la serie tiene varias, traé cada una con su link y el MISMO nombre de serie: en la app '
+                  'quedan juntas, cada temporada con sus capítulos desde el 1. La app muestra la serie cuando '
+                  'ya tiene la temporada 1.',
+    )
+    seccion_destino = forms.ChoiceField(
+        label='Sección', required=False,
+        help_text='Películas, o una sección que creaste (Música...).',
+    )
     categoria_destino = forms.ChoiceField(
         label='Categoría', required=False,
         help_text='Películas: sin elegir, cada una va según el género que dice su título (Acción, Terror...). '
-                  'Una serie: elegí una de Series (por ejemplo, Series Infantiles).',
+                  'Una serie: elegí una de Series (por ejemplo, Series Infantiles). Una sección que creaste: sin '
+                  'elegir, a una con el nombre del canal (en Música, el artista).',
     )
     categoria_nueva = _campo_categoria_nueva()
     minimo_minutos = forms.IntegerField(
         label='Solo videos de al menos (minutos)', min_value=1, max_value=600, initial=60,
-        help_text='Saca avances, clips y Shorts. Películas: 60. Dibujos: 20.',
+        help_text='Saca avances, clips y Shorts. Películas: 60. Dibujos: 20. Música: 2.',
+    )
+    maximo_minutos = forms.IntegerField(
+        label='Y de hasta (minutos)', min_value=1, max_value=600, required=False,
+        help_text='Vacío: sin límite. Música: 6 (así no entran recopilaciones ni conciertos enteros).',
     )
     solo_espanol = forms.BooleanField(label='Descartar los que dicen estar en inglés', required=False, initial=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        a_demanda = [s for s in secciones.nuevas() if s.forma == Seccion.Forma.A_DEMANDA]
+        self.fields['seccion_destino'].choices = [('', 'Películas'), *((s.clave, s.nombre) for s in a_demanda)]
         self.fields['categoria_destino'].choices = _opciones_de_categorias(
-            'Según el género de cada título', [Contenido.PELICULA, Contenido.SERIE])
+            'Según el género de cada título', [Contenido.PELICULA, Contenido.SERIE, *(s.clave for s in a_demanda)])
 
     def clean(self):
         datos = super().clean()
@@ -144,6 +182,12 @@ class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
             if not _nombre_de_la_categoria(datos):
                 self.add_error('categoria_destino', 'Elegí en qué categoría de Series va (por ejemplo, Series '
                                                     'Infantiles), o escribí una nueva.')
+        minimo, maximo = datos.get('minimo_minutos'), datos.get('maximo_minutos')
+        if minimo and maximo and maximo < minimo:
+            self.add_error('maximo_minutos', f'Tiene que ser igual o más que el mínimo ({minimo}).')
+        if not es_serie and datos.get('seccion_destino'):
+            _categoria_de_otra_seccion(self, datos, datos['seccion_destino'])
+            return datos
         elegida = datos.get('categoria_destino')
         if elegida and not datos.get('categoria_nueva'):
             seccion = Contenido.SERIE if es_serie else Contenido.PELICULA
@@ -161,6 +205,10 @@ class TraerDeYoutubeForm(EstiloBootstrapMixin, forms.Form):
     def serie(self):
         """El nombre de la serie ('' = son películas)."""
         return self.cleaned_data['nombre_serie'] if self.cleaned_data.get('es_serie') else ''
+
+    def seccion(self):
+        """La sección nueva a la que va todo ('' = Películas o Series)."""
+        return '' if self.cleaned_data.get('es_serie') else self.cleaned_data.get('seccion_destino') or ''
 
 
 class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
@@ -187,6 +235,11 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
     descartar_adultos = forms.BooleanField(label='Descartar contenido para adultos', required=False, initial=True,
                                            help_text='XXX / +18, por el nombre o la categoría.')
     descartar_sin_logo = forms.BooleanField(label='Descartar los que no tienen logo', required=False)
+    seccion_destino = forms.ChoiceField(
+        label='Sección', required=False,
+        help_text='Sin elegir: cada uno a la que le toca (En vivo, Películas o Series). Una sección que creaste '
+                  '(Radio...): todo va ahí.',
+    )
     categoria_destino = forms.ChoiceField(
         label='Poner todo en la categoría', required=False,
         help_text='Sin elegir: cada canal va a la categoría que dice la lista (group-title).',
@@ -195,8 +248,11 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        nuevas = secciones.nuevas()
+        self.fields['seccion_destino'].choices = [('', 'La que le toca a cada uno'),
+                                                  *((s.clave, s.nombre) for s in nuevas)]
         self.fields['categoria_destino'].choices = _opciones_de_categorias(
-            'La que dice la lista', [Contenido.VIVO, Contenido.PELICULA, Contenido.SERIE])
+            'La que dice la lista', [Contenido.VIVO, Contenido.PELICULA, Contenido.SERIE, *(s.clave for s in nuevas)])
 
     def clean_archivo(self):
         archivo = self.cleaned_data['archivo']
@@ -213,12 +269,14 @@ class ImportarListaForm(EstiloBootstrapMixin, forms.Form):
     def clean(self):
         datos = super().clean()
         _no_las_dos(self, datos)
+        _categoria_de_otra_seccion(self, datos, datos.get('seccion_destino'))
         return datos
 
     def opciones(self):
         opciones = {campo: self.cleaned_data[campo] for campo in ('descartar_vod', 'solo_espanol', 'descartar_adultos',
                                                                   'descartar_sin_logo', 'a_fondo')}
-        return {**opciones, 'categoria': _nombre_de_la_categoria(self.cleaned_data)}
+        return {**opciones, 'categoria': _nombre_de_la_categoria(self.cleaned_data),
+                'seccion': self.cleaned_data.get('seccion_destino') or ''}
 
 
 class QuitarCanalesForm(forms.Form):
@@ -249,6 +307,7 @@ class CanalForm(EstiloBootstrapMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         _elegir_categoria_con_su_seccion(self.fields['categoria'])
+        self.fields['contenido'] = _elegir_seccion(self.fields['contenido'])
         self.fields['pais'].widget.attrs.update({'maxlength': 2, 'style': 'text-transform:uppercase'})
 
     def clean_pais(self):
@@ -301,6 +360,7 @@ class CanalNuevoForm(EstiloBootstrapMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         _elegir_categoria_con_su_seccion(self.fields['categoria'])
+        self.fields['contenido'] = _elegir_seccion(self.fields['contenido'])
         self.fields['pais'].widget.attrs.update({'maxlength': 2, 'style': 'text-transform:uppercase'})
 
     def clean_pais(self):

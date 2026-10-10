@@ -82,6 +82,17 @@ class LeerElCanalTests(TestCase):
             with self.assertRaises(youtube.NoSePudo):
                 direccion(malo)
 
+    def test_pide_los_titulos_en_espanol(self):
+        # Si no se pide el idioma, YouTube traduce los títulos al inglés ("Summer in Venice - Episode 123")
+        ytdl = mock.MagicMock()
+        ytdl.__enter__.return_value.extract_info.return_value = {
+            'channel': 'RCN Novelas', 'entries': [{'id': 'aaaaaaaaaa1', 'title': 'Verano en Venecia - Capítulo 1',
+                                                   'duration': 2700}]}
+        with mock.patch('yt_dlp.YoutubeDL', return_value=ytdl) as clase:
+            listado = youtube.videos_del_canal('https://www.youtube.com/@RCNNovelas')
+        self.assertEqual(clase.call_args[0][0]['extractor_args'], {'youtube': {'lang': ['es']}})
+        self.assertEqual(listado.videos[0].titulo, 'Verano en Venecia - Capítulo 1')
+
 
 class VerificarTests(TestCase):
 
@@ -93,7 +104,8 @@ class VerificarTests(TestCase):
     def test_se_puede_insertar(self):
         with mock.patch('urllib.request.urlopen', return_value=self._respuesta()) as pedido:
             resultado = verificar_url('https://www.youtube.com/watch?v=NvQqHzqClf0', 'yt_video')
-        self.assertEqual((resultado.estado, resultado.tipo, resultado.titulo), (FUNCIONA, 'yt_video', 'Tormenta Blanca'))
+        self.assertEqual((resultado.estado, resultado.tipo, resultado.titulo),
+                         (FUNCIONA, 'yt_video', 'Tormenta Blanca'))
         self.assertIn('oembed', pedido.call_args[0][0].full_url)
 
     def test_el_duenio_no_deja_o_ya_no_existe(self):
@@ -211,6 +223,30 @@ class ComoUnaSerieTests(TestCase):
         listado.nuevos_primero = False
         self._traer(listado)
         self.assertEqual(self._capitulos()[0], ('Masha y el Oso S01 E01 Episodio 1', 'mmmmmmmmmm1'))
+
+    def test_una_lista_al_reves_va_por_el_numero_de_capitulo(self):
+        # Hay listas del último capítulo al primero (Rosario Tijeras en TV Azteca): manda el número del título
+        titulos = ['Ángel le dispara a Arteaga | Rosario Tijeras | Capítulo 3 | Temporada 2',
+                   'Rosario se despide | Rosario Tijeras | Capítulo 2 | Temporada 2',
+                   'Arteaga quiere venganza | Rosario Tijeras | Capítulo 1 | Temporada 2']
+        listado = youtube.Listado('TV Azteca', [youtube.Video(f'rrrrrrrrrr{n}', t, 2600)
+                                                for n, t in zip((3, 2, 1), titulos)], nuevos_primero=False)
+        self.assertEqual([v.id for v in youtube.en_orden_de_capitulos(listado)],
+                         ['rrrrrrrrrr1', 'rrrrrrrrrr2', 'rrrrrrrrrr3'])
+        self.assertEqual(youtube.numero_de_capitulo('AMOR CON BUENAS INTENCIONES EP20'), (0, 20))
+        self.assertEqual(youtube.numero_de_capitulo('La Pola - Capítulo 98 Final - El fin'), (0, 98))
+        self.assertIsNone(youtube.numero_de_capitulo('La Doña | Capítulo Final'))
+        # Temporada y capítulo juntos, como numeran Transformers, Power Rangers, Yu-Gi-Oh! o 31 minutos
+        self.assertEqual(youtube.numero_de_capitulo('Transformers Prime: S02 E26 | Episodio COMPLETO'), (2, 26))
+        self.assertEqual(youtube.numero_de_capitulo('Día Del Basurero | Episodio Completo | S01 | E01'), (1, 1))
+        self.assertEqual(youtube.numero_de_capitulo('Ataque la Gigantesca Mandy | T4 EP7 | EPISODIO COMPLETO'), (4, 7))
+        self.assertEqual(youtube.numero_de_capitulo('Yu-Gi-Oh! GX 3x51 (El Regreso del Rey Supremo)'), (3, 51))
+        self.assertEqual(youtube.numero_de_capitulo('31 minutos - Episodio 1*20 - Lo mejor de 31 minutos'), (1, 20))
+        # Si casi ninguno dice el número, queda el orden de la lista
+        sin_numero = youtube.Listado('X', [youtube.Video('ssssssssss1', 'El dilema', 2600),
+                                           youtube.Video('ssssssssss2', 'Alergia mortal', 2600)],
+                                     nuevos_primero=False)
+        self.assertEqual([v.id for v in youtube.en_orden_de_capitulos(sin_numero)], ['ssssssssss1', 'ssssssssss2'])
 
     def test_no_se_carga_a_medio_probar(self):
         importacion = servicios.crear_importacion_de_youtube(

@@ -50,6 +50,8 @@ class EntrarTests(Base):
         self.assertEqual(respuesta.json()['cliente']['pantallas'], 2)
         app = self.con_token(respuesta)
         self.assertEqual(app.get(CANALES).json()['cantidad'], 1)
+        # y las secciones nuevas del panel (Música, Radio...), que la app pide junto con los canales
+        self.assertEqual(app.get(reverse('api_v1:canales_secciones')).status_code, 200)
         self.assertEqual(app.get(ESTADO).json()['nombre'], 'Ana')
         self.assertEqual(app.get(ESTADO).json()['codigo'], self.cliente.codigo_legible)
         self.assertEqual(Dispositivo.objects.get().nombre, 'TV del living')

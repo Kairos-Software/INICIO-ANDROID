@@ -1534,6 +1534,18 @@ class _Video extends StatelessWidget {
   Widget build(BuildContext context) {
     final video = control.video;
     if (video == null || !video.value.isInitialized) return const SizedBox.expand();
+    final canal = control.canal;
+    // Sin imagen (una radio): su logo grande mientras suena
+    if (video.value.size.height == 0 && canal != null) {
+      return Imagen(
+        url: canal.logo,
+        nombre: canal.nombre,
+        ajuste: BoxFit.contain,
+        relleno: const EdgeInsets.symmetric(horizontal: 560, vertical: 300),
+        fondo: Tono.fondo,
+        tamanioIniciales: 120,
+      );
+    }
     return VideoAjustado(video: video, ajuste: ControlSenal.ajuste);
   }
 }

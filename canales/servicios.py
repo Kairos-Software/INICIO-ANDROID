@@ -127,7 +127,7 @@ def _motivo_de_descarte(entrada, importacion, contenido, tipo, idioma, pais, nom
 
 
 def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, descartar_sin_logo=False,
-                      descartar_vod=False, descartar_adultos=True, a_fondo=False, categoria=''):
+                      descartar_vod=False, descartar_adultos=True, a_fondo=False, categoria='', seccion=''):
     """
     Lee la lista y guarda cada canal como una EntradaImportada, con lo que se
     sabe de él (idioma, país, si es en vivo o película, formato). Las que no
@@ -136,11 +136,13 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
     `categoria`: todo va a esa (por nombre; se crea al cargar si no existe) en
     vez de a la que dice la lista. Igual se usa la de la lista para deducir
     idioma, país y si son capítulos de series.
+    `seccion`: todo va a esa sección nueva (Radio, Música...) en vez de a En
+    vivo, Películas o Series según lo que sea cada uno.
     """
     importacion = Importacion.objects.create(
         archivo=archivo[:150], usuario=usuario if getattr(usuario, 'pk', None) else None,
         solo_espanol=solo_espanol, descartar_sin_logo=descartar_sin_logo, descartar_vod=descartar_vod,
-        descartar_adultos=descartar_adultos, a_fondo=a_fondo,
+        descartar_adultos=descartar_adultos, a_fondo=a_fondo, seccion=seccion,
     )
     ya_guardadas = set(Fuente.objects.values_list('url', flat=True))
     vistas = set()
@@ -149,7 +151,8 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
         nombre = clasificar.limpiar_nombre(entrada.nombre)
         idioma, pais = clasificar.idioma_y_pais(entrada.nombre, entrada.categoria, entrada.pais,
                                                 entrada.tvg_id, entrada.idioma)
-        contenido = clasificar.contenido(entrada.url, entrada.categoria)
+        # Con una sección nueva elegida, todo va ahí (una radio puede parecer "un archivo", o sea una película)
+        contenido = seccion or clasificar.contenido(entrada.url, entrada.categoria)
         tipo = clasificar.formato(entrada.url)
 
         estado, motivo = Estado.PENDIENTE, ''
@@ -158,7 +161,9 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
         elif entrada.url in ya_guardadas:
             estado, motivo = Estado.REPETIDA, 'Esta dirección ya estaba cargada.'
         else:
-            motivo = _motivo_de_descarte(entrada, importacion, contenido, tipo, idioma, pais, nombre)
+            # (descartar películas y series no aplica: se eligió a qué sección va todo)
+            motivo = _motivo_de_descarte(entrada, importacion, Contenido.VIVO if seccion else contenido, tipo,
+                                         idioma, pais, nombre)
             if motivo:
                 estado = Estado.DESCARTADA
         vistas.add(entrada.url)
@@ -185,7 +190,7 @@ def crear_importacion(texto, archivo='', usuario=None, solo_espanol=False, desca
 
 
 def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_minutos=40, solo_espanol=True,
-                                 serie='', temporada=1):
+                                 serie='', temporada=1, maximo_minutos=None, seccion=''):
     """
     Como crear_importacion, pero con los videos de un canal oficial de YouTube
     (youtube.videos_del_canal): cada video es una película, o un capítulo si
@@ -193,6 +198,10 @@ def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_min
     carga igual que una lista (procesar_lote, cargar_lote).
       categoria: dónde van todos ("Infantiles"); vacía = según el género del título.
       minimo_minutos: los más cortos se descartan (avances, clips, Shorts).
+      maximo_minutos: los más largos también (None = sin límite). Para
+             música, por ejemplo, de 2 a 6: así no entran los conciertos enteros.
+      seccion: todos van a esa sección nueva (Música...) en vez de a Películas;
+             sin categoría elegida, a una con el nombre del canal (el artista).
       solo_espanol: se descarta lo que el título dice que está en inglés.
       serie: TODOS los videos son capítulos de esta serie ("Masha y el Oso"),
              numerados del más viejo al más nuevo, siguiendo después del último
@@ -206,18 +215,21 @@ def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_min
     archivo = f'YouTube: {listado.nombre}'[:150]
     importacion = Importacion.objects.create(
         archivo=archivo, usuario=usuario if getattr(usuario, 'pk', None) else None, solo_espanol=solo_espanol,
-        serie=serie, temporada=temporada,
+        serie=serie, temporada=temporada, seccion='' if serie else seccion,
     )
+    if serie:
+        seccion = ''
     ya_guardadas = set(Fuente.objects.values_list('url', flat=True))
     vistas = set()
     # Una serie va en el orden de sus capítulos (posición 1 = el primero); películas, como vienen
-    videos = listado.en_orden() if serie else listado.videos
+    videos = youtube.en_orden_de_capitulos(listado) if serie else listado.videos
     nombres = youtube.nombres_distintos([video.titulo for video in videos])
     generos = _genero_de_cada_serie(videos) if not (serie or categoria) else {}
     numero = organizar.ultimo_capitulo(serie, temporada) if serie else 0
     entradas = []
     for posicion, (video, nombre) in enumerate(zip(videos, nombres), start=1):
-        capitulo = None if serie else youtube.capitulo(video.titulo)
+        # En una sección nueva (Música...) cada video va suelto, aunque el título diga "T1 E2"
+        capitulo = None if (serie or seccion) else youtube.capitulo(video.titulo)
         nombre = capitulo or nombre
         idioma = 'otro' if youtube.en_ingles(video.titulo) else 'es'
         estado, motivo = Estado.PENDIENTE, ''
@@ -230,6 +242,9 @@ def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_min
         elif video.segundos < minimo_minutos * 60:
             estado = Estado.DESCARTADA
             motivo = f'Dura {video.segundos // 60} min: es un video corto (se pidieron de {minimo_minutos} min o más).'
+        elif maximo_minutos and video.segundos > maximo_minutos * 60:
+            estado = Estado.DESCARTADA
+            motivo = (f'Dura {video.segundos // 60} min: es más largo de lo pedido (hasta {maximo_minutos} min).')
         elif solo_espanol and idioma == 'otro':
             estado, motivo = Estado.DESCARTADA, 'El título dice que está en inglés.'
         elif clasificar.para_adultos(video.titulo, ''):
@@ -243,6 +258,8 @@ def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_min
                                                   organizar.titulo_del_capitulo(nombre, serie))
         if categoria:
             de_la_categoria = categoria
+        elif seccion:   # Música: el canal es la categoría (el artista)
+            de_la_categoria = listado.nombre
         elif capitulo:   # todos los capítulos de una serie, en la misma categoría
             de_la_categoria = generos.get(clasificar.episodio(capitulo)[0].lower(), '')
         else:
@@ -251,7 +268,7 @@ def crear_importacion_de_youtube(listado, usuario=None, categoria='', minimo_min
             importacion=importacion, posicion=posicion,
             nombre_original=video.titulo[:200], nombre=(nombre or 'Sin nombre')[:120], logo=video.imagen,
             categoria=de_la_categoria[:80], tvg_id=video.id, idioma=idioma,
-            contenido=Contenido.SERIE if (serie or capitulo) else Contenido.PELICULA,
+            contenido=seccion or (Contenido.SERIE if (serie or capitulo) else Contenido.PELICULA),
             url=video.url, tipo=youtube.TIPO, estado=estado, motivo=motivo,
         ))
     EntradaImportada.objects.bulk_create(entradas, batch_size=1000)

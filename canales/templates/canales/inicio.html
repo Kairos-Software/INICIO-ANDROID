@@ -51,7 +51,8 @@
                 <span class="resumen-contenido-icono" aria-hidden="true">
                     {% if bloque.contenido == 'vivo' %}<i class="bi bi-broadcast"></i>
                     {% elif bloque.contenido == 'pelicula' %}<i class="bi bi-film"></i>
-                    {% else %}<i class="bi bi-collection-play"></i>{% endif %}
+                    {% elif bloque.contenido == 'serie' %}<i class="bi bi-collection-play"></i>
+                    {% else %}<i class="bi bi-stars"></i>{% endif %}
                 </span>
                 <div><h3>{{ bloque.nombre }}</h3><strong class="dato">{{ bloque.cargados }}</strong> {{ bloque.unidad }}</div>
             </div>
@@ -106,8 +107,9 @@
         {% include "parciales/_campo.html" with campo=form.solo_espanol ancho="col-md-6 col-xl-3" %}
         {% include "parciales/_campo.html" with campo=form.descartar_adultos ancho="col-md-6 col-xl-3" %}
         {% include "parciales/_campo.html" with campo=form.descartar_sin_logo ancho="col-md-6 col-xl-3" %}
-        {% include "parciales/_campo.html" with campo=form.categoria_destino ancho="col-md-6" %}
-        {% include "parciales/_campo.html" with campo=form.categoria_nueva ancho="col-md-6" %}
+        {% if form.seccion_destino.field.choices|length > 1 %}{% include "parciales/_campo.html" with campo=form.seccion_destino ancho="col-md-4" %}{% endif %}
+        {% include "parciales/_campo.html" with campo=form.categoria_destino ancho="col-md-4" %}
+        {% include "parciales/_campo.html" with campo=form.categoria_nueva ancho="col-md-4" %}
         <div class="col-12">
             <button type="submit" class="btn btn-primary">
                 <i class="bi bi-upload" aria-hidden="true"></i> Subir y analizar

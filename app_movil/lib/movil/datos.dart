@@ -1,8 +1,9 @@
 /// Los datos de las pantallas de celular:
 ///
-///   - [Catalogo]: lo que hay para ver (canales en vivo, películas y series),
-///     pedido a la API. Las series llegan como capítulos sueltos ("Show S01 E02")
-///     y acá se agrupan por serie y temporada.
+///   - [Catalogo]: lo que hay para ver (canales en vivo, películas, series y
+///     las secciones nuevas que se crean en el panel, como Música o Radio:
+///     [SeccionNueva]), pedido a la API. Las series llegan como capítulos
+///     sueltos ("Show S01 E02") y acá se agrupan por serie y temporada.
 ///   - [Biblioteca]: lo de cada aparato: "Mi lista" y "Continuar viendo"
 ///     (por dónde iba cada película o capítulo). Se guarda en el aparato.
 library;
@@ -38,14 +39,19 @@ class Episodio {
 
 /// Una serie con sus temporadas (armada a partir de los capítulos sueltos).
 class Serie {
-  Serie({required this.nombre, required this.categoria});
+  Serie({required this.nombre, required this.categoria, this.portada = ''});
 
   final String nombre;
   final String categoria;
   final Map<int, List<Episodio>> temporadas = {};
 
-  /// La imagen de la serie: la del primer capítulo que tenga.
-  String get imagen => episodios.map((e) => e.canal.logo).firstWhere((logo) => logo.isNotEmpty, orElse: () => '');
+  /// La portada propia de la serie, si se la pusieron en el panel ('' = no tiene).
+  final String portada;
+
+  /// La imagen de la serie: su portada o, si no tiene, la del primer capítulo que tenga.
+  String get imagen => portada.isNotEmpty
+      ? portada
+      : episodios.map((e) => e.canal.logo).firstWhere((logo) => logo.isNotEmpty, orElse: () => '');
 
   List<int> get numerosDeTemporada => temporadas.keys.toList()..sort();
 
@@ -68,8 +74,10 @@ final _patronEpisodio = RegExp(
 );
 
 /// Los capítulos sueltos -> series con temporadas, en el orden en que llegaron.
-List<Serie> agruparSeries(List<Canal> capitulos) {
+/// [portadas]: {nombre de la serie: imagen} (las que tienen portada propia).
+List<Serie> agruparSeries(List<Canal> capitulos, {Map<String, String> portadas = const {}}) {
   final series = <String, Serie>{};
+  final portadaDe = {for (final p in portadas.entries) p.key.toLowerCase(): p.value};
   var sinNumero = 0;
   for (final capitulo in capitulos) {
     final partes = _patronEpisodio.firstMatch(capitulo.nombre);
@@ -89,7 +97,10 @@ List<Serie> agruparSeries(List<Canal> capitulos) {
       numero = ++sinNumero;
       titulo = '';
     }
-    final serie = series.putIfAbsent(nombre.toLowerCase(), () => Serie(nombre: nombre, categoria: capitulo.categoria));
+    final serie = series.putIfAbsent(
+      nombre.toLowerCase(),
+      () => Serie(nombre: nombre, categoria: capitulo.categoria, portada: portadaDe[nombre.toLowerCase()] ?? ''),
+    );
     serie.temporadas
         .putIfAbsent(temporada, () => [])
         .add(Episodio(canal: capitulo, temporada: temporada, numero: numero, titulo: titulo));
@@ -118,6 +129,38 @@ String categoriaLegible(String categoria) {
   if (ultima.isEmpty) return '';
   final esMayusculas = ultima == ultima.toUpperCase() && ultima.length > 3;
   return esMayusculas ? ultima[0] + ultima.substring(1).toLowerCase() : ultima;
+}
+
+// ── Secciones nuevas (Música, Radio...) ────────────────────────────
+
+/// Una sección creada en el panel (además de En vivo, Películas y Series).
+/// Su [forma] dice cómo se ve y se reproduce: "vivo" como En vivo (radios,
+/// canales) o "pelicula" como Películas (videos que se eligen: música...).
+/// Sus canales llegan con `contenido` = la forma, así el reproductor, los
+/// favoritos y "lo que no anda" los tratan igual que a los de esas secciones.
+class SeccionNueva {
+  SeccionNueva({required this.clave, required this.nombre, required this.forma, required this.icono});
+
+  SeccionNueva.desdeJson(Map<String, dynamic> json)
+    : clave = '${json['clave'] ?? ''}',
+      nombre = '${json['nombre'] ?? ''}',
+      forma = json['forma'] == 'vivo' ? 'vivo' : 'pelicula',
+      icono = '${json['icono'] ?? ''}';
+
+  final String clave;
+  final String nombre;
+
+  /// "vivo" o "pelicula"
+  final String forma;
+
+  /// "musica", "radio", "deportes", "documentales", "infantil", "noticias" u "otro"
+  final String icono;
+
+  List<CategoriaCanales> categorias = [];
+
+  bool get enVivo => forma == 'vivo';
+
+  List<Canal> get canales => [for (final c in categorias) ...c.canales];
 }
 
 // ── Catálogo ───────────────────────────────────────────────────────
@@ -151,6 +194,13 @@ class Catalogo extends ChangeNotifier {
       serie.temporadas.removeWhere((_, capitulos) => capitulos.isEmpty);
     }
     series = series.where((s) => s.completa).toList();
+    for (final seccion in seccionesNuevas) {
+      for (final categoria in seccion.categorias) {
+        categoria.canales.removeWhere((c) => NoAnda.oculto(c.id));
+      }
+      seccion.categorias = seccion.categorias.where((c) => c.canales.isNotEmpty).toList();
+    }
+    seccionesNuevas = seccionesNuevas.where((s) => s.canales.isNotEmpty).toList();
     _numeros.clear();
     notifyListeners();
   }
@@ -164,6 +214,14 @@ class Catalogo extends ChangeNotifier {
   List<CategoriaCanales> categoriasEnVivo = [];
   List<Canal> peliculas = [];
   List<Serie> series = [];
+
+  /// Las secciones creadas en el panel que tienen algo para ver acá, en el orden del menú.
+  List<SeccionNueva> seccionesNuevas = [];
+
+  /// Lo de las secciones nuevas "en vivo" (radios...) y "a demanda" (música...), para favoritos y búsquedas.
+  List<Canal> get _vivosNuevos => [for (final s in seccionesNuevas.where((s) => s.enVivo)) ...s.canales];
+
+  List<Canal> get _aDemandaNuevos => [for (final s in seccionesNuevas.where((s) => !s.enVivo)) ...s.canales];
 
   bool cargando = false;
   bool cargado = false;
@@ -208,9 +266,9 @@ class Catalogo extends ChangeNotifier {
   }
 
   /// Los favoritos, separados por tipo (en el orden en que se agregaron).
-  List<Canal> canalesFavoritos(Biblioteca biblioteca) => _deLaLista(biblioteca, canales);
+  List<Canal> canalesFavoritos(Biblioteca biblioteca) => _deLaLista(biblioteca, [...canales, ..._vivosNuevos]);
 
-  List<Canal> peliculasFavoritas(Biblioteca biblioteca) => _deLaLista(biblioteca, peliculas);
+  List<Canal> peliculasFavoritas(Biblioteca biblioteca) => _deLaLista(biblioteca, [...peliculas, ..._aDemandaNuevos]);
 
   List<Serie> seriesFavoritas(Biblioteca biblioteca) {
     final lista = biblioteca.miLista.toList();
@@ -235,25 +293,70 @@ class Catalogo extends ChangeNotifier {
     error = null;
     notifyListeners();
     final formatos = FuenteCanal.formatosQueReproduce.join(',');
+    // Las portadas propias de las series (vienen con ?contenido=serie; un servidor viejo no las manda)
+    var portadas = <String, String>{};
     Future<List<CategoriaCanales>> pedir(String contenido) async {
       final datos =
           await api.get('canales/', parametros: {'formatos': formatos, 'contenido': contenido}) as Map<String, dynamic>;
+      if (datos['portadas'] case final Map<String, dynamic> recibidas) {
+        portadas = {for (final p in recibidas.entries) p.key: '${p.value}'};
+      }
       return [
         for (final c in datos['categorias'] as List) CategoriaCanales(c as Map<String, dynamic>, contenido: contenido),
       ];
     }
 
+    // Las secciones nuevas: la lista y lo de cada una. Un servidor viejo no
+    // tiene /secciones/: entonces no hay ninguna (no es un error).
+    Future<List<SeccionNueva>> pedirSeccionesNuevas() async {
+      final List<SeccionNueva> nuevas;
+      try {
+        final datos = await api.get('canales/secciones/') as Map<String, dynamic>;
+        nuevas = [for (final s in datos['secciones'] as List) SeccionNueva.desdeJson(s as Map<String, dynamic>)];
+      } catch (_) {
+        return [];
+      }
+      await Future.wait([
+        for (final seccion in nuevas)
+          // Si una no llega, queda vacía (no se muestra) y el resto del catálogo sigue
+          api
+              .get('canales/', parametros: {'formatos': formatos, 'contenido': seccion.clave})
+              .then((datos) {
+                seccion.categorias = [
+                  for (final c in (datos as Map<String, dynamic>)['categorias'] as List)
+                    CategoriaCanales(c as Map<String, dynamic>, contenido: seccion.forma),
+                ];
+              })
+              .catchError((_) {}),
+      ]);
+      return nuevas;
+    }
+
     try {
-      final resultados = await Future.wait([pedir('vivo'), pedir('pelicula'), pedir('serie'), NoAnda.cargar()]);
+      final resultados = await Future.wait([
+        pedir('vivo'),
+        pedir('pelicula'),
+        pedir('serie'),
+        NoAnda.cargar(),
+        pedirSeccionesNuevas(),
+      ]);
       final vivo = resultados[0] as List<CategoriaCanales>;
       for (final categoria in vivo) {
         categoria.canales.retainWhere(_seVe);
       }
       categoriasEnVivo = vivo.where((c) => c.canales.isNotEmpty).toList();
       peliculas = [for (final c in resultados[1] as List<CategoriaCanales>) ...c.canales.where(_seVe)];
-      series = agruparSeries([for (final c in resultados[2] as List<CategoriaCanales>) ...c.canales.where(_seVe)])
-          .where((s) => s.completa)
-          .toList();
+      series = agruparSeries([
+        for (final c in resultados[2] as List<CategoriaCanales>) ...c.canales.where(_seVe),
+      ], portadas: portadas).where((s) => s.completa).toList();
+      final nuevas = resultados[4] as List<SeccionNueva>;
+      for (final seccion in nuevas) {
+        for (final categoria in seccion.categorias) {
+          categoria.canales.retainWhere(_seVe);
+        }
+        seccion.categorias = seccion.categorias.where((c) => c.canales.isNotEmpty).toList();
+      }
+      seccionesNuevas = nuevas.where((s) => s.canales.isNotEmpty).toList();
       _numerar();
       cargado = true;
     } catch (e) {
@@ -271,6 +374,11 @@ class Catalogo extends ChangeNotifier {
     for (final pelicula in peliculas) {
       if (pelicula.id == id) return pelicula;
     }
+    for (final seccion in seccionesNuevas) {
+      for (final canal in seccion.canales) {
+        if (canal.id == id) return canal;
+      }
+    }
     for (final serie in series) {
       for (final episodio in serie.episodios) {
         if (episodio.canal.id == id) return episodio.canal;
@@ -285,6 +393,8 @@ class Catalogo extends ChangeNotifier {
     }
     return null;
   }
+
+  SeccionNueva? seccionNueva(String clave) => seccionesNuevas.where((s) => s.clave == clave).firstOrNull;
 
   Serie? seriePorNombre(String nombre) {
     for (final serie in series) {

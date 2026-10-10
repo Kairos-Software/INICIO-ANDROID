@@ -20,7 +20,7 @@ from django.db.models import F, Sum
 from django.utils import timezone
 
 from . import clasificar
-from .models import Canal, Contenido, FavoritoAgregado, Visto
+from .models import Canal, Contenido, FavoritoAgregado, Seccion, Visto
 
 # Lo que se acepta en un aviso de la app (más es un error o un abuso)
 MAXIMO_DE_ELEMENTOS = 50
@@ -123,6 +123,8 @@ def lo_mas_visto(dias=30, hoy=None):
 
     ranking = Ranking(dias=dias)
     series = {}
+    # Lo de las secciones nuevas va con lo de su forma: Música con películas, Radio con en vivo
+    formas = {s.clave: s.forma for s in Seccion.todos.all()}
     for pk, canal in canales.items():
         visto = vistos.get(pk, {})
         segundos, vistas = visto.get('total_segundos') or 0, visto.get('total_vistas') or 0
@@ -135,7 +137,10 @@ def lo_mas_visto(dias=30, hoy=None):
             serie.logo = serie.logo or canal.logo
             serie.en_la_app = serie.en_la_app or canal.activo
             continue
-        getattr(ranking, canal.contenido).append(Fila(
+        forma = formas.get(canal.contenido, canal.contenido)
+        if forma not in (Contenido.VIVO, Contenido.PELICULA):
+            continue
+        getattr(ranking, forma).append(Fila(
             nombre=canal.nombre, logo=canal.logo, segundos=segundos, vistas=vistas,
             favoritos=favoritos.get(f'c:{pk}', 0), canal=canal, en_la_app=canal.activo))
     # Los favoritos de las series van por nombre (la app guarda la serie entera)

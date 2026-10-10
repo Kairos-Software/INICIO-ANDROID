@@ -13,6 +13,7 @@ Pantallas de canales del panel:
   /canales/probar/                  probar una dirección suelta y, si anda, agregarla como canal
   /canales/lo-mas-visto/            lo más visto (canales, películas y series), sin datos de clientes
   /canales/categorias/              ordenar las categorías: crear, renombrar, juntar, borrar y el orden en la app
+  /canales/secciones/               crear, cambiar y borrar secciones nuevas de la app (Música, Radio...)
   (y en el catálogo y en Series: mover a otra categoría y cambiar el tipo de lo elegido)
 
 Lo que tarda (verificar) se hace de a tandas: la página llama una y otra
@@ -36,11 +37,11 @@ from django.views.decorators.http import require_POST
 from usuarios.decoradores import requiere_permiso
 from usuarios.permisos import chequear_permiso
 
-from . import consultas, estadisticas, organizar, servicios, youtube
+from . import consultas, estadisticas, imagenes, organizar, secciones, servicios, youtube
 from .clasificar import formato, idioma_y_pais, limpiar_nombre
 from .forms import (CanalForm, CanalNuevoForm, EditarDesdeOrganizarForm, FuentesFormSet, ImportarListaForm,
                     ProbarLinkForm, QuitarCanalesForm, TraerDeYoutubeForm)
-from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Idioma, Importacion
+from .models import Canal, Categoria, Contenido, EntradaImportada, Fuente, Idioma, Importacion, Seccion
 from .verificacion import Resultado, verificar_url, verificar_varias
 
 CANALES_POR_PAGINA = 120
@@ -93,7 +94,9 @@ def traer_de_youtube(request):
         else:
             importacion = servicios.crear_importacion_de_youtube(
                 listado, request.user, categoria=form.categoria(), serie=form.serie(),
-                minimo_minutos=datos['minimo_minutos'], solo_espanol=datos['solo_espanol'])
+                temporada=datos.get('temporada') or 1, seccion=form.seccion(),
+                minimo_minutos=datos['minimo_minutos'], maximo_minutos=datos.get('maximo_minutos'),
+                solo_espanol=datos['solo_espanol'])
             return redirect(f'{importacion_url(importacion)}?empezar=1')
     return render(request, 'canales/youtube.html', {'form': form, 'sugeridos': youtube.SUGERIDOS})
 
@@ -283,7 +286,8 @@ def _preparar_para_editar(pagina, contenido):
                         fuentes.append(fuente)
             serie.activo = any(c.canal.activo for c in serie.capitulos)
             serie.datos = json.dumps({
-                'tipo': 'serie', 'nombre': serie.nombre, 'logo': serie.logo, 'activo': serie.activo,
+                'tipo': 'serie', 'nombre': serie.nombre, 'logo': serie.logo, 'portada': bool(serie.portada),
+                'activo': serie.activo,
                 'categoria': serie.categoria_id or 'ninguna', 'capitulos': serie.cantidad,
                 'en_app': serie.completa, 'motivo': serie.por_que_no_se_ve,
                 'fuentes': _origenes_de(fuentes, importaciones),
@@ -310,7 +314,7 @@ def organizar_contenido(request):
     (mover, cambiar el tipo, quitar, eliminar). Ver consultas.organizar_contenido.
     """
     contenido = request.GET.get('contenido', '')
-    if contenido not in Contenido.values:
+    if not secciones.es_valida(contenido):
         contenido = Contenido.VIVO
     filtros = {
         'texto': request.GET.get('q', '').strip(),
@@ -339,6 +343,12 @@ def organizar_contenido(request):
         'categorias': categorias,
         'parecidas': organizar.categorias_parecidas([c for c in categorias if c.total]),
         'seccion': organizar.nombre_de_seccion(contenido),
+        # La sección nueva que se está viendo (para cambiarla o borrarla) y todas, para las pestañas y "Pasar a…"
+        'seccion_nueva': Seccion.objects.filter(clave=contenido).first(),
+        'forma': secciones.forma(contenido),
+        'secciones_nuevas': secciones.nuevas(),
+        'formas': Seccion.Forma.choices,
+        'iconos': Seccion.Icono.choices,
         'parametros': _parametros_sin_pagina(request),
         'base': base.urlencode(),
         'puede_editar': chequear_permiso(request.user, 'importar_canales'),
@@ -355,6 +365,13 @@ def organizar_editar(request):
         messages.error(request, f'No se guardó: {errores}')
         return redirect(_volver(request))
     datos = form.cleaned_data
+    if request.FILES.get('imagen'):
+        # Una imagen subida desde la compu gana sobre el link
+        try:
+            datos['logo'] = imagenes.guardar_subida(request.FILES['imagen'], request)
+        except imagenes.ImagenInvalida as error:
+            messages.error(request, f'No se guardó: {error}')
+            return redirect(_volver(request))
     try:
         if request.POST.get('tipo') == 'serie':
             categoria = _categoria_elegida(request, Contenido.SERIE)
@@ -383,6 +400,8 @@ def organizar_eliminar(request):
     """Elimina lo elegido (canales/películas/capítulos, o series enteras)."""
     if request.POST.getlist('serie'):
         canales = organizar.capitulos_de(request.POST.getlist('serie'))
+        for nombre in request.POST.getlist('serie'):
+            imagenes.poner_portada(nombre, '')
     else:
         canales = _canales_elegidos(request)
     cantidad = organizar.eliminar_contenido(canales, request.user)
@@ -464,7 +483,7 @@ def catalogo_mostrar(request):
 def _seccion_pedida(request):
     """De qué sección se está hablando (los formularios lo mandan en "seccion")."""
     seccion = request.POST.get('seccion') or request.GET.get('contenido') or ''
-    return seccion if seccion in Contenido.values else Contenido.VIVO
+    return seccion if secciones.es_valida(seccion) else Contenido.VIVO
 
 
 def _categoria_elegida(request, contenido=None):
@@ -510,8 +529,7 @@ def _avisar_cambio_de_tipo(request, cantidad, contenido, nombre_serie=''):
             messages.warning(request, f'Ojo: "{nombre_serie}" tiene {total} capítulo(s) y la app solo muestra series '
                                       f'con {consultas.MINIMO_DE_CAPITULOS} o más. Sumale capítulos para que aparezca.')
         return
-    destino = {Contenido.VIVO: 'En vivo', Contenido.PELICULA: 'Películas', Contenido.SERIE: 'Series'}[contenido]
-    messages.success(request, f'{cantidad} pasaron a la sección {destino}.')
+    messages.success(request, f'{cantidad} pasaron a la sección {secciones.nombre(contenido)}.')
 
 
 @require_POST
@@ -628,6 +646,45 @@ def categorias(request):
         return redirect(volver)
 
     return redirect('canales:organizar')
+
+
+# ── Secciones nuevas de la app (Música, Radio...) ────────────────────
+
+@require_POST
+@requiere_permiso('importar_canales')
+def secciones_acciones(request):
+    """Crear, cambiar (nombre, ícono, orden) o borrar una sección nueva. Ver canales/secciones.py."""
+    accion = request.POST.get('accion', '')
+    volver = reverse('canales:organizar')
+    try:
+        if accion == 'crear':
+            seccion = secciones.crear(request.POST.get('nombre', ''), request.POST.get('forma', ''),
+                                      request.POST.get('icono', ''), request.user)
+            messages.success(request, f'Se creó la sección "{seccion}". Ahora creale categorías (a la izquierda) e '
+                                      f'importá en ella. En la app aparece en el menú (versión 1.2.11 o más nueva) '
+                                      f'cuando tenga algo que se pueda ver.')
+            volver += f'?contenido={seccion.clave}'
+        elif accion in ('editar', 'borrar'):
+            seccion = get_object_or_404(Seccion, pk=request.POST.get('seccion_pk', '0'))
+            if accion == 'editar':
+                secciones.editar(seccion, request.POST.get('nombre', ''), request.POST.get('icono', ''),
+                                 request.POST.get('orden') or 0, request.user)
+                messages.success(request, f'Se guardó la sección "{seccion}".')
+                volver += f'?contenido={seccion.clave}'
+            else:
+                con_contenido = request.POST.get('con_contenido') == '1'
+                cantidad = secciones.borrar(seccion, request.user, con_contenido=con_contenido)
+                messages.success(request, f'Se borró la sección "{seccion}"' +
+                                 (f' con todo lo que tenía ({cantidad}).' if cantidad else '.'))
+        else:
+            raise secciones.NoSePuede('No se entendió qué hacer.')
+    except (secciones.NoSePuede, ValueError) as error:
+        messages.error(request, str(error) if isinstance(error, secciones.NoSePuede)
+                       else 'El orden tiene que ser un número.')
+        actual = request.POST.get('volver') or ''
+        if url_has_allowed_host_and_scheme(actual, allowed_hosts={request.get_host()}):
+            volver = actual
+    return redirect(volver)
 
 
 # ── Editar un canal ──────────────────────────────────────────────────

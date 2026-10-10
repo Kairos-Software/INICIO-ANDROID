@@ -34,7 +34,7 @@ from django.utils import timezone
 from actividad.models import Accion
 from actividad.registro import registrar
 
-from . import clasificar
+from . import clasificar, imagenes, secciones
 from .models import Canal, Categoria, Contenido, Fuente
 
 
@@ -71,7 +71,7 @@ def _usuario(usuario):
 
 
 def nombre_de_seccion(contenido):
-    return {Contenido.VIVO: 'En vivo', Contenido.PELICULA: 'Películas', Contenido.SERIE: 'Series'}.get(contenido, '')
+    return secciones.nombre(contenido)
 
 
 # ── Encontrar (o crear) una categoría por nombre ─────────────────────
@@ -169,10 +169,10 @@ def juntar_categorias(categorias, destino, usuario=None):
         raise NoSePuede('Escribí o elegí en qué categoría juntarlas.')
     if not categorias or (len(categorias) < 2 and _clave(destino_nombre) == _clave(categorias[0].nombre)):
         raise NoSePuede('Elegí al menos dos categorías para juntar.')
-    secciones = {c.contenido for c in categorias}
-    if len(secciones) > 1:
+    de_que_secciones = {c.contenido for c in categorias}
+    if len(de_que_secciones) > 1:
         raise NoSePuede('Solo se pueden juntar categorías de la misma sección.')
-    contenido = secciones.pop()
+    contenido = de_que_secciones.pop()
     final = next((c for c in categorias if _clave(c.nombre) == _clave(destino_nombre)), None)
     if final is None:
         final = (next((c for c in Categoria.objects.filter(contenido=contenido)
@@ -365,8 +365,8 @@ def cambiar_contenido(canales, contenido, nombre_serie='', temporada=1, usuario=
 
     Devuelve cuántos cambiaron.
     """
-    if contenido not in Contenido.values:
-        raise NoSePuede('Tipo de contenido desconocido.')
+    if not secciones.es_valida(contenido):
+        raise NoSePuede('Esa sección no existe.')
     if contenido == Contenido.SERIE and _limpio(nombre_serie):
         nombre_serie = nombre_de_serie_valido(nombre_serie)
     else:
@@ -393,7 +393,7 @@ def cambiar_contenido(canales, contenido, nombre_serie='', temporada=1, usuario=
         canal.modificado, canal.modificado_por = ahora, quien
     Canal.objects.bulk_update(elegidos, ['contenido', 'nombre', 'categoria', 'modificado', 'modificado_por'])
     detalle = f' como la serie "{nombre_serie}" (temporada {temporada})' if nombre_serie else ''
-    registrar(usuario, Accion.EDITAR, f'Pasó {len(elegidos)} a {Contenido(contenido).label.lower()}{detalle}.',
+    registrar(usuario, Accion.EDITAR, f'Pasó {len(elegidos)} a {secciones.nombre(contenido)}{detalle}.',
               modulo='canales')
     return len(elegidos)
 
@@ -413,7 +413,10 @@ def unir_en_una_serie(nombres_de_series, nombre_serie, temporada=1, usuario=None
     """
     if not _limpio(nombre_serie):
         raise NoSePuede('Escribí el nombre de la serie que va a juntarlas.')
-    return cambiar_contenido(capitulos_de(nombres_de_series), Contenido.SERIE, nombre_serie, temporada, usuario)
+    cantidad = cambiar_contenido(capitulos_de(nombres_de_series), Contenido.SERIE, nombre_serie, temporada, usuario)
+    for nombre in nombres_de_series:   # si alguna tenía portada, la serie unida se queda con ella
+        imagenes.mover_portada(nombre, nombre_serie)
+    return cantidad
 
 
 @transaction.atomic
@@ -456,6 +459,7 @@ def renombrar_serie(nombre, nuevo, usuario=None):
         canal.nombre = nombre_de_capitulo(nuevo, temporada, numero, titulo)
         canal.marcar_autor(usuario)
     Canal.objects.bulk_update(capitulos, ['nombre', 'modificado_por'])
+    imagenes.mover_portada(nombre, nuevo)
     if capitulos:
         registrar(usuario, Accion.EDITAR, f'Renombró la serie "{nombre}" a "{nuevo}" ({len(capitulos)} capítulos).',
                   modulo='canales')
@@ -476,6 +480,7 @@ def editar_canal(canal, usuario=None, **datos):
         raise NoSePuede('Para pasar algo a serie, elegilo y usá "Pasar a serie" en la barra de abajo: ahí se le '
                         'pone el nombre de la serie y el número de capítulo.')
     cambios = []
+    logo_viejo = canal.logo
     for campo in ('nombre', 'logo', 'numero', 'categoria', 'contenido', 'activo'):
         if campo in datos and getattr(canal, campo) != datos[campo]:
             setattr(canal, campo, datos[campo])
@@ -489,7 +494,19 @@ def editar_canal(canal, usuario=None, **datos):
         canal.save()
         registrar(usuario, Accion.EDITAR, f'Editó "{canal.nombre}" ({", ".join(cambios)}).', objeto=canal,
                   modulo='canales')
+    if 'logo' in cambios:
+        imagenes.soltar(logo_viejo)   # si era una subida y nadie más la usa, se borra
     return cambios
+
+
+def primera_imagen(serie):
+    """La imagen del primer capítulo que tenga (la que usa la serie si no tiene portada)."""
+    from .consultas import series   # consultas importa este módulo
+    encontrada = next((s for s in series(texto=serie) if _clave(s.nombre) == _clave(serie)), None)
+    if encontrada is None:
+        return ''
+    return next((c.canal.logo for c in sorted(encontrada.capitulos, key=lambda c: (c.temporada, c.numero or 0))
+                 if c.canal.logo), '')
 
 
 @transaction.atomic
@@ -497,6 +514,9 @@ def editar_serie(serie, usuario=None, **datos):
     """
     Lo mismo para una serie entera (todos sus capítulos): nombre (los
     renombra), logo, categoria y activo. Devuelve los nombres de lo que cambió.
+    El logo es la PORTADA de la serie (imagenes.PortadaDeSerie): los
+    capítulos conservan cada uno su imagen. Vacío = sin portada (la app usa
+    la del primer capítulo).
     """
     capitulos = capitulos_de([serie])
     if not capitulos.exists():
@@ -505,9 +525,9 @@ def editar_serie(serie, usuario=None, **datos):
         raise NoSePuede('Esa categoría no es de Series.')
     cambios = []
     ahora, quien = timezone.now(), _usuario(usuario)
-    if 'logo' in datos and capitulos.exclude(logo=datos['logo']).exists():
-        capitulos.update(logo=datos['logo'], modificado=ahora, modificado_por=quien)
-        cambios.append('logo')
+    if 'logo' in datos and datos['logo'] != (imagenes.portada_de(serie) or primera_imagen(serie)):
+        if imagenes.poner_portada(serie, datos['logo']):
+            cambios.append('portada')
     if 'categoria' in datos and capitulos.exclude(categoria=datos['categoria']).exists():
         capitulos.update(categoria=datos['categoria'], modificado=ahora, modificado_por=quien)
         cambios.append('categoria')

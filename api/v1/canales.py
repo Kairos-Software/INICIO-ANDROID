@@ -12,6 +12,18 @@ van los canales que la app puede reproducir: `formatos` dice cuáles sabe
 reproducir esa versión de la app (sin `formatos` = solo HLS, como la 1.0.0).
 
     GET /api/v1/canales/?contenido=pelicula   (o serie; sin nada = en vivo)
+      Con serie llegan los capítulos sueltos ("Pocoyó S01 E02") y además
+      "portadas": {"Pocoyó": "https://..."}: la imagen propia de cada serie
+      que la tiene (puesta en el panel). Sin portada, la app usa la del
+      primer capítulo. Las apps anteriores a la 1.2.11 no la leen.
+    GET /api/v1/canales/?contenido=musica     (la clave de una sección nueva, ver abajo)
+
+    GET /api/v1/canales/secciones/
+      -> {"secciones": [{"clave": "musica", "nombre": "Música", "forma": "pelicula", "icono": "musica"}, ...]}
+      Las secciones nuevas creadas desde el panel (canales/secciones.py), en
+      el orden del menú. "forma": "vivo" (como En vivo: radios) o "pelicula"
+      (a demanda, como Películas). Lo de cada una se pide con ?contenido=<clave>.
+      Las apps anteriores a la 1.2.11 no las piden (y no ven lo que tienen).
 
     GET /api/v1/canales/fuentes/<id>/resolver/
       -> {"url": "https://...m3u8", "tipo": "hls" | "dash" | "directo", "cabeceras": {...}}
@@ -42,7 +54,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from canales import estadisticas, paginas
+from canales import clasificar, estadisticas, imagenes, paginas, secciones
 from canales.consultas import agrupar_por_categoria, canales_disponibles, fuentes_usables, tipos_pedidos
 from canales.models import Contenido, Fuente
 from canales.servicios import registrar_falla_en_aparato, reverificar_por_aviso
@@ -55,9 +67,9 @@ from .serializers import CanalSerializer
 def lista(request):
     contenido = request.query_params.get('contenido')
     canales = list(canales_disponibles(tipos_pedidos(request.query_params.get('formatos')),
-                                       contenido if contenido in Contenido.values else Contenido.VIVO))
+                                       contenido if secciones.es_valida(contenido or '') else Contenido.VIVO))
     contexto = {'request': request}
-    return Response({
+    respuesta = {
         'cantidad': len(canales),
         'categorias': [
             {
@@ -67,7 +79,17 @@ def lista(request):
             }
             for categoria, del_grupo in agrupar_por_categoria(canales)
         ],
-    })
+    }
+    if contenido == Contenido.SERIE:
+        respuesta['portadas'] = imagenes.portadas_de({clasificar.episodio(c.nombre)[0] for c in canales})
+    return Response(respuesta)
+
+
+@api_view(['GET'])
+def secciones_de_la_app(request):
+    return Response({'secciones': [
+        {'clave': s.clave, 'nombre': s.nombre, 'forma': s.forma, 'icono': s.icono} for s in secciones.nuevas()
+    ]})
 
 
 @api_view(['POST'])

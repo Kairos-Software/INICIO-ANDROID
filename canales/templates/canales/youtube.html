@@ -3,7 +3,9 @@
     Traer de YouTube: se pega el link de un canal oficial (o se elige uno de
     los sugeridos) y sus videos largos entran como películas (o capítulos, si
     el título dice "T1 E2"). Con "Es una serie", TODOS son capítulos de una
-    serie, numerados del más viejo al más nuevo. Después se prueban y se
+    serie (de la temporada elegida), en el orden de sus capítulos. Sin serie,
+    pueden ir a una sección nueva (Música...). Con mínimo y máximo de minutos
+    se elige qué largo de video entra. Después se prueban y se
     cargan en la pantalla de la importación, igual que una lista. Ver
     canales/youtube.py y servicios.crear_importacion_de_youtube.
 {% endcomment %}
@@ -41,11 +43,19 @@
         <div class="col-12" data-solo-serie {% if not form.es_serie.value %}hidden{% endif %}>
             <div class="row g-3">
                 {% include "parciales/_campo.html" with campo=form.nombre_serie ancho="col-md-6" %}
+                {% include "parciales/_campo.html" with campo=form.temporada ancho="col-md-6" %}
+            </div>
+        </div>
+        <div class="col-12" data-sin-serie {% if form.es_serie.value %}hidden{% endif %}>
+            <div class="row g-3">
+                {% include "parciales/_campo.html" with campo=form.seccion_destino ancho="col-md-4" %}
             </div>
         </div>
         {% include "parciales/_campo.html" with campo=form.categoria_destino ancho="col-md-4" %}
         {% include "parciales/_campo.html" with campo=form.categoria_nueva ancho="col-md-4" %}
+        <div class="col-md-4"></div>
         {% include "parciales/_campo.html" with campo=form.minimo_minutos ancho="col-md-4" %}
+        {% include "parciales/_campo.html" with campo=form.maximo_minutos ancho="col-md-4" %}
         {% include "parciales/_campo.html" with campo=form.solo_espanol ancho="col-12" %}
         <div class="col-12">
             <p class="texto-suave small mb-2" data-resumen></p>
@@ -64,34 +74,51 @@
     var form = document.getElementById('form-youtube');
     var esSerie = form.querySelector('[name=es_serie]');
     var nombreSerie = form.querySelector('[name=nombre_serie]');
+    var temporada = form.querySelector('[name=temporada]');
+    var seccion = form.querySelector('[name=seccion_destino]');
+    var minimo = form.querySelector('[name=minimo_minutos]');
+    var maximo = form.querySelector('[name=maximo_minutos]');
     var lista = form.querySelector('[name=categoria_destino]');
     var nueva = form.querySelector('[name=categoria_nueva]');
     var resumen = form.querySelector('[data-resumen]');
 
-    // Serie: solo se pueden elegir categorías de Series; películas: solo de Películas
+    // La sección a la que va todo: Series (si es una serie), Películas o una nueva (Música...)
+    function nombreDeLaSeccion() {
+        if (esSerie.checked) return 'Series';
+        return seccion.value ? seccion.selectedOptions[0].text : 'Películas';
+    }
+
+    // Solo se pueden elegir categorías de esa sección
     function acomodar() {
         var serie = esSerie.checked;
+        var destino = nombreDeLaSeccion();
         form.querySelector('[data-solo-serie]').hidden = !serie;
+        form.querySelector('[data-sin-serie]').hidden = serie || seccion.options.length < 2;
         Array.prototype.forEach.call(lista.querySelectorAll('optgroup'), function (grupo) {
-            var deOtra = (grupo.label === 'Series') !== serie;
+            var deOtra = grupo.label !== destino;
             grupo.disabled = deOtra;
             grupo.hidden = deOtra;
         });
         var elegida = lista.selectedOptions[0];
         if (elegida && elegida.parentNode.disabled) lista.value = '';
-        lista.options[0].text = serie ? 'Elegí una categoría de Series…' : 'Según el género de cada título';
+        lista.options[0].text = serie ? 'Elegí una categoría de Series…'
+            : (seccion.value ? 'Una con el nombre del canal' : 'Según el género de cada título');
         explicar();
     }
 
     // Una línea que dice, con palabras, qué va a pasar
     function explicar() {
         var categoria = nueva.value.trim() || (lista.value ? lista.value : '');
+        var largo = 'de ' + (minimo.value || '?') + ' min' + (maximo.value ? ' a ' + maximo.value + ' min' : ' o más');
         if (esSerie.checked) {
             var nombre = nombreSerie.value.trim() || '(escribí el nombre)';
             resumen.textContent = 'Va a quedar: Series → ' + (categoria || '(elegí la categoría)') + ' → ' + nombre +
-                ', con un capítulo por video.';
+                ' → temporada ' + (temporada.value || 1) + ', con un capítulo por video (' + largo + ').';
+        } else if (seccion.value) {
+            resumen.textContent = 'Cada video (' + largo + ') va a quedar suelto en ' + nombreDeLaSeccion() + ' → ' +
+                (categoria || 'una categoría con el nombre del canal') + '.';
         } else {
-            resumen.textContent = 'Cada video va a quedar como una película en Películas → ' +
+            resumen.textContent = 'Cada video (' + largo + ') va a quedar como una película en Películas → ' +
                 (categoria || 'la categoría según el género de su título') + '.';
         }
     }
@@ -101,6 +128,9 @@
             form.querySelector('[name=url]').value = boton.dataset.url;
             esSerie.checked = !!boton.dataset.serie;
             nombreSerie.value = boton.dataset.serie;
+            temporada.value = 1;
+            seccion.value = '';
+            maximo.value = '';
             acomodar();
             // La categoría sugerida: si ya existe (en la sección que corresponde) se elige; si no, se escribe como nueva
             var existe = Array.prototype.find.call(lista.options, function (o) {
@@ -119,7 +149,9 @@
     lista.addEventListener('change', function () { if (lista.value) nueva.value = ''; explicar(); });
     nueva.addEventListener('input', function () { if (nueva.value.trim()) lista.value = ''; explicar(); });
     nombreSerie.addEventListener('input', explicar);
+    [temporada, minimo, maximo].forEach(function (campo) { campo.addEventListener('input', explicar); });
     esSerie.addEventListener('change', acomodar);
+    seccion.addEventListener('change', acomodar);
     acomodar();
 
     form.addEventListener('submit', function () {

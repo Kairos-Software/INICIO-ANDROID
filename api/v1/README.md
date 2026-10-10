@@ -29,7 +29,7 @@ Hay **dos tipos de sesión**:
 - **Usuario del panel** (`login/`, usuario y contraseña): administradores y
   revendedores. El superusuario ve los canales sin créditos ni límite de dispositivos.
 - **Cliente** (`cliente/login/`, código de 8 números): solo puede usar
-  `canales/` (con `fuentes/<id>/resolver/` y los avisos de falla y de lo visto), `cliente/` y `cliente/logout/` (lo demás responde 403). Su token
+  `canales/` (con `secciones/`, `fuentes/<id>/resolver/` y los avisos de falla y de lo visto), `cliente/` y `cliente/logout/` (lo demás responde 403). Su token
   empieza con `c_`. Si su servicio vence o lo suspenden, todo responde 403
   `servicio_vencido` / `suspendido`; si le liberan el dispositivo, 401.
   Reglas en `reventa/sesiones.py`.
@@ -51,7 +51,8 @@ Hay **dos tipos de sesión**:
 | DELETE | `/api/v1/usuarios/<id>/` | `eliminar_usuarios` | Eliminar |
 | POST | `/api/v1/usuarios/<id>/estado/` | `editar_usuarios` | `{activo: true/false}` |
 | POST | `/api/v1/usuarios/<id>/restablecer-password/` | `restablecer_password_usuarios` | `{password1, password2, obligar_cambio}` |
-| GET | `/api/v1/canales/` | sesión (usuario o cliente vigente) | Canales de TV activos, agrupados por categoría, con sus fuentes en orden de prioridad |
+| GET | `/api/v1/canales/` | sesión (usuario o cliente vigente) | Canales de TV activos, agrupados por categoría, con sus fuentes en orden de prioridad. `?contenido=pelicula`, `serie` o la clave de una sección nueva (`musica`). Con `serie` llega además `portadas`: `{"Pocoyó": "https://..."}`, la portada propia de cada serie que la tiene (sin portada, la app usa la imagen del primer capítulo) |
+| GET | `/api/v1/canales/secciones/` | sesión (usuario o cliente vigente) | Las secciones nuevas creadas en el panel → `{secciones: [{clave, nombre, forma, icono}]}` (forma: `vivo` o `pelicula`). Lo de cada una se pide a `canales/?contenido=<clave>` |
 | POST | `/api/v1/canales/fuentes/<id>/falla/` | sesión (usuario o cliente) | `{motivo, detalle}` (opcionales). La app avisa que no pudo reproducir esa fuente: el servidor la vuelve a probar y, si también falla, deja de mandarla; si a él le anda pero fallan 3 aparatos en un día, la oculta 7 días. → `{estado}` |
 | POST | `/api/v1/canales/visto/` | sesión (usuario o cliente) | `{vistos: [{id, segundos, vista}], favoritos: ["c:12", "s:Serie"]}`. Lo que se miró desde el último aviso y lo agregado a favoritos. Se suma a los totales del día **sin guardar quién lo mandó** ("Lo más visto" del panel). → `{sumados}` |
 | GET | `/api/v1/app/` | — | Última versión publicada de la app: `{version, notas, descarga}` (`version: null` si no hay). La app lo consulta al abrirse |

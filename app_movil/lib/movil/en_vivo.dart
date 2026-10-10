@@ -7,6 +7,10 @@
 /// completa (horizontal, con zapping). La guía de programación ("Ahora en
 /// vivo / Próx. 2 horas", "A continuación") va a aparecer cuando se cargue
 /// la guía (EPG); hasta entonces no se muestra nada inventado.
+///
+/// La misma pantalla muestra una sección nueva "en vivo" (Radio...: [nueva]),
+/// con sus categorías y sin la guía. Lo que no tiene imagen (una radio) deja
+/// ver su logo mientras suena.
 library;
 
 import 'dart:async';
@@ -36,19 +40,26 @@ class PedidoEnVivo {
 }
 
 class SeccionEnVivo extends StatefulWidget {
-  const SeccionEnVivo({super.key, required this.visible, this.pedido});
+  const SeccionEnVivo({super.key, required this.visible, this.pedido, this.nueva});
 
   /// Si la sección está a la vista: si no, se corta el video (no gasta datos
   /// ni ocupa la conexión, que en algunas listas es una sola).
   final bool visible;
   final PedidoEnVivo? pedido;
 
+  /// La clave de una sección nueva (Radio...) para mostrar lo suyo; null = En Vivo.
+  final String? nueva;
+
   @override
   State<SeccionEnVivo> createState() => _SeccionEnVivoState();
 }
 
 class _SeccionEnVivoState extends State<SeccionEnVivo> {
-  late final ControlSenal _control = ControlSenal(SesionScope.leer(context).api)
+  // Se crea recién cuando hace falta (si no hay nada para ver, nunca): así
+  // dispose no lo crea cuando la pantalla ya se está cerrando
+  ControlSenal? _controlCreado;
+
+  ControlSenal get _control => _controlCreado ??= ControlSenal(SesionScope.leer(context).api)
     ..alVerCanal = ((canal) => DatosScope.of(context).biblioteca.registrarCanalVisto(canal.id))
     ..addListener(_alCambiar);
   final _desplazamiento = ScrollController();
@@ -74,7 +85,7 @@ class _SeccionEnVivoState extends State<SeccionEnVivo> {
   @override
   void dispose() {
     _ocultar?.cancel();
-    _control.dispose();
+    _controlCreado?.dispose();
     _desplazamiento.dispose();
     super.dispose();
   }
@@ -128,9 +139,16 @@ class _SeccionEnVivoState extends State<SeccionEnVivo> {
         final catalogo = datos.catalogo;
         final biblioteca = datos.biblioteca;
         if (!catalogo.cargado) return const Center(child: CircularProgressIndicator());
-        final todos = catalogo.canales;
+        final nueva = widget.nueva == null ? null : catalogo.seccionNueva(widget.nueva!);
+        final todos = nueva?.canales ?? catalogo.canales;
+        final categorias = nueva?.categorias ?? catalogo.categoriasEnVivo;
         if (todos.isEmpty) {
-          return const Vacio(icono: Icons.tv_off_rounded, texto: 'Todavía no hay canales en vivo disponibles.');
+          return Vacio(
+            icono: Icons.tv_off_rounded,
+            texto: widget.nueva != null
+                ? 'Todavía no hay nada disponible acá.'
+                : 'Todavía no hay canales en vivo disponibles.',
+          );
         }
         final visibles = [
           for (final canal in todos)
@@ -165,13 +183,15 @@ class _SeccionEnVivoState extends State<SeccionEnVivo> {
                           child: Row(
                             children: [
                               Expanded(child: Text('Categorías', style: Letra.titulo)),
-                              _Pildora(
-                                icono: Icons.view_list_rounded,
-                                texto: 'Guía',
-                                activo: false,
-                                alTocar: () => abrirPantalla<void>(context, PantallaGuia(alElegir: _ver)),
-                              ),
-                              const SizedBox(width: Espacio.sm),
+                              if (nueva == null) ...[
+                                _Pildora(
+                                  icono: Icons.view_list_rounded,
+                                  texto: 'Guía',
+                                  activo: false,
+                                  alTocar: () => abrirPantalla<void>(context, PantallaGuia(alElegir: _ver)),
+                                ),
+                                const SizedBox(width: Espacio.sm),
+                              ],
                               _Pildora(
                                 icono: Icons.favorite_rounded,
                                 texto: favoritos > 0 ? 'Favoritos ($favoritos)' : 'Favoritos',
@@ -195,7 +215,7 @@ class _SeccionEnVivoState extends State<SeccionEnVivo> {
                                 compacto: true,
                                 alTocar: () => setState(() => _categoria = null),
                               ),
-                              for (final categoria in catalogo.categoriasEnVivo) ...[
+                              for (final categoria in categorias) ...[
                                 const SizedBox(width: Espacio.sm),
                                 ChipFiltro(
                                   texto: '${categoriaLegible(categoria.nombre)} (${categoria.canales.length})',
@@ -289,7 +309,8 @@ class _Reproductor extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (video != null)
+              // Sin imagen (una radio): se ve su logo mientras suena
+              if (video != null && video.value.size.height > 0)
                 Center(
                   child: AspectRatio(aspectRatio: video.value.aspectRatio, child: VideoPlayer(video)),
                 )

@@ -127,8 +127,10 @@ def videos_del_canal(url):
     Con miles de videos tarda hasta un minuto.
     """
     import yt_dlp   # se importa recién acá: tarda en cargar
+    # lang=es: si no, YouTube devuelve los títulos traducidos solo al inglés
+    # ("Summer in Venice - Episode 123" en vez de "Verano en Venecia - Capítulo 123")
     opciones = {'quiet': True, 'no_warnings': True, 'skip_download': True, 'extract_flat': 'in_playlist',
-                'socket_timeout': 20, 'logger': _Silencio()}
+                'socket_timeout': 20, 'logger': _Silencio(), 'extractor_args': {'youtube': {'lang': ['es']}}}
     direccion_del_listado = _direccion_del_listado(url)
     try:
         with yt_dlp.YoutubeDL(opciones) as ytdl:
@@ -284,6 +286,47 @@ def capitulo(titulo):
         return None
     nombre = f'{serie} S{int(temporada.group(1)):02d} E{int(numero.group(1)):02d}'
     return f'{nombre} {nombre_del_capitulo}'.strip()[:120]
+
+
+_NUMERO_EN_EL_TITULO = re.compile(r'\b(?:cap[ií]tulo|episodio|chapter|episode|ep)\.?\s*(\d{1,4})\b', re.I)
+# Temporada y capítulo juntos: "S02 E26", "S01 | E01", "T4 EP7", "1x01", "1*01"
+_TEMPORADA_Y_CAPITULO = [
+    re.compile(r'\b[ST](\d{1,2})\s*[|:-]?\s*EP?\.?\s*(\d{1,4})\b', re.I),
+    re.compile(r'\b(\d{1,2})\s*[x*]\s*(\d{1,4})\b', re.I),
+]
+
+
+def numero_de_capitulo(titulo):
+    """
+    (temporada, capítulo) que dice el título: 'Rosario Tijeras | Capítulo 67 | Temporada 2' -> (2, 67),
+    'Transformers Prime: S02 E26' -> (2, 26), 'Yu-Gi-Oh! GX 1x01' -> (1, 1).
+    Sin temporada, 0. None si no dice el capítulo.
+    """
+    for patron in _TEMPORADA_Y_CAPITULO:
+        juntos = patron.search(titulo or '')
+        if juntos:
+            return int(juntos.group(1)), int(juntos.group(2))
+    numero = _NUMERO_EN_EL_TITULO.search(titulo or '')
+    if not numero:
+        return None
+    temporada = _TEMPORADA.search(titulo or '')
+    return (int(temporada.group(1)) if temporada else 0, int(numero.group(1)))
+
+
+def en_orden_de_capitulos(listado):
+    """
+    Los videos de una serie en el orden de sus capítulos. Si casi todos dicen
+    su número ("Capítulo 12", "EP12"), por ese número: hay listas al revés
+    (del último al primero) o desordenadas. Si no, del más viejo al más nuevo
+    (un canal) o como está la lista. Los que no dicen número ("Capítulo
+    Final") quedan al final, en el orden en que venían.
+    """
+    videos = listado.en_orden()
+    numeros = [numero_de_capitulo(video.titulo) for video in videos]
+    if not videos or sum(n is not None for n in numeros) < 0.8 * len(videos):
+        return videos
+    orden = sorted(range(len(videos)), key=lambda i: (numeros[i] is None, numeros[i] or (0, 0), i))
+    return [videos[i] for i in orden]
 
 
 def nombres_distintos(titulos):

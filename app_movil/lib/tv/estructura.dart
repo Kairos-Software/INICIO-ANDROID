@@ -1,6 +1,7 @@
 /// La app en la TV (diseno_kairos_tv/DESIGN.md -> "Menú lateral TV"): el menú
 /// de la izquierda y las ocho secciones (Inicio, En vivo, Guía, Películas,
-/// Series, Buscar, Favoritos y Mi cuenta).
+/// Series, Buscar, Favoritos y Mi cuenta), más las que se crean en el panel
+/// (Música, Radio...), que van en el menú después de Series.
 ///
 /// El menú mide 88 px con solo íconos; al entrar en él (Izquierda desde el
 /// borde izquierdo del contenido) se abre a 292 px con los nombres y el foco
@@ -36,11 +37,13 @@ import 'foco.dart';
 import 'grilla.dart';
 import 'guia.dart';
 import 'inicio.dart';
+import '../movil/secciones_nuevas.dart';
 import 'piezas.dart';
 import 'reposo.dart';
 import 'reproductor.dart';
 
-enum SeccionTv { inicio, enVivo, guia, peliculas, series, buscar, favoritos, cuenta }
+/// `nueva`: una de las secciones creadas en el panel (cuál, en _PantallaTvState._nueva).
+enum SeccionTv { inicio, enVivo, guia, peliculas, series, buscar, favoritos, cuenta, nueva }
 
 /// Para cambiar de sección desde cualquier pantalla (ej: "Abrir guía" en Inicio).
 class NavegacionTv extends InheritedWidget {
@@ -89,6 +92,12 @@ class _PantallaTvState extends State<PantallaTv> {
   final _contenido = FocusScopeNode(debugLabel: 'contenido');
   final _menu = FocusScopeNode(debugLabel: 'menú');
   final _opcionesDelMenu = {for (final s in SeccionTv.values) s: FocusNode(debugLabel: 'menú: ${s.name}')};
+
+  /// La sección nueva abierta (su clave), cuando _seccion es SeccionTv.nueva.
+  String? _nueva;
+  final _opcionesNuevas = <String, FocusNode>{};
+
+  FocusNode _nodoNueva(String clave) => _opcionesNuevas.putIfAbsent(clave, () => FocusNode(debugLabel: 'menú: $clave'));
   bool _menuAbierto = false;
   AppLifecycleListener? _ciclo;
   Timer? _refresco;
@@ -124,7 +133,7 @@ class _PantallaTvState extends State<PantallaTv> {
     _menu
       ..removeListener(_alCambiarFocoDelMenu)
       ..dispose();
-    for (final nodo in _opcionesDelMenu.values) {
+    for (final nodo in [..._opcionesDelMenu.values, ..._opcionesNuevas.values]) {
       nodo.dispose();
     }
     if (widget.catalogo == null) _catalogo.dispose();
@@ -152,10 +161,11 @@ class _PantallaTvState extends State<PantallaTv> {
   BuildContext get _contexto => _claveContenido.currentContext ?? context;
   final _claveContenido = GlobalKey();
 
-  void _irA(SeccionTv seccion) {
+  void _irA(SeccionTv seccion, {String? nueva}) {
     setState(() {
       if (seccion == SeccionTv.buscar && _seccion != SeccionTv.buscar) _antesDeBuscar = _seccion;
       _seccion = seccion;
+      _nueva = seccion == SeccionTv.nueva ? nueva : null;
       _menuAbierto = false;
     });
     // El foco pasa al contenido de la sección nueva (a su "foco inicial")
@@ -192,7 +202,9 @@ class _PantallaTvState extends State<PantallaTv> {
     if (_menu.hasFocus != _menuAbierto) setState(() => _menuAbierto = _menu.hasFocus);
   }
 
-  void _abrirMenu() => _opcionesDelMenu[_seccion]!.requestFocus();
+  void _abrirMenu() =>
+      (_seccion == SeccionTv.nueva && _nueva != null ? _nodoNueva(_nueva!) : _opcionesDelMenu[_seccion]!)
+          .requestFocus();
 
   void _cerrarMenu() => _enfocarContenido();
 
@@ -287,7 +299,18 @@ class _PantallaTvState extends State<PantallaTv> {
       SeccionTv.buscar => BuscarTv(que: BuscarTv.queDesde(_antesDeBuscar)),
       SeccionTv.favoritos => const FavoritosTv(),
       SeccionTv.cuenta => const CuentaTv(),
+      SeccionTv.nueva => _seccionNueva(),
     };
+  }
+
+  /// Una sección del panel: "en vivo" como En vivo, "a demanda" como Películas.
+  /// Si ya no está (se borró o quedó vacía), Inicio.
+  Widget _seccionNueva() {
+    final seccion = _catalogo.seccionNueva(_nueva ?? '');
+    if (seccion == null) return const InicioTv();
+    return seccion.enVivo
+        ? EnVivoTv(nueva: seccion.clave)
+        : GrillaTv(contenido: 'pelicula', nueva: seccion.clave, key: ValueKey('nueva:${seccion.clave}'));
   }
 
   @override
@@ -317,7 +340,10 @@ class _PantallaTvState extends State<PantallaTv> {
                         listenable: _catalogo,
                         builder: (context, _) {
                           if (!_catalogo.cargado) return _Cargando(catalogo: _catalogo);
-                          return KeyedSubtree(key: ValueKey(_seccion), child: _seccionActual());
+                          return KeyedSubtree(
+                            key: ValueKey(_seccion == SeccionTv.nueva ? 'nueva:$_nueva' : _seccion),
+                            child: _seccionActual(),
+                          );
                         },
                       ),
                     ),
@@ -342,7 +368,19 @@ class _PantallaTvState extends State<PantallaTv> {
                     child: FocusScope(
                       node: _menu,
                       onKeyEvent: _teclaEnMenu,
-                      child: _Menu(seccion: _seccion, abierto: _menuAbierto, nodos: _opcionesDelMenu, alElegir: _irA),
+                      // Se rearma cuando llega el catálogo: ahí se sabe qué secciones nuevas hay
+                      child: ListenableBuilder(
+                        listenable: _catalogo,
+                        builder: (context, _) => _Menu(
+                          seccion: _seccion,
+                          nueva: _nueva,
+                          abierto: _menuAbierto,
+                          nodos: _opcionesDelMenu,
+                          nuevas: _catalogo.seccionesNuevas,
+                          nodoNueva: _nodoNueva,
+                          alElegir: _irA,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -356,14 +394,29 @@ class _PantallaTvState extends State<PantallaTv> {
 }
 
 class _Menu extends StatelessWidget {
-  const _Menu({required this.seccion, required this.abierto, required this.nodos, required this.alElegir});
+  const _Menu({
+    required this.seccion,
+    required this.nueva,
+    required this.abierto,
+    required this.nodos,
+    required this.nuevas,
+    required this.nodoNueva,
+    required this.alElegir,
+  });
 
   final SeccionTv seccion;
+
+  /// La clave de la sección nueva abierta (si es una de ellas).
+  final String? nueva;
   final bool abierto;
 
   /// Uno por opción: al abrir el menú, el foco va a la de la sección actual.
   final Map<SeccionTv, FocusNode> nodos;
-  final ValueChanged<SeccionTv> alElegir;
+
+  /// Las secciones creadas en el panel (Música, Radio...): van después de Series.
+  final List<SeccionNueva> nuevas;
+  final FocusNode Function(String clave) nodoNueva;
+  final void Function(SeccionTv seccion, {String? nueva}) alElegir;
 
   static const _opciones = [
     (SeccionTv.inicio, Icons.home_rounded, 'Inicio'),
@@ -377,13 +430,13 @@ class _Menu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget opcion(SeccionTv valor, IconData icono, String texto, {required bool conNombre}) {
-      final activa = valor == seccion;
+    Widget opcion(SeccionTv valor, IconData icono, String texto, {required bool conNombre, String? clave}) {
+      final activa = valor == seccion && clave == nueva;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Enfocable(
-          nodo: nodos[valor],
-          alOk: () => alElegir(valor),
+          nodo: clave != null ? nodoNueva(clave) : nodos[valor],
+          alOk: () => alElegir(valor, nueva: clave),
           curva: Curva.boton,
           escala: 1.0,
           etiqueta: texto,
@@ -451,8 +504,28 @@ class _Menu extends StatelessWidget {
                         : const SimboloKairos(tamanio: 42),
                   ),
                 ),
-                for (final (valor, icono, texto) in _opciones) opcion(valor, icono, texto, conNombre: conNombres),
-                const Spacer(),
+                // Con varias secciones nuevas puede no entrar todo: el medio se desplaza
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final (valor, icono, texto) in _opciones) ...[
+                          opcion(valor, icono, texto, conNombre: conNombres),
+                          if (valor == SeccionTv.series)
+                            for (final s in nuevas)
+                              opcion(
+                                SeccionTv.nueva,
+                                iconoDeSeccion(s.icono),
+                                s.nombre,
+                                conNombre: conNombres,
+                                clave: s.clave,
+                              ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
                 opcion(SeccionTv.cuenta, Icons.account_circle_rounded, 'Mi cuenta', conNombre: conNombres),
               ],
             );

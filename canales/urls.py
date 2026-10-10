@@ -30,4 +30,5 @@ urlpatterns = [
     path('catalogo/tipo/', views.catalogo_contenido, name='catalogo_contenido'),
     path('series/acciones/', views.series_acciones, name='series_acciones'),
     path('categorias/', views.categorias, name='categorias'),
+    path('secciones/', views.secciones_acciones, name='secciones'),
 ]

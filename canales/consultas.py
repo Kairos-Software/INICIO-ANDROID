@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 
-from . import clasificar
+from . import clasificar, imagenes, secciones
 from .models import Canal, Categoria, Contenido, Fuente, Importacion, hace_dias_oculta
 
 # Lo que el reproductor de la app sabe reproducir. La app nueva lo dice al
@@ -70,9 +70,9 @@ def agrupar_por_categoria(canales):
 NOMBRES_EN_PLURAL = {Contenido.VIVO: 'En vivo', Contenido.PELICULA: 'Películas', Contenido.SERIE: 'Series'}
 
 
-def resumen_de(contenido):
+def resumen_de(contenido, nombre=''):
     """
-    Los números de un tipo de contenido (en vivo, películas o series):
+    Los números de una sección (en vivo, películas, series o una nueva, como Música):
     cuántos hay cargados, cuántos ve la app, quitados, y sus fuentes por estado.
     En series se cuenta por capítulo (cada capítulo es un Canal).
     """
@@ -80,7 +80,7 @@ def resumen_de(contenido):
     por_estado = dict(fuentes.values_list('estado').annotate(cantidad=Count('pk')))
     return {
         'contenido': contenido,
-        'nombre': NOMBRES_EN_PLURAL[contenido],
+        'nombre': nombre or NOMBRES_EN_PLURAL[contenido],
         'unidad': 'capítulos' if contenido == Contenido.SERIE else 'cargados',
         'cargados': Canal.objects.filter(contenido=contenido).count(),
         'en_la_app': canales_disponibles(contenido=contenido).count(),
@@ -100,7 +100,8 @@ def resumen():
     sumaban también películas y capítulos, y "7262 canales" confundía.
     `por_contenido`: lo mismo para en vivo, películas y series (resumen_de).
     """
-    por_contenido = [resumen_de(c) for c in Contenido.values]
+    por_contenido = [*(resumen_de(c) for c in Contenido.values),
+                     *(resumen_de(s.clave, s.nombre) for s in secciones.nuevas())]
     vivo = por_contenido[0]
     return {
         'canales': vivo['cargados'],
@@ -137,8 +138,9 @@ MINIMO_DE_CAPITULOS = 3
 class Serie:
     nombre: str
     categoria: str = ''
-    logo: str = ''
+    logo: str = ''   # la portada, o la imagen del primer capítulo que tenga
     temporadas: dict = field(default_factory=dict)   # {número: [Capitulo, ...]}
+    portada: str = ''   # la propia de la serie (imagenes.PortadaDeSerie)
     categoria_id: int | None = None
 
     @property
@@ -200,9 +202,16 @@ def series(texto='', estado='', categoria='', idioma='', origen='', sin_logo=Fal
         serie.logo = serie.logo or canal.logo
         serie.temporadas.setdefault(temporada, []).append(Capitulo(canal, temporada, numero, titulo))
     resultado = sorted(por_nombre.values(), key=lambda s: s.nombre.lower())
+    portadas = imagenes.portadas_de([s.nombre for s in resultado])
     for serie in resultado:
         for lista in serie.temporadas.values():
             lista.sort(key=lambda c: (c.numero is None, c.numero or 0, c.canal.nombre))
+        primero = next((c.canal.logo for t in sorted(serie.temporadas) for c in serie.temporadas[t] if c.canal.logo),
+                       '')
+        serie.portada = portadas.get(serie.nombre, '')
+        serie.logo = serie.portada or primero   # como la app: la portada, o la imagen del primer capítulo
+    if sin_logo:
+        resultado = [s for s in resultado if not s.portada]
     if estado == 'en_app':
         resultado = [s for s in resultado if s.completa]
     elif estado == 'incompleta':
@@ -260,8 +269,10 @@ def como_en_la_app(contenido=Contenido.VIVO):
         serie.logo = serie.logo or canal.logo
         serie.capitulos += 1
         serie.tiene_el_primero = serie.tiene_el_primero or (temporada, numero) == (1, 1)
+    portadas = imagenes.portadas_de([s.nombre for s in por_nombre.values()])
     grupos = {}
     for serie in por_nombre.values():
+        serie.logo = portadas.get(serie.nombre) or serie.logo
         if serie.completa:
             grupos.setdefault(serie.categoria.pk if serie.categoria else None, (serie.categoria, []))[1].append(serie)
     for _, series_del_grupo in grupos.values():
@@ -387,7 +398,7 @@ def catalogo(texto='', categoria='', idioma='', estado='', sin_logo=False, orige
         canales = canales.filter(activo=True, tiene_usable=False)
     elif estado == 'quitados':
         canales = canales.filter(activo=False)
-    if contenido in Contenido.values:
+    if contenido and secciones.es_valida(contenido):
         canales = canales.filter(contenido=contenido)
     if sin_logo:
         canales = canales.filter(logo='')

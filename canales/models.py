@@ -30,9 +30,62 @@ class Idioma(models.TextChoices):
 
 
 class Contenido(models.TextChoices):
+    """
+    Las tres secciones fijas de la app. Además están las que se crean desde el
+    panel (Seccion: Música, Radio...): `contenido` guarda la clave de una u otra.
+    """
     VIVO = 'vivo', 'En vivo'
     PELICULA = 'pelicula', 'Película'
     SERIE = 'serie', 'Serie'
+
+
+def _nombre_del_contenido(contenido):
+    if contenido in Contenido.values:
+        return Contenido(contenido).label
+    from .secciones import nombre
+    return nombre(contenido) or contenido
+
+
+class Seccion(ModeloBase):
+    """
+    Una sección nueva de la app, creada desde el panel (Música, Radio,
+    Deportes...). Aparece en el menú de la app (1.2.11 o más nueva) con sus
+    propias categorías, igual que En vivo o Películas. Lo que tiene guarda su
+    `clave` en `contenido`. Es de una de dos formas:
+      - en vivo: radios o canales que transmiten ahora (como En vivo);
+      - a demanda: videos que se eligen (música, documentales...; como Películas).
+    """
+
+    class Forma(models.TextChoices):
+        VIVO = 'vivo', 'En vivo (radios o canales que transmiten ahora)'
+        A_DEMANDA = 'pelicula', 'A demanda (videos que se eligen: música, documentales...)'
+
+    class Icono(models.TextChoices):
+        MUSICA = 'musica', 'Música'
+        RADIO = 'radio', 'Radio'
+        DEPORTES = 'deportes', 'Deportes'
+        DOCUMENTALES = 'documentales', 'Documentales'
+        INFANTIL = 'infantil', 'Infantil'
+        NOTICIAS = 'noticias', 'Noticias'
+        OTRO = 'otro', 'Otro (una estrella)'
+
+    clave = models.CharField(max_length=10, editable=False, help_text='Se arma del nombre: "Música" -> "musica".')
+    nombre = models.CharField(max_length=30)
+    forma = models.CharField(max_length=10, choices=Forma.choices, default=Forma.A_DEMANDA)
+    icono = models.CharField('ícono', max_length=15, choices=Icono.choices, default=Icono.OTRO)
+    orden = models.PositiveIntegerField(default=0, help_text='Menor = más arriba en el menú de la app.')
+
+    class Meta:
+        verbose_name = 'sección'
+        verbose_name_plural = 'secciones'
+        ordering = ['orden', 'nombre']
+        constraints = [
+            models.UniqueConstraint(fields=['clave'], condition=models.Q(eliminado_en__isnull=True),
+                                    name='seccion_clave_unica'),
+        ]
+
+    def __str__(self):
+        return self.nombre
 
 
 class Categoria(ModeloBase):
@@ -42,8 +95,8 @@ class Categoria(ModeloBase):
     ordenar las películas solo aparecen categorías de películas.
     """
     nombre = models.CharField(max_length=80)
-    contenido = models.CharField('sección', max_length=10, choices=Contenido.choices, default=Contenido.VIVO,
-                                 db_index=True)
+    # Una de las fijas (Contenido) o la clave de una Seccion nueva
+    contenido = models.CharField('sección', max_length=10, default=Contenido.VIVO, db_index=True)
     orden = models.PositiveIntegerField(default=0, help_text='Menor = aparece primero.')
     # Los nombres que tenía antes o de las categorías que se le juntaron (uno
     # por línea). Al importar, una lista que diga "Argentina" va a la categoría
@@ -80,7 +133,8 @@ class Canal(ModeloBase):
     # mismo canal en distintas listas y, más adelante, para la guía (EPG).
     tvg_id = models.CharField('ID de guía (tvg-id)', max_length=120, blank=True, db_index=True)
     pais = models.CharField('país', max_length=2, blank=True, help_text='Código de 2 letras (AR, UY...).')
-    contenido = models.CharField(max_length=10, choices=Contenido.choices, default=Contenido.VIVO, db_index=True)
+    # Una de las fijas (Contenido) o la clave de una Seccion nueva
+    contenido = models.CharField(max_length=10, default=Contenido.VIVO, db_index=True)
     idioma = models.CharField(max_length=5, choices=Idioma.choices, blank=True, db_index=True,
                               help_text='Estimado al importar (país, categoría, prefijo del nombre...).')
     activo = models.BooleanField(default=True, help_text='Un canal inactivo ("quitado") no aparece en la app.')
@@ -94,6 +148,30 @@ class Canal(ModeloBase):
 
     def __str__(self):
         return f'{self.numero} · {self.nombre}' if self.numero else self.nombre
+
+    def get_contenido_display(self):
+        return _nombre_del_contenido(self.contenido)
+
+
+class PortadaDeSerie(models.Model):
+    """
+    La portada de una serie, aparte de las imágenes de sus capítulos (cada
+    capítulo conserva la suya, la que trajo YouTube). Las series no son una
+    tabla: salen del nombre de los capítulos ("Pocoyó S01 E02"), así que la
+    portada va por el nombre de la serie (`clave`: sin acentos ni mayúsculas).
+    Sin portada, la serie usa la imagen de su primer capítulo. Ver imagenes.py.
+    """
+    clave = models.CharField(max_length=90, unique=True)
+    nombre = models.CharField(max_length=90)
+    imagen = models.URLField(max_length=500)
+    modificada = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'portada de serie'
+        verbose_name_plural = 'portadas de series'
+
+    def __str__(self):
+        return self.nombre
 
 
 # Cuántos días queda oculta una fuente que falla en los aparatos. Después la
@@ -223,6 +301,9 @@ class Importacion(models.Model):
     # Los números definitivos se ponen al terminar de probar (servicios._numerar_capitulos).
     serie = models.CharField('serie', max_length=90, blank=True)
     temporada = models.PositiveSmallIntegerField(default=1)
+    # Todo lo importado va a esta sección nueva (Música, Radio...; '' = cada
+    # cosa a la fija que le toca: En vivo, Películas o Series)
+    seccion = models.CharField('sección', max_length=10, blank=True)
 
     class Meta:
         verbose_name = 'importación'
@@ -267,7 +348,7 @@ class EntradaImportada(models.Model):
     tvg_id = models.CharField(max_length=120, blank=True)
     pais = models.CharField(max_length=2, blank=True)
     idioma = models.CharField(max_length=5, choices=Idioma.choices, blank=True)
-    contenido = models.CharField(max_length=10, choices=Contenido.choices, default=Contenido.VIVO)
+    contenido = models.CharField(max_length=10, default=Contenido.VIVO)
     url = models.CharField(max_length=1000)
     tipo = models.CharField('formato', max_length=10, blank=True)
     user_agent = models.CharField(max_length=300, blank=True)
@@ -289,6 +370,9 @@ class EntradaImportada(models.Model):
 
     def __str__(self):
         return f'{self.nombre} · {self.get_estado_display()}'
+
+    def get_contenido_display(self):
+        return _nombre_del_contenido(self.contenido)
 
     def get_tipo_display(self):
         return dict(Fuente.Tipo.choices).get(self.tipo) or ('RTMP' if self.tipo == 'rtmp' else 'Se averigua al verificar')

@@ -13,4 +13,8 @@ documentos, etc.
 
 ## Contenido actual
 
-Vacía por ahora.
+- `apk/`: las versiones de la app que se publican en /descargar/.
+- `usuarios/fotos/`: fotos de perfil.
+- `canales/imagenes/`: logos, pósters y portadas de series subidos desde
+  Organizar contenido (la app los carga directo desde acá). Las que se
+  reemplazan y ya nadie usa se borran solas.

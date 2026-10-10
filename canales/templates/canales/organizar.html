@@ -2,7 +2,8 @@
 {% load canales_extras %}
 {% comment %}
     Organizar contenido: TODO en un lugar, sección por sección (En vivo,
-    Películas, Series). Cada sección tiene SUS categorías.
+    Películas, Series y las nuevas que se crean acá: Música, Radio...). Cada
+    sección tiene SUS categorías.
       - Izquierda: las categorías de la sección con cuántos tienen; las que
         parecen la misma (para juntarlas con un clic); elegir varias y
         juntarlas en una; crear una nueva.
@@ -36,7 +37,79 @@
     <a href="?contenido=vivo" {% if contenido == 'vivo' %}class="activa" aria-current="page"{% endif %}><i class="bi bi-broadcast" aria-hidden="true"></i> En vivo</a>
     <a href="?contenido=pelicula" {% if contenido == 'pelicula' %}class="activa" aria-current="page"{% endif %}><i class="bi bi-film" aria-hidden="true"></i> Películas</a>
     <a href="?contenido=serie" {% if contenido == 'serie' %}class="activa" aria-current="page"{% endif %}><i class="bi bi-collection-play" aria-hidden="true"></i> Series</a>
+    {% for s in secciones_nuevas %}
+    <a href="?contenido={{ s.clave }}" {% if contenido == s.clave %}class="activa" aria-current="page"{% endif %}><i class="bi {% if s.forma == 'vivo' %}bi-broadcast-pin{% else %}bi-stars{% endif %}" aria-hidden="true"></i> {{ s.nombre }}</a>
+    {% endfor %}
+    {% if puede_editar %}
+    <a href="#nueva-seccion" data-abrir-seccion><i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva sección</a>
+    {% endif %}
 </nav>
+
+{% if puede_editar %}
+<details class="tarjeta mb-4" id="nueva-seccion">
+    <summary class="tarjeta-titulo mb-0"><i class="bi bi-plus-lg" aria-hidden="true"></i> Crear una sección nueva en la app (Música, Radio, Deportes…)</summary>
+    <form method="post" action="{% url 'canales:secciones' %}" class="row g-3 align-items-end mt-1">
+        {% csrf_token %}
+        <input type="hidden" name="accion" value="crear">
+        <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+        <div class="col-md-3">
+            <label for="seccion-nombre" class="form-label">Nombre</label>
+            <input type="text" name="nombre" id="seccion-nombre" class="form-control" maxlength="30" placeholder="Ej: Música" required>
+        </div>
+        <div class="col-md-5">
+            <label for="seccion-forma" class="form-label">Qué tiene</label>
+            <select name="forma" id="seccion-forma" class="form-select">
+                {% for valor, texto in formas %}<option value="{{ valor }}" {% if valor == 'pelicula' %}selected{% endif %}>{{ texto }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label for="seccion-icono" class="form-label">Ícono en el menú</label>
+            <select name="icono" id="seccion-icono" class="form-select">
+                {% for valor, texto in iconos %}<option value="{{ valor }}">{{ texto }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">Crear</button>
+        </div>
+        <p class="texto-suave small mb-0">Aparece en el menú de la app (celular y TV, desde la versión 1.2.11) apenas tenga algo que se pueda ver, con sus propias categorías. <strong>A demanda</strong> funciona como Películas: se elige un video y se ve (música de YouTube, documentales…). <strong>En vivo</strong> funciona como En vivo: radios o canales que transmiten ahora. Para llenarla: creale categorías y usá «Traer de YouTube» o «Importar lista» eligiendo esta sección, o pasale cosas desde otra con «Pasar a otra sección».</p>
+    </form>
+</details>
+{% endif %}
+
+{% if seccion_nueva and puede_editar %}
+<details class="espejo-opciones mb-4">
+    <summary><i class="bi bi-gear" aria-hidden="true"></i> Cambiar la sección «{{ seccion_nueva.nombre }}» ({{ seccion_nueva.get_forma_display }})</summary>
+    <div class="espejo-opciones-cuerpo">
+        <form method="post" action="{% url 'canales:secciones' %}" class="espejo-opcion">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="editar">
+            <input type="hidden" name="seccion_pk" value="{{ seccion_nueva.pk }}">
+            <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+            <label for="sec-nombre" class="small texto-suave">Nombre</label>
+            <input type="text" name="nombre" id="sec-nombre" class="form-control form-control-sm" maxlength="30" value="{{ seccion_nueva.nombre }}">
+            <label for="sec-icono" class="small texto-suave">Ícono</label>
+            <select name="icono" id="sec-icono" class="form-select form-select-sm w-auto">
+                {% for valor, texto in iconos %}<option value="{{ valor }}" {% if valor == seccion_nueva.icono %}selected{% endif %}>{{ texto }}</option>{% endfor %}
+            </select>
+            <label for="sec-orden" class="small texto-suave">Orden</label>
+            <input type="number" name="orden" id="sec-orden" class="form-control form-control-sm" style="width:5rem" min="0" value="{{ seccion_nueva.orden }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Guardar</button>
+            <span class="espejo-ayuda">El orden es entre las secciones nuevas: el número más chico va más arriba en el menú.</span>
+        </form>
+        <form method="post" action="{% url 'canales:secciones' %}" class="espejo-opcion">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="borrar">
+            <input type="hidden" name="seccion_pk" value="{{ seccion_nueva.pk }}">
+            <input type="hidden" name="volver" value="{{ request.get_full_path }}">
+            <span class="small texto-suave">Borrar</span>
+            <button type="submit" class="btn btn-sm btn-outline-secondary" name="con_contenido" value="0"
+                    data-confirmar="¿Borrar la sección «{{ seccion_nueva.nombre }}»? Solo se puede si está vacía.">Solo si está vacía</button>
+            <button type="submit" class="btn btn-sm btn-outline-secondary text-danger" name="con_contenido" value="1"
+                    data-confirmar="¿Borrar «{{ seccion_nueva.nombre }}» Y TODO LO QUE TIENE ({{ datos.total }})? Desaparece del panel y de la app.">Con todo lo que tiene</button>
+        </form>
+    </div>
+</details>
+{% endif %}
 
 <div class="espejo">
     {# ── Las categorías de la sección ── #}
@@ -223,7 +296,7 @@
             {% if datos.elegida == 'todas' %}
             <h3 class="espejo-seccion">{% if categoria %}{{ categoria.nombre }}{% else %}Sin categoría (en la app: «Otros»){% endif %}</h3>
             {% endif %}
-            <div class="espejo-grilla{% if contenido != 'vivo' %} con-poster{% endif %}">
+            <div class="espejo-grilla{% if forma != 'vivo' %} con-poster{% endif %}">
                 {% for item in items %}
                 <label class="espejo-tarjeta{% if contenido == 'serie' %}{% if not item.completa %} fuera{% endif %}{% elif item.no_se_ve %} fuera{% endif %}">
                     {% if puede_editar %}
@@ -302,6 +375,7 @@
                         {% if contenido != 'vivo' %}<option value="vivo">a En vivo</option>{% endif %}
                         {% if contenido != 'pelicula' %}<option value="pelicula">a Películas</option>{% endif %}
                         <option value="serie">a Series (como capítulos de una serie)</option>
+                        {% for s in secciones_nuevas %}{% if s.clave != contenido %}<option value="{{ s.clave }}">a {{ s.nombre }}</option>{% endif %}{% endfor %}
                     </select>
                     <span class="espejo-barra-serie" style="display:none">
                         <input type="text" name="nombre_serie" class="form-control form-control-sm" maxlength="90" placeholder="Nombre de la serie (ej: Pocoyó)">
@@ -333,7 +407,7 @@
 
 {# ── Edición rápida (la llena el script con los datos de la tarjeta) ── #}
 <dialog class="detalle-canal" id="editar" aria-labelledby="editar-titulo">
-    <form method="post" action="{% url 'canales:organizar_editar' %}" class="detalle-canal-cuerpo" id="form-editar">
+    <form method="post" action="{% url 'canales:organizar_editar' %}" class="detalle-canal-cuerpo" id="form-editar" enctype="multipart/form-data">
         {% csrf_token %}
         <input type="hidden" name="tipo">
         <input type="hidden" name="canal">
@@ -360,10 +434,15 @@
                         <label for="editar-numero" class="form-label">Número de canal</label>
                         <input type="text" name="numero" id="editar-numero" class="form-control" maxlength="10">
                     </div>
-                    <div class="col-12">
-                        <label for="editar-logo" class="form-label">Imagen (logo o póster)</label>
+                    <div class="col-md-7">
+                        <label for="editar-logo" class="form-label" id="editar-logo-titulo">Imagen (logo o póster)</label>
                         <input type="url" name="logo" id="editar-logo" class="form-control" maxlength="500" placeholder="https://.../imagen.jpg">
                     </div>
+                    <div class="col-md-5">
+                        <label for="editar-subir" class="form-label">O subila desde la compu</label>
+                        <input type="file" name="imagen" id="editar-subir" class="form-control" accept="image/jpeg,image/png,image/webp">
+                    </div>
+                    <div class="col-12 espejo-ayuda mt-1" id="editar-logo-ayuda"></div>
                     <div class="col-md-6">
                         <label for="editar-categoria" class="form-label">Categoría</label>
                         <select name="categoria" id="editar-categoria" class="form-select">
@@ -381,6 +460,7 @@
                         <select name="contenido" id="editar-contenido" class="form-select">
                             <option value="vivo">En vivo</option>
                             <option value="pelicula">Películas</option>
+                            {% for s in secciones_nuevas %}<option value="{{ s.clave }}">{{ s.nombre }}</option>{% endfor %}
                         </select>
                     </div>
                     {% endif %}
@@ -441,6 +521,17 @@
         actualizarJuntar();
     }
 
+    // "Nueva sección" en las pestañas abre el formulario de crear
+    document.querySelectorAll('[data-abrir-seccion]').forEach(function (enlace) {
+        enlace.addEventListener('click', function (evento) {
+            evento.preventDefault();
+            var crear = document.getElementById('nueva-seccion');
+            crear.open = true;
+            crear.scrollIntoView({behavior: 'smooth', block: 'start'});
+            document.getElementById('seccion-nombre').focus();
+        });
+    });
+
     // ── Elegir tarjetas y la barra de abajo ──
     var form = document.getElementById('form-organizar');
     if (form) {
@@ -496,13 +587,17 @@
     function iniciales(texto) {
         return (texto || '').split(/\s+/).filter(Boolean).slice(0, 2).map(function (p) { return p[0]; }).join('').toUpperCase() || '?';
     }
+    var subir = document.getElementById('editar-subir');
+    var subida = '';
     function pintarImagen() {
         vista.textContent = '';
-        if (logo.value.trim()) {
+        if (subida) URL.revokeObjectURL(subida);
+        subida = subir.files.length ? URL.createObjectURL(subir.files[0]) : '';
+        if (subida || logo.value.trim()) {
             var imagen = document.createElement('img');
             imagen.alt = '';
             imagen.referrerPolicy = 'no-referrer';
-            imagen.src = logo.value.trim();
+            imagen.src = subida || logo.value.trim();
             vista.appendChild(imagen);
         } else {
             vista.textContent = iniciales(editar.nombre.value);
@@ -517,6 +612,12 @@
         editar.nombre.value = datos.nombre;
         editar.numero.value = datos.numero || '';
         logo.value = datos.logo || '';
+        subir.value = '';
+        document.getElementById('editar-logo-titulo').textContent = esSerie ? 'Portada de la serie' : 'Imagen (logo o póster)';
+        document.getElementById('editar-logo-ayuda').textContent = esSerie
+            ? (datos.portada ? 'Es la portada propia de la serie. Si la borrás, vuelve a usar la imagen del primer capítulo.'
+                             : 'Ahora usa la imagen del primer capítulo. Lo que pongas acá queda como portada de la serie; cada capítulo conserva la suya.')
+            : 'Pegá el link de una imagen o subí una (JPG, PNG o WEBP; se achica sola). Si la subís, gana sobre el link.';
         editar.categoria.value = String(datos.categoria);
         editar.nueva_categoria.value = '';
         editar.nueva_categoria.dispatchEvent(new Event('input', {bubbles: true}));   // la lista vuelve a valer (sistema.js)
@@ -527,7 +628,7 @@
         estado.textContent = datos.en_app ? 'Se ve en la app.' : 'No se ve en la app: ' + (datos.motivo || '');
         estado.className = 'small mb-0 ' + (datos.en_app ? 'estado-bien' : 'estado-mal');
         dialogo.querySelectorAll('[data-solo-canal]').forEach(function (el) { el.style.display = esSerie ? 'none' : ''; });
-        vista.classList.toggle('poster', esSerie || datos.contenido !== 'vivo');
+        vista.classList.toggle('poster', esSerie || '{{ forma }}' !== 'vivo');
         document.getElementById('editar-mas').href = datos.mas;
         var lista = document.getElementById('editar-origenes');
         lista.textContent = '';
@@ -559,6 +660,7 @@
         });
     });
     logo.addEventListener('input', pintarImagen);
+    subir.addEventListener('change', pintarImagen);
     dialogo.querySelectorAll('[data-cerrar]').forEach(function (b) { b.addEventListener('click', function () { dialogo.close(); }); });
     dialogo.addEventListener('click', function (evento) { if (evento.target === dialogo) dialogo.close(); });
     var eliminar = document.getElementById('editar-eliminar');

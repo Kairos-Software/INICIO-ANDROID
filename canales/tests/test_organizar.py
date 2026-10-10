@@ -196,7 +196,9 @@ class OrganizarTests(TestCase):
         self.assertEqual([n['categoria'] for n in datos.nodos], [self.cine])
         respuesta = self.client.get(reverse('canales:organizar'), {'contenido': 'pelicula'})
         self.assertContains(respuesta, 'Categorías de Películas')
-        self.assertNotContains(respuesta, 'Noticias')
+        # (la palabra "Noticias" sí está: es uno de los íconos para una sección nueva)
+        self.assertNotContains(respuesta, f'value="{self.noticias.pk}"')
+        self.assertNotContains(respuesta, 'data-nombre="Noticias"')
 
     def test_parecidas_y_juntar_desde_la_pagina(self):
         _con_fuente('Zenón', self.infantil)

@@ -7,6 +7,37 @@ import 'package:flutter_test/flutter_test.dart';
 Canal _capitulo(int id, String nombre) =>
     Canal({'id': id, 'nombre': nombre, 'fuentes': <dynamic>[]}, categoria: 'SERIES | HBO', contenido: 'serie');
 
+/// Un servidor de mentira con una sola serie (Pocoyó), con o sin su portada.
+class _ServidorDeSeries extends ApiCliente {
+  _ServidorDeSeries({required this.conPortadas}) : super(urlBase: 'http://prueba/api/v1/');
+
+  final bool conPortadas;
+
+  @override
+  Future<dynamic> get(String ruta, {Map<String, String>? parametros}) async {
+    if (ruta != 'canales/' || parametros?['contenido'] != 'serie') return {'categorias': [], 'secciones': []};
+    return {
+      'categorias': [
+        {
+          'nombre': 'Infantiles',
+          'canales': [
+            for (var n = 1; n <= 3; n++)
+              {
+                'id': n,
+                'nombre': 'Pocoyó S01 E0$n',
+                'logo': 'https://yt/$n.jpg',
+                'fuentes': [
+                  {'id': n, 'url': 'https://youtu.be/$n', 'tipo': 'hls'},
+                ],
+              },
+          ],
+        },
+      ],
+      if (conPortadas) 'portadas': {'Pocoyó': 'https://panel/pocoyo.jpg'},
+    };
+  }
+}
+
 void main() {
   test('los capítulos sueltos se agrupan en series y temporadas', () {
     final series = agruparSeries([
@@ -23,6 +54,31 @@ void main() {
     expect(silicon.temporadas[1]!.last.titulo, 'El Algoritmo');
     expect(silicon.temporadas[2]!.single.codigo, 'T2:E1');
     expect(series[1].temporadas[1]!.single.numero, 3);
+  });
+
+  test('la serie usa su portada propia; sin portada, la imagen del primer capítulo', () {
+    Canal conLogo(int id, String nombre) =>
+        Canal({'id': id, 'nombre': nombre, 'logo': 'https://yt/$id.jpg', 'fuentes': <dynamic>[]}, contenido: 'serie');
+    final series = agruparSeries(
+      [conLogo(1, 'Pocoyó S01 E02'), conLogo(2, 'Pocoyó S01 E01'), conLogo(3, 'Masha S01 E01')],
+      portadas: {'pocoyó': 'https://panel/pocoyo.jpg'},
+    );
+    final pocoyo = series.firstWhere((s) => s.nombre == 'Pocoyó');
+    expect(pocoyo.imagen, 'https://panel/pocoyo.jpg');
+    expect(pocoyo.episodios.map((e) => e.canal.logo), [
+      'https://yt/2.jpg',
+      'https://yt/1.jpg',
+    ]); // cada capítulo, la suya
+    expect(series.firstWhere((s) => s.nombre == 'Masha').imagen, 'https://yt/3.jpg');
+  });
+
+  test('las portadas llegan con las series (y un servidor viejo no las manda)', () async {
+    for (final conPortadas in [true, false]) {
+      final catalogo = Catalogo(_ServidorDeSeries(conPortadas: conPortadas));
+      await catalogo.cargar();
+      expect(catalogo.error, isNull);
+      expect(catalogo.series.single.imagen, conPortadas ? 'https://panel/pocoyo.jpg' : 'https://yt/1.jpg');
+    }
   });
 
   test('las fuentes con un códec que el aparato no muestra no se usan (ni las de 10 bits)', () {

@@ -3,6 +3,9 @@
 /// "Todo", una fila por categoría; con una categoría elegida, todos sus
 /// canales en grilla. OK pone el canal a pantalla completa; OK largo lo
 /// agrega o quita de favoritos.
+///
+/// También muestra una sección nueva "en vivo" (Radio...: [EnVivoTv.nueva]),
+/// con sus categorías y sin el botón de la guía.
 library;
 
 import 'package:flutter/material.dart';
@@ -16,7 +19,10 @@ import 'piezas.dart';
 import 'reproductor.dart';
 
 class EnVivoTv extends StatefulWidget {
-  const EnVivoTv({super.key});
+  const EnVivoTv({super.key, this.nueva});
+
+  /// La clave de una sección nueva (Radio...) para mostrar lo suyo; null = En vivo.
+  final String? nueva;
 
   @override
   State<EnVivoTv> createState() => _EnVivoTvState();
@@ -33,7 +39,10 @@ class _EnVivoTvState extends State<EnVivoTv> {
       builder: (context, _) {
         final catalogo = datos.catalogo;
         final biblioteca = datos.biblioteca;
-        final elegida = catalogo.categoriasEnVivo.where((c) => c.nombre == _categoria).firstOrNull;
+        final nueva = widget.nueva == null ? null : catalogo.seccionNueva(widget.nueva!);
+        final categorias = nueva?.categorias ?? catalogo.categoriasEnVivo;
+        final todos = nueva?.canales ?? catalogo.canales;
+        final elegida = categorias.where((c) => c.nombre == _categoria).firstOrNull;
 
         Widget tarjeta(Canal canal, List<Canal> lista, {bool autofocus = false}) => TarjetaCanalTv(
           canal: canal,
@@ -46,19 +55,21 @@ class _EnVivoTvState extends State<EnVivoTv> {
 
         final cabecera = [
           EncabezadoTv(
-            sobretitulo: 'Televisión',
-            titulo: 'En vivo',
-            accion: BotonTv(
-              texto: 'Guía de canales',
-              icono: Icons.view_list_rounded,
-              alOk: () => NavegacionTv.of(context).irA(SeccionTv.guia),
-            ),
+            sobretitulo: nueva != null ? 'En vivo' : 'Televisión',
+            titulo: nueva?.nombre ?? 'En vivo',
+            accion: nueva != null
+                ? null
+                : BotonTv(
+                    texto: 'Guía de canales',
+                    icono: Icons.view_list_rounded,
+                    alOk: () => NavegacionTv.of(context).irA(SeccionTv.guia),
+                  ),
           ),
           const SizedBox(height: 10),
           FilaChipsTv(
             opciones: [
               (null, 'Todo'),
-              for (final c in catalogo.categoriasEnVivo)
+              for (final c in categorias)
                 (c.nombre, categoriaLegible(c.nombre).isEmpty ? 'Otros' : categoriaLegible(c.nombre)),
             ],
             activa: _categoria,
@@ -66,13 +77,20 @@ class _EnVivoTvState extends State<EnVivoTv> {
           ),
         ];
 
-        if (catalogo.canales.isEmpty) {
+        if (todos.isEmpty) {
           return ListView(
             children: [
               ...cabecera,
-              const Padding(
-                padding: EdgeInsets.all(120),
-                child: Center(child: Text('Todavía no hay canales en vivo disponibles.', style: LetraTv.cuerpo)),
+              Padding(
+                padding: const EdgeInsets.all(120),
+                child: Center(
+                  child: Text(
+                    nueva != null
+                        ? 'Todavía no hay nada disponible acá.'
+                        : 'Todavía no hay canales en vivo disponibles.',
+                    style: LetraTv.cuerpo,
+                  ),
+                ),
               ),
             ],
           );
@@ -101,7 +119,6 @@ class _EnVivoTvState extends State<EnVivoTv> {
         }
 
         // Todo: una fila por categoría
-        final categorias = catalogo.categoriasEnVivo;
         return ListView.builder(
           padding: const EdgeInsets.only(bottom: 80),
           itemCount: cabecera.length + categorias.length,

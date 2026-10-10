@@ -1,5 +1,6 @@
 /// Películas y Series: la grilla de pósters de "Tendencias" (Stitch, Inicio)
-/// con chips para filtrar por categoría.
+/// con chips para filtrar por categoría. También una sección nueva "a
+/// demanda" (Música...: [SeccionGrilla.nueva]), igual que Películas.
 library;
 
 import 'package:flutter/material.dart';
@@ -24,13 +25,14 @@ SliverGridDelegate grillaPosters(double ancho) {
   );
 }
 
-Widget tarjetaPelicula(BuildContext context, Canal pelicula) {
+/// `tipo`: lo que dice abajo del título ("Película", o el nombre de una sección nueva: "Música").
+Widget tarjetaPelicula(BuildContext context, Canal pelicula, {String tipo = 'Película'}) {
   final biblioteca = DatosScope.of(context).biblioteca;
   final anio = anioDe(pelicula.nombre);
   final progreso = biblioteca.progresoDe(pelicula.id);
   return TarjetaPoster(
     titulo: sinAnio(pelicula.nombre),
-    subtitulo: anio == null ? 'Película' : 'Película • $anio',
+    subtitulo: anio == null ? tipo : '$tipo • $anio',
     imagen: pelicula.logo,
     etiqueta: categoriaLegible(pelicula.categoria),
     esquina: anio?.toString(),
@@ -53,10 +55,13 @@ Widget tarjetaSerie(BuildContext context, Serie serie) {
 }
 
 class SeccionGrilla extends StatefulWidget {
-  const SeccionGrilla({super.key, required this.contenido});
+  const SeccionGrilla({super.key, required this.contenido, this.nueva});
 
   /// "pelicula" o "serie"
   final String contenido;
+
+  /// La clave de una sección nueva (Música...) para mostrar lo suyo; null = Películas o Series.
+  final String? nueva;
 
   @override
   State<SeccionGrilla> createState() => _SeccionGrillaState();
@@ -75,10 +80,11 @@ class _SeccionGrillaState extends State<SeccionGrilla> {
       builder: (context, _) {
         final catalogo = datos.catalogo;
         if (!catalogo.cargado) return const Center(child: CircularProgressIndicator());
+        final nueva = widget.nueva == null ? null : catalogo.seccionNueva(widget.nueva!);
+        final todas = nueva?.canales ?? catalogo.peliculas;
 
         final categorias = <String>{
-          for (final c
-              in _esSerie ? catalogo.series.map((s) => s.categoria) : catalogo.peliculas.map((p) => p.categoria))
+          for (final c in _esSerie ? catalogo.series.map((s) => s.categoria) : todas.map((p) => p.categoria))
             if (c.isNotEmpty) c,
         }.toList();
         final series = _esSerie
@@ -86,13 +92,15 @@ class _SeccionGrillaState extends State<SeccionGrilla> {
             : const <Serie>[];
         final peliculas = _esSerie
             ? const <Canal>[]
-            : catalogo.peliculas.where((p) => _categoria == null || p.categoria == _categoria).toList();
+            : todas.where((p) => _categoria == null || p.categoria == _categoria).toList();
         final cantidad = _esSerie ? series.length : peliculas.length;
 
         if (cantidad == 0 && _categoria == null) {
           return Vacio(
             icono: _esSerie ? Icons.video_library_outlined : Icons.movie_outlined,
-            texto: _esSerie ? 'Todavía no hay series disponibles.' : 'Todavía no hay películas disponibles.',
+            texto: _esSerie
+                ? 'Todavía no hay series disponibles.'
+                : (nueva != null ? 'Todavía no hay nada disponible acá.' : 'Todavía no hay películas disponibles.'),
           );
         }
         return RefreshIndicator(
@@ -129,7 +137,7 @@ class _SeccionGrillaState extends State<SeccionGrilla> {
                 ),
               SliverToBoxAdapter(
                 child: EncabezadoSeccion(
-                  titulo: _esSerie ? 'Series' : 'Películas',
+                  titulo: _esSerie ? 'Series' : (nueva?.nombre ?? 'Películas'),
                   icono: Icon(
                     _esSerie ? Icons.video_library_rounded : Icons.movie_rounded,
                     size: 20,
@@ -148,8 +156,9 @@ class _SeccionGrillaState extends State<SeccionGrilla> {
                   builder: (context, limites) => SliverGrid.builder(
                     gridDelegate: grillaPosters(limites.crossAxisExtent),
                     itemCount: cantidad,
-                    itemBuilder: (context, i) =>
-                        _esSerie ? tarjetaSerie(context, series[i]) : tarjetaPelicula(context, peliculas[i]),
+                    itemBuilder: (context, i) => _esSerie
+                        ? tarjetaSerie(context, series[i])
+                        : tarjetaPelicula(context, peliculas[i], tipo: nueva?.nombre ?? 'Película'),
                   ),
                 ),
               ),

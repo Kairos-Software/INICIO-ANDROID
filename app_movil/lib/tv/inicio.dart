@@ -3,7 +3,8 @@
 ///   portada con un canal (el último visto, un favorito o uno con logo):
 ///     Ver en vivo · Favorito · Abrir guía
 ///   Tus canales favoritos · Últimos canales vistos · Continuar viendo ·
-///   una fila por categoría de TV · Películas · Series
+///   una fila por categoría de TV · Películas · Series · una fila por sección
+///   nueva (Música, Radio...)
 ///
 /// El foco arranca en "Ver en vivo". OK largo sobre una tarjeta la agrega o
 /// quita de favoritos.
@@ -71,7 +72,10 @@ class InicioTv extends StatelessWidget {
               ),
             ),
             if (destacado != null) _Portada(canal: destacado),
-            if (catalogo.canales.isEmpty && catalogo.peliculas.isEmpty && catalogo.series.isEmpty)
+            if (catalogo.canales.isEmpty &&
+                catalogo.peliculas.isEmpty &&
+                catalogo.series.isEmpty &&
+                catalogo.seccionesNuevas.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(120),
                 child: Center(child: Text('Todavía no hay contenido disponible.', style: LetraTv.cuerpo)),
@@ -105,6 +109,15 @@ class InicioTv extends StatelessWidget {
               final_: catalogo.series.isEmpty ? null : '${catalogo.series.length}',
               tarjetas: [for (final s in catalogo.series.take(20)) posterSerieTv(context, s)],
             ),
+            for (final seccion in catalogo.seccionesNuevas)
+              seccion.enVivo
+                  ? filaCanales(seccion.nombre, seccion.canales.take(20).toList(), final_: '${seccion.canales.length}')
+                  : FilaTv(
+                      titulo: seccion.nombre,
+                      alto: 276,
+                      final_: '${seccion.canales.length}',
+                      tarjetas: [for (final p in seccion.canales.take(20)) posterPeliculaTv(context, p)],
+                    ),
           ],
         );
       },
